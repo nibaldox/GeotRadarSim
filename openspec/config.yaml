@@ -1,0 +1,56 @@
+# openspec/config.yaml — SDD Project Configuration
+schema: spec-driven
+
+context: |
+  Stack: React (frontend) + Python/FastAPI (backend) with DXF parsing
+  Architecture: Greenfield — monorepo structure planned
+  Testing: pytest 9.0.2 (Python), vitest (planned for React)
+  Style: To be established (ruff/black for Python, eslint/prettier for JS)
+  Runtime: Python 3.14.2, Node.js v24.12.0
+
+strict_tdd: true
+
+testing:
+  strict_tdd_mode: enabled
+  detected: "2026-05-06"
+
+  test_runner:
+    command: "pytest"
+    framework: "pytest 9.0.2"
+
+  test_layers:
+    unit: { available: true, tool: "pytest" }
+    integration: { available: true, tool: "pytest + httpx" }
+    e2e: { available: false, tool: null }
+
+  coverage:
+    available: false
+    command: null
+
+  quality_tools:
+    linter: { available: false, command: null }
+    type_checker: { available: false, command: null }
+    formatter: { available: false, command: null }
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing code patterns and conventions
+    - Load relevant coding skills for the project stack
+  verify:
+    - Run tests if test infrastructure exists
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas (large removals)

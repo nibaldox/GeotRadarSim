@@ -1,0 +1,29 @@
+[project]
+name = "radar-monitoring-backend"
+version = "0.1.0"
+description = "Radar monitoring simulator backend — LOS analysis for geotechnical monitoring"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "ezdxf>=1.4.0",
+    "scipy>=1.14.0",
+    "numpy>=2.0.0",
+    "reportlab>=4.2.0",
+    "matplotlib>=3.9.0",
+    "pyyaml>=6.0.0",
+    "shapely>=2.0.0",
+    "python-multipart>=0.0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "httpx>=0.28.0",
+    "pytest-asyncio>=0.25.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"

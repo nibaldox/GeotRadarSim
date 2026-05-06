@@ -1,0 +1,10 @@
+model_id: groundprobe-ssr-fx
+display_name: "GroundProbe SSR-FX"
+manufacturer: "GroundProbe"
+max_range_m: 850.0
+h_beam_width_deg: 90.0
+v_beam_width_deg: 30.0
+elevation_min_deg: -30.0
+elevation_max_deg: 30.0
+scan_pattern: RAR
+azimuth_range_deg: [-45.0, 45.0]
