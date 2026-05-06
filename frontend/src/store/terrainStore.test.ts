@@ -12,12 +12,14 @@ vi.mock("../services/api", () => ({
   generateSynthetic: vi.fn(),
   getTerrainGrid: vi.fn(),
   uploadDXF: vi.fn(),
+  uploadSTL: vi.fn(),
 }));
 
 import {
   generateSynthetic,
   getTerrainGrid,
   uploadDXF,
+  uploadSTL,
 } from "../services/api";
 import type { DTMMetadata, TerrainGridResponse } from "../types/api";
 
@@ -162,5 +164,37 @@ describe("useTerrainStore — clearError", () => {
     useTerrainStore.getState().clearError();
 
     expect(useTerrainStore.getState().error).toBeNull();
+  });
+});
+
+// ────────────────────────────────────────────
+// uploadSTL action
+// ────────────────────────────────────────────
+describe("useTerrainStore — uploadSTL", () => {
+  it("uploads file and stores metadata", async () => {
+    vi.mocked(uploadSTL).mockResolvedValueOnce(sampleMetadata);
+    const file = new File(["stl-content"], "terrain.stl", {
+      type: "application/octet-stream",
+    });
+
+    await useTerrainStore.getState().uploadSTL(file);
+
+    expect(uploadSTL).toHaveBeenCalledWith(file);
+    const state = useTerrainStore.getState();
+    expect(state.metadata).toEqual(sampleMetadata);
+    expect(state.error).toBeNull();
+  });
+
+  it("stores error on upload failure", async () => {
+    vi.mocked(uploadSTL).mockRejectedValueOnce(
+      new Error("No valid triangles found in STL file"),
+    );
+    const file = new File(["bad"], "bad.stl", { type: "application/octet-stream" });
+
+    await useTerrainStore.getState().uploadSTL(file);
+
+    const state = useTerrainStore.getState();
+    expect(state.metadata).toBeNull();
+    expect(state.error).toBe("No valid triangles found in STL file");
   });
 });

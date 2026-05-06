@@ -27,3 +27,5 @@ Thumbs.db
 .env
 .venv/
 venv/
+# STL test surfaces
+*.stl

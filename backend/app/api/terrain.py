@@ -1,10 +1,11 @@
-"""Terrain API endpoints — upload DXF, generate synthetic terrain, retrieve grid."""
+"""Terrain API endpoints — upload DXF/STL, generate synthetic terrain, retrieve grid."""
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from pydantic import BaseModel, Field
 
 from app.services.dxf_parser import parse_dxf, DXFParseError
+from app.services.stl_parser import stl_to_dtm, STLParseError
 from app.services.dtm_generator import generate_dtm
 from app.services.synthetic_terrain import generate_synthetic_terrain
 from app.services.terrain_store import store_terrain, get_terrain
@@ -44,6 +45,32 @@ async def upload_terrain(file: UploadFile = File(...)):
 
     # Generate DTM from points
     dtm_result = generate_dtm(points)
+    terrain_id = store_terrain(dtm_result)
+
+    return dtm_result.metadata.model_dump()
+
+
+@router.post("/upload-stl")
+async def upload_stl_terrain(file: UploadFile = File(...)):
+    """Upload an STL file and generate a DTM."""
+    if not file.filename:
+        raise HTTPException(status_code=422, detail="No filename provided")
+
+    contents = await file.read()
+
+    import tempfile
+    import os
+    tmp = tempfile.NamedTemporaryFile(suffix=".stl", delete=False)
+    tmp.write(contents)
+    tmp.close()
+
+    try:
+        dtm_result = stl_to_dtm(tmp.name)
+    except STLParseError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    finally:
+        os.unlink(tmp.name)
+
     terrain_id = store_terrain(dtm_result)
 
     return dtm_result.metadata.model_dump()

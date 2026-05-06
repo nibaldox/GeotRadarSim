@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   uploadDXF,
+  uploadSTL,
   generateSynthetic,
   getTerrainGrid,
   runLOSAnalysis,
@@ -91,6 +92,45 @@ describe("uploadDXF", () => {
 
     const file = new File(["bad"], "bad.dxf", { type: "application/dxf" });
     await expect(uploadDXF(file)).rejects.toThrow("No elevation data in DXF");
+  });
+});
+
+// ────────────────────────────────────────────
+// uploadSTL
+// ────────────────────────────────────────────
+describe("uploadSTL", () => {
+  it("POSTs file to /api/terrain/upload-stl and returns DTMMetadata", async () => {
+    const expected: DTMMetadata = {
+      terrain_id: "dtm-0-0-2",
+      bounds: {
+        min_x: 0, min_y: 0, min_z: 0,
+        max_x: 20, max_y: 20, max_z: 10,
+      },
+      resolution: 2.0,
+      grid_rows: 11,
+      grid_cols: 11,
+    };
+    mockFetch.mockResolvedValueOnce(jsonOk(expected));
+
+    const file = new File(["binary-stl-content"], "terrain.stl", {
+      type: "application/octet-stream",
+    });
+    const result = await uploadSTL(file);
+
+    expect(result).toEqual(expected);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, options] = mockFetch.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8000/api/terrain/upload-stl");
+    expect(options!.method).toBe("POST");
+    const body = options!.body as FormData;
+    expect(body.get("file")).toBe(file);
+  });
+
+  it("throws with detail message on 422 parse error", async () => {
+    mockFetch.mockResolvedValueOnce(jsonError(422, "No valid triangles found in STL file"));
+
+    const file = new File(["bad"], "bad.stl", { type: "application/octet-stream" });
+    await expect(uploadSTL(file)).rejects.toThrow("No valid triangles found in STL file");
   });
 });
 

@@ -10,6 +10,7 @@ import {
   generateSynthetic as apiGenerateSynthetic,
   getTerrainGrid as apiGetTerrainGrid,
   uploadDXF as apiUploadDXF,
+  uploadSTL as apiUploadSTL,
 } from "../services/api";
 import type {
   DTMMetadata,
@@ -26,6 +27,7 @@ export interface TerrainState {
   generateSynthetic: (params: SyntheticTerrainRequest) => Promise<void>;
   loadGrid: (terrainId: string) => Promise<void>;
   uploadDXF: (file: File) => Promise<void>;
+  uploadSTL: (file: File) => Promise<void>;
   clearError: () => void;
 }
 
@@ -65,6 +67,19 @@ export const useTerrainStore = create<TerrainState>((set) => ({
     set({ loading: true, error: null });
     try {
       const metadata = await apiUploadDXF(file);
+      set({ metadata, loading: false });
+    } catch (err) {
+      set({
+        error: err instanceof Error ? err.message : "Unknown error",
+        loading: false,
+      });
+    }
+  },
+
+  uploadSTL: async (file) => {
+    set({ loading: true, error: null });
+    try {
+      const metadata = await apiUploadSTL(file);
       set({ metadata, loading: false });
     } catch (err) {
       set({

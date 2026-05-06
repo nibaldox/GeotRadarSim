@@ -19,6 +19,7 @@ function App() {
   const generateSynthetic = useTerrainStore((s) => s.generateSynthetic);
   const loadGrid = useTerrainStore((s) => s.loadGrid);
   const uploadDXF = useTerrainStore((s) => s.uploadDXF);
+  const uploadSTL = useTerrainStore((s) => s.uploadSTL);
   const terrainLoading = useTerrainStore((s) => s.loading);
   const terrainMetadata = useTerrainStore((s) => s.metadata);
   const terrainError = useTerrainStore((s) => s.error);
@@ -46,6 +47,18 @@ function App() {
       await loadGrid(metadata.terrain_id);
     }
   }, [uploadDXF, loadGrid]);
+
+  const handleSTLUpload = useCallback(async () => {
+    const fileInput = fileInputRef.current;
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
+    const file = fileInput.files[0];
+    await uploadSTL(file);
+    // After STL upload, fetch grid data for 3D visualization
+    const metadata = useTerrainStore.getState().metadata;
+    if (metadata) {
+      await loadGrid(metadata.terrain_id);
+    }
+  }, [uploadSTL, loadGrid]);
 
   const handleTerrainClick = useCallback(
     (point: { x: number; y: number; z: number }) => {
@@ -110,7 +123,7 @@ function App() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".dxf"
+              accept=".dxf,.stl"
               aria-label="Upload DXF file"
               style={{
                 fontSize: "12px",
@@ -132,6 +145,22 @@ function App() {
               }}
             >
               {terrainLoading ? "Uploading..." : "Upload DXF"}
+            </button>
+            <button
+              onClick={() => void handleSTLUpload()}
+              disabled={terrainLoading}
+              style={{
+                width: "100%",
+                padding: "8px",
+                borderRadius: "4px",
+                border: "none",
+                cursor: terrainLoading ? "not-allowed" : "pointer",
+                backgroundColor: terrainLoading ? "#333" : "#e17055",
+                color: terrainLoading ? "#666" : "#fff",
+                fontWeight: "bold",
+              }}
+            >
+              {terrainLoading ? "Uploading..." : "Upload STL"}
             </button>
           </div>
 

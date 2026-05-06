@@ -34,6 +34,7 @@ vi.mock("../services/api", () => ({
   generateSynthetic: vi.fn(),
   getTerrainGrid: vi.fn(),
   uploadDXF: vi.fn(),
+  uploadSTL: vi.fn(),
   runLOSAnalysis: vi.fn(),
   listRadars: vi.fn(),
   getRadar: vi.fn(),
@@ -45,6 +46,7 @@ import {
   generateSynthetic,
   getTerrainGrid,
   uploadDXF,
+  uploadSTL,
   listRadars,
 } from "../services/api";
 import type { DTMMetadata, TerrainGridResponse } from "../types/api";
@@ -89,7 +91,7 @@ describe("App — DXF Upload UI", () => {
     const fileInput = screen.getByLabelText(/upload dxf/i);
     expect(fileInput).toBeInTheDocument();
     expect(fileInput).toHaveAttribute("type", "file");
-    expect(fileInput).toHaveAttribute("accept", ".dxf");
+    expect(fileInput).toHaveAttribute("accept", ".dxf,.stl");
   });
 
   it("renders an Upload DXF button", () => {
@@ -142,6 +144,49 @@ describe("App — Auto loadGrid after DXF upload", () => {
 
     await waitFor(() => {
       expect(uploadDXF).toHaveBeenCalledWith(file);
+    });
+
+    await waitFor(() => {
+      expect(getTerrainGrid).toHaveBeenCalledWith("terrain-syn-1");
+    });
+  });
+});
+
+// ────────────────────────────────────────────
+// STL Upload UI
+// ────────────────────────────────────────────
+describe("App — STL Upload UI", () => {
+  it("renders a file input that accepts .dxf and .stl files", () => {
+    render(<App />);
+
+    const fileInput = screen.getByLabelText(/upload dxf/i);
+    expect(fileInput).toHaveAttribute("accept", ".dxf,.stl");
+  });
+
+  it("renders an Upload STL button", () => {
+    render(<App />);
+
+    const uploadBtn = screen.getByRole("button", { name: /upload stl/i });
+    expect(uploadBtn).toBeInTheDocument();
+  });
+});
+
+describe("App — Auto loadGrid after STL upload", () => {
+  it("calls uploadSTL and loadGrid when .stl file is uploaded", async () => {
+    vi.mocked(uploadSTL).mockResolvedValueOnce(sampleMetadata);
+    vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
+
+    render(<App />);
+
+    const fileInput = screen.getByLabelText(/upload dxf/i);
+    const stlFile = new File(["stl-content"], "terrain.stl", { type: "application/octet-stream" });
+    fireEvent.change(fileInput, { target: { files: [stlFile] } });
+
+    const uploadBtn = screen.getByRole("button", { name: /upload stl/i });
+    fireEvent.click(uploadBtn);
+
+    await waitFor(() => {
+      expect(uploadSTL).toHaveBeenCalledWith(stlFile);
     });
 
     await waitFor(() => {

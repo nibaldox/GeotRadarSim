@@ -74,6 +74,20 @@ export async function uploadDXF(file: File): Promise<DTMMetadata> {
   return (await response.json()) as DTMMetadata;
 }
 
+/** Upload an STL file and generate a DTM. */
+export async function uploadSTL(file: File): Promise<DTMMetadata> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${baseUrl}/api/terrain/upload-stl`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    return extractError(response);
+  }
+  return (await response.json()) as DTMMetadata;
+}
+
 /** Generate synthetic bowl-shaped terrain. */
 export async function generateSynthetic(
   params: SyntheticTerrainRequest,
