@@ -84,20 +84,20 @@ beforeEach(() => {
   vi.mocked(listRadars).mockResolvedValue([]);
 });
 
-describe("App — DXF Upload UI", () => {
-  it("renders a file input for DXF upload", () => {
+describe("App — Terrain Upload UI", () => {
+  it("renders a file input for terrain upload (DXF/STL)", () => {
     render(<App />);
 
-    const fileInput = screen.getByLabelText(/upload dxf/i);
+    const fileInput = screen.getByLabelText(/upload terrain/i);
     expect(fileInput).toBeInTheDocument();
     expect(fileInput).toHaveAttribute("type", "file");
     expect(fileInput).toHaveAttribute("accept", ".dxf,.stl");
   });
 
-  it("renders an Upload DXF button", () => {
+  it("renders an Upload Terrain button", () => {
     render(<App />);
 
-    const uploadBtn = screen.getByRole("button", { name: /upload dxf/i });
+    const uploadBtn = screen.getByRole("button", { name: /upload terrain/i });
     expect(uploadBtn).toBeInTheDocument();
   });
 });
@@ -129,17 +129,17 @@ describe("App — Auto loadGrid after generateSynthetic", () => {
 });
 
 describe("App — Auto loadGrid after DXF upload", () => {
-  it("calls loadGrid after DXF upload succeeds", async () => {
+  it("calls loadGrid after DXF upload succeeds (auto-detected)", async () => {
     vi.mocked(uploadDXF).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
     render(<App />);
 
-    const fileInput = screen.getByLabelText(/upload dxf/i);
+    const fileInput = screen.getByLabelText(/upload terrain/i);
     const file = new File(["dxf-content"], "test.dxf", { type: "application/dxf" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    const uploadBtn = screen.getByRole("button", { name: /upload dxf/i });
+    const uploadBtn = screen.getByRole("button", { name: /upload terrain/i });
     fireEvent.click(uploadBtn);
 
     await waitFor(() => {
@@ -153,36 +153,20 @@ describe("App — Auto loadGrid after DXF upload", () => {
 });
 
 // ────────────────────────────────────────────
-// STL Upload UI
+// STL Upload (auto-detected via single button)
 // ────────────────────────────────────────────
-describe("App — STL Upload UI", () => {
-  it("renders a file input that accepts .dxf and .stl files", () => {
-    render(<App />);
-
-    const fileInput = screen.getByLabelText(/upload dxf/i);
-    expect(fileInput).toHaveAttribute("accept", ".dxf,.stl");
-  });
-
-  it("renders an Upload STL button", () => {
-    render(<App />);
-
-    const uploadBtn = screen.getByRole("button", { name: /upload stl/i });
-    expect(uploadBtn).toBeInTheDocument();
-  });
-});
-
 describe("App — Auto loadGrid after STL upload", () => {
-  it("calls uploadSTL and loadGrid when .stl file is uploaded", async () => {
+  it("calls uploadSTL and loadGrid when .stl file is uploaded (auto-detected)", async () => {
     vi.mocked(uploadSTL).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
     render(<App />);
 
-    const fileInput = screen.getByLabelText(/upload dxf/i);
+    const fileInput = screen.getByLabelText(/upload terrain/i);
     const stlFile = new File(["stl-content"], "terrain.stl", { type: "application/octet-stream" });
     fireEvent.change(fileInput, { target: { files: [stlFile] } });
 
-    const uploadBtn = screen.getByRole("button", { name: /upload stl/i });
+    const uploadBtn = screen.getByRole("button", { name: /upload terrain/i });
     fireEvent.click(uploadBtn);
 
     await waitFor(() => {
