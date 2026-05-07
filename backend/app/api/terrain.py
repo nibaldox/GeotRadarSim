@@ -64,8 +64,13 @@ async def upload_stl_terrain(file: UploadFile = File(...)):
     tmp.write(contents)
     tmp.close()
 
+    # Use larger default resolution for STL (typically large mine surfaces)
+    # User can override via query param
+    import contextlib
+    resolution = 5.0  # Default 5m for STL — good balance of detail vs performance
+
     try:
-        dtm_result = stl_to_dtm(tmp.name)
+        dtm_result = stl_to_dtm(tmp.name, resolution=resolution)
     except STLParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     finally:
