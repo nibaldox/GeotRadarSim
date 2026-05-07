@@ -66,7 +66,7 @@ function TerrainMesh({
         geometry={geometry}
         onClick={handleClick}
       >
-        <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
+        <meshStandardMaterial color="#8a8a7a" side={THREE.DoubleSide} flatShading />
       </mesh>
       {showShadowOverlay && <ShadowOverlay grid={grid} resolution={resolution} />}
     </group>

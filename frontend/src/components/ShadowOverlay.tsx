@@ -1,17 +1,17 @@
 /**
- * ShadowOverlay — semi-transparent overlay on terrain showing shadow/visible zones.
+ * ShadowOverlay — semi-transparent overlay on terrain showing monitoring window.
  *
- * Uses the LOS analysis result (shadow_grid) to color vertices:
- * - Visible: transparent (terrain color shows through)
- * - Shadowed: semi-transparent dark color
+ * Color coding:
+ * - Green: visible zone (monitoring window — radar can "see" this area)
+ * - Red/dark: shadow zone (obstructed — radar cannot monitor here)
  *
- * Toggleable via prop without clearing computed data.
+ * Overlay sits slightly above terrain to prevent z-fighting.
  */
 
 import { useMemo } from "react";
 import * as THREE from "three";
 import { useAnalysisStore } from "../store/analysisStore";
-import { normalizeGrid } from "../utils/terrain";
+import { getMinElevation } from "../utils/terrain";
 
 interface ShadowOverlayProps {
   grid: number[][];
@@ -27,11 +27,17 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
     const rows = grid.length;
     const cols = grid[0]!.length;
     const vertexCount = rows * cols;
+    const minElev = getMinElevation(grid);
 
-    const positions = normalizeGrid(grid, 0, 0, resolution);
-    // Slightly above terrain to prevent z-fighting
-    for (let i = 1; i < positions.length; i += 3) {
-      positions[i]! += 0.5;
+    // Build positions with normalized elevation + slight offset above terrain
+    const positions = new Float32Array(vertexCount * 3);
+    let posIdx = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        positions[posIdx++] = c * resolution;
+        positions[posIdx++] = grid[r]![c]! - minElev + 1.0; // normalized + offset
+        positions[posIdx++] = r * resolution;
+      }
     }
 
     const colors = new Float32Array(vertexCount * 3);
@@ -42,15 +48,15 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
       for (let c = 0; c < cols; c++) {
         const isShadowed = shadowGrid[r] ? shadowGrid[r]![c] ?? false : false;
         if (isShadowed) {
-          // Dark semi-transparent: dark red
-          colors[colorIdx++] = 0.6;
-          colors[colorIdx++] = 0.0;
-          colors[colorIdx++] = 0.0;
+          // Shadow: red
+          colors[colorIdx++] = 0.9;
+          colors[colorIdx++] = 0.15;
+          colors[colorIdx++] = 0.15;
         } else {
-          // Visible: green tint
-          colors[colorIdx++] = 0.0;
-          colors[colorIdx++] = 0.6;
-          colors[colorIdx++] = 0.0;
+          // Visible (monitoring window): green
+          colors[colorIdx++] = 0.1;
+          colors[colorIdx++] = 0.85;
+          colors[colorIdx++] = 0.2;
         }
       }
     }
@@ -89,7 +95,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
       <meshStandardMaterial
         vertexColors
         transparent
-        opacity={0.35}
+        opacity={0.45}
         side={THREE.DoubleSide}
         depthWrite={false}
       />
