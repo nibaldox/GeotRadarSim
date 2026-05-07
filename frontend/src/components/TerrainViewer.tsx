@@ -10,7 +10,7 @@ import { useRef, useMemo, useCallback } from "react";
 import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { buildVertexData } from "../utils/terrain";
+import { buildVertexData, getTerrainExtent } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
 import { ShadowOverlay } from "./ShadowOverlay";
@@ -87,18 +87,21 @@ function RadarMarker() {
   );
 }
 
-/** Scene setup: lighting, camera position, controls */
+/** Scene setup: lighting, camera auto-fit, controls */
 function Scene({ grid, resolution, showShadowOverlay, onTerrainClick }: TerrainMeshProps) {
   const { camera } = useThree();
 
-  // Position camera above center of terrain
+  // Auto-fit camera to terrain extent
   useMemo(() => {
-    const rows = grid.length;
-    const cols = grid[0]!.length;
-    const centerX = (cols * resolution) / 2;
-    const centerZ = (rows * resolution) / 2;
-    camera.position.set(centerX, 200, centerZ + 100);
-    camera.lookAt(centerX, 0, centerZ);
+    const extent = getTerrainExtent(grid, resolution);
+    // Position camera at an angle showing the full terrain
+    const maxDim = Math.max(extent.width, extent.depth);
+    camera.position.set(
+      extent.centerX + maxDim * 0.3,
+      maxDim * 0.6,
+      extent.centerZ + maxDim * 0.5,
+    );
+    camera.lookAt(extent.centerX, extent.height / 2, extent.centerZ);
   }, [grid, resolution, camera]);
 
   return (

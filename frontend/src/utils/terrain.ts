@@ -85,6 +85,9 @@ export function normalizeGrid(
 
 /**
  * Build complete vertex data (positions, colors, indices) for a terrain mesh.
+ *
+ * Elevations are normalized relative to the grid's minimum so the mesh
+ * starts near Y=0 regardless of real-world coordinate systems.
  */
 export function buildVertexData(
   grid: number[][],
@@ -100,12 +103,21 @@ export function buildVertexData(
   const cols = grid[0]!.length;
   const vertexCount = rows * cols;
 
-  const positions = normalizeGrid(grid, offsetX, offsetZ, resolution);
-
   const minElev = getMinElevation(grid);
   const maxElev = getMaxElevation(grid);
-  const colors = new Float32Array(vertexCount * 3);
 
+  // Normalize elevations: shift so min elevation is at Y=0
+  const positions = new Float32Array(vertexCount * 3);
+  let posIdx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      positions[posIdx++] = offsetX + c * resolution;
+      positions[posIdx++] = grid[r]![c]! - minElev; // normalized Y
+      positions[posIdx++] = offsetZ + r * resolution;
+    }
+  }
+
+  const colors = new Float32Array(vertexCount * 3);
   let colorIdx = 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -141,4 +153,26 @@ export function buildVertexData(
   }
 
   return { positions, colors, indices };
+}
+
+/**
+ * Compute terrain extent in world coordinates after normalization.
+ * Used for auto-fitting the camera.
+ */
+export function getTerrainExtent(
+  grid: number[][],
+  resolution: number,
+): { width: number; depth: number; height: number; centerX: number; centerZ: number } {
+  const rows = grid.length;
+  const cols = grid[0]!.length;
+  const minElev = getMinElevation(grid);
+  const maxElev = getMaxElevation(grid);
+
+  return {
+    width: cols * resolution,
+    depth: rows * resolution,
+    height: maxElev - minElev,
+    centerX: (cols * resolution) / 2,
+    centerZ: (rows * resolution) / 2,
+  };
 }
