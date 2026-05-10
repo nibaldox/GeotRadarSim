@@ -1,6 +1,6 @@
 # 📡 GeotRadarSim — Radar Coverage Simulator for Geotechnical Monitoring
 
-**Free, open-source tool for simulating slope monitoring radar coverage on mine topography.**
+**Free, open-source tool for simulating slope monitoring radar coverage on real mine topography.**
 
 > Built by a geotechnical engineer, for geotechnical engineers.  
 > Because radar positioning decisions should be based on data — not intuition.
@@ -23,61 +23,85 @@ This mental 3D exercise is unreliable. Commercial tools exist — but their lice
 
 ## Screenshots
 
-### Terrain Visualization
-Load your mine topography (STL or DXF) and explore it interactively in 3D.
+### Full Radar Coverage Analysis
+Load your mine topography (STL or DXF), place a radar, and instantly see which slopes are covered. The color gradient shows signal quality — green means excellent, orange/yellow means moderate, red means poor.
 
-![Terrain loaded with synthetic pit](docs/screenshots/01_terrain_loaded.png)
+![Full coverage analysis on real mine topography — GroundProbe SSR-FX with 44% coverage](docs/screenshots/01_full_coverage.png)
 
-### Radar Configuration
-Select a radar model, configure parameters, and click on the terrain to place the radar.
+### Coverage from Different Angles
+Rotate and explore the 3D model to understand shadow zones and coverage gaps from every perspective.
 
-![Radar configured with GroundProbe SSR-FX](docs/screenshots/02_radar_config.png)
+![Coverage viewed from a different angle — shadows clearly visible on far slopes](docs/screenshots/02_coverage_angle.png)
 
-### Coverage Analysis
-Instantly see which areas the radar covers. The color gradient shows signal quality:
-- 🟢 **Green** → Excellent signal (close range, favorable incidence angle)
-- 🟡 **Yellow/Orange** → Moderate signal (mid-range or oblique angle)
-- 🔴 **Red** → Poor signal (far range, grazing angle)
-- **Grey** → Not covered (shadow zone)
+### Comparing Radar Positions
+Click different locations on the terrain to compare coverage. Each analysis is logged in the History panel with coverage percentage and coordinates.
 
-![Coverage gradient showing signal quality](docs/screenshots/04_coverage_gradient.png)
+![Partial coverage at 24.8% from an alternative radar position](docs/screenshots/03_partial_coverage.png)
 
-### Analysis History
-Compare multiple radar positions. Each analysis is logged with coverage percentage and coordinates.
+### Shadow Zone Identification
+Clearly identify which benches and slopes fall outside the radar's line of sight. Grey areas = not monitored.
 
-![Close range coverage analysis](docs/screenshots/05_close_range_coverage.png)
+![Shadow zones visible on slopes facing away from radar](docs/screenshots/04_shadow_zones.png)
+
+### Analysis History & Multiple Positions
+Build a history of radar placement tests. Compare coverage percentages across different positions to find the optimal location.
+
+![Five different radar positions compared — coverage ranges from 17.6% to 45.3%](docs/screenshots/05_multiple_analyses.png)
+
+### Close-up Signal Quality Gradient
+Zoom in to see the continuous quality gradient on individual benches. The model accounts for both incidence angle and distance to produce realistic signal quality estimates.
+
+![Close-up showing red/orange/yellow/green gradient on mine benches](docs/screenshots/06_closeup_gradient.png)
+
+---
+
+## Signal Quality Model
+
+The coverage color map is based on a physics-inspired quality model:
+
+```
+Quality = cos(incidence_angle) × distance_factor(d)
+```
+
+| Factor | Description |
+|--------|-------------|
+| **Incidence angle** | Angle between the radar beam and the slope surface normal. Steeper angles = weaker signal return. |
+| **Distance factor** | Smoothed decay calibrated for modern radars. Uses `√(d/max_range)` exponent — reliable up to 2,500m. |
+
+| Color | Quality | Meaning |
+|-------|---------|---------|
+| 🟢 Green | 0.7 – 1.0 | Excellent — strong signal return, reliable displacement data |
+| 🟡 Yellow | 0.4 – 0.7 | Moderate — usable data, possible noise at longer ranges |
+| 🟠 Orange | 0.2 – 0.4 | Marginal — data may require filtering or longer scan times |
+| 🔴 Red | 0.0 – 0.2 | Poor — grazing angle or extreme distance, unreliable data |
+| ⬜ Grey | — | Not covered — in shadow, outside scan aperture, or beyond range |
 
 ---
 
 ## Features
 
 ### 🗺️ Terrain
-- **Import STL or DXF** files from your mine planning software
+- **Import STL or DXF** files from your mine planning software (Vulcan, Surpac, Leapfrog, etc.)
 - **Generate synthetic terrain** for testing and learning
 - **Adjustable resolution** (0.5m to 5m grid)
-- **GPU-accelerated rendering** with realistic lighting and 3D relief
+- **GPU-accelerated rendering** with directional lighting for realistic 3D relief
 
 ### 📡 Radar Simulation
-- **Pre-configured radar models** (GroundProbe SSR-FX, and more coming)
-- **Customizable parameters:** range, elevation angles, azimuth, scan aperture
+- **Pre-configured radar models** (GroundProbe SSR-FX, more coming)
+- **Customizable parameters:** range, elevation angles, azimuth center, scan aperture
 - **Click-to-place** radar position directly on the terrain
-- **Automatic LOS analysis** with parallel CPU processing (24 workers)
+- **Automatic LOS analysis** with parallel CPU processing
 
-### 📊 Signal Quality Model
-The coverage map uses a physics-based quality model:
-
-```
-Quality = cos(incidence_angle) × distance_penalty(d)
-```
-
-Where:
-- **Incidence angle:** Angle between the radar beam and the slope normal. Higher angles = worse signal.
-- **Distance penalty:** Smoothed decay function calibrated for modern radars (reliable up to 2,500m).
+### 📊 Results
+- **Coverage percentage** calculated instantly
+- **Visible area** in m²
+- **Shadow zone count** 
+- **Analysis history** — compare multiple positions
 
 ### 📤 Export
 - **PDF Report** with coverage summary
 - **CSV Data** for analysis in Excel or Python
-- **PNG Image** for presentations
+- **PNG Image** for presentations and reports
 
 ---
 
@@ -103,15 +127,16 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 in your browser.
+Open **http://localhost:5173** in your browser.
 
 ### Usage
 
-1. **Load terrain:** Click "Generate Synthetic Terrain" for a demo, or "Upload DXF/STL" with your own file.
-2. **Select radar model:** Choose from the dropdown.
+1. **Load terrain:** Click "Upload DXF/STL" with your mine topography file, or "Generate Synthetic Terrain" for a demo.
+2. **Select radar model:** Choose from the dropdown (e.g., GroundProbe SSR-FX).
 3. **Place radar:** Click on the terrain where you want to position the radar.
-4. **View coverage:** Check "Show Shadow Overlay" to see the quality map.
-5. **Compare positions:** Click different locations — each analysis is saved in the History panel.
+4. **View coverage:** Check "Show Shadow Overlay" to see the quality gradient.
+5. **Compare positions:** Click different locations — each analysis is saved in the History panel with its coverage percentage.
+6. **Export:** Download PDF, CSV, or PNG for your records.
 
 ---
 
@@ -122,63 +147,49 @@ Open http://localhost:5173 in your browser.
 │   ├── app/
 │   │   ├── api/              # REST endpoints (terrain, analysis)
 │   │   ├── models/           # Domain models (BoundingBox, DTMMetadata)
-│   │   ├── services/         # Core logic
+│   │   ├── services/
 │   │   │   ├── los_engine.py # Line-of-Sight + SNR quality model
-│   │   │   ├── stl_parser.py # STL → DTM grid conversion
+│   │   │   ├── stl_parser.py # STL → DTM grid (scipy griddata)
 │   │   │   ├── dxf_parser.py # DXF → point cloud
 │   │   │   └── dtm_generator.py # Point cloud → regular grid
-│   │   └── main.py           # App entry point
+│   │   └── main.py
 │   └── requirements.txt
 │
 ├── frontend/                 # React + Three.js + R3F
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── TerrainViewer.tsx   # 3D terrain renderer (BufferGeometry)
-│   │   │   └── ShadowOverlay.tsx   # GPU coverage shader (GLSL)
+│   │   │   ├── TerrainViewer.tsx   # 3D terrain (BufferGeometry + normals)
+│   │   │   └── ShadowOverlay.tsx   # Coverage shader (GLSL + DataTexture)
 │   │   ├── store/            # Zustand state management
 │   │   ├── services/         # API client
 │   │   └── utils/            # Terrain math utilities
 │   └── package.json
 │
+├── img/                      # Screenshots from real mine data
 └── docs/screenshots/         # Screenshots for README
 ```
-
-### Key Technical Decisions
-
-| Decision | Why |
-|----------|-----|
-| **BufferGeometry** (not ShaderMaterial) for terrain | Vertex normals enable realistic lighting. GPU displacement shaders can't calculate normals per-vertex, making terrain look flat. |
-| **ShaderMaterial** for coverage overlay | The quality map is a DataTexture sampled in GLSL. Avoids creating millions of colored vertices. |
-| **Sentinel value -1.0** for shadows | Distinguishes "shadowed" from "visible with quality=0". The fragment shader discards only q < 0. |
-| **DirectionalLight at 30-40°** | Grazing light reveals terrain relief. Perpendicular light makes everything look flat. |
-| **ProcessPoolExecutor** for LOS | Ray-casting is CPU-bound and embarrassingly parallel. 24 workers on a modern CPU process 200×200 grids in seconds. |
 
 ---
 
 ## Roadmap
 
-- [ ] Deploy to GitHub Pages (static frontend + API endpoint)
+- [ ] Deploy to GitHub Pages (static frontend + serverless backend)
 - [ ] Additional radar models (IBIS-FM, MSR, IDS Hydra-G)
-- [ ] Terrain texture maps (satellite imagery overlay)
 - [ ] Multi-radar analysis (combine coverage from 2+ radars)
-- [ ] PDF report with coverage maps and statistics
+- [ ] Terrain texture maps (satellite imagery overlay)
 - [ ] Elevation profile tool (cross-section through terrain)
 - [ ] Spanish language UI
+- [ ] Mobile-responsive layout
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Whether you're a geotechnical engineer with domain knowledge or a developer who wants to improve the tool — PRs, issues, and ideas are all appreciated.
+Contributions are welcome! Whether you're a geotechnical engineer with domain knowledge or a developer who wants to improve the tool.
 
 ```bash
-# Fork, clone, create branch
 git checkout -b feature/my-improvement
-
-# Make changes, commit
 git commit -m "feat: add my improvement"
-
-# Push and create PR
 git push origin feature/my-improvement
 ```
 
