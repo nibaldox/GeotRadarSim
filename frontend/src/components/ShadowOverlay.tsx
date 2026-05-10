@@ -82,28 +82,31 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
       }
     }
 
-    const quadCount = (rows - 1) * (cols - 1);
-    const indices = new Uint32Array(quadCount * 6);
-    let iIdx = 0;
+    const indices: number[] = [];
     for (let r = 0; r < rows - 1; r++) {
       for (let c = 0; c < cols - 1; c++) {
+        const valTL = grid[r]![c]!;
+        const valTR = grid[r]![c + 1]!;
+        const valBL = grid[r + 1]![c]!;
+        const valBR = grid[r + 1]![c + 1]!;
+
+        // Skip triangles if any vertex is NaN (empty data)
+        if (isNaN(valTL) || isNaN(valTR) || isNaN(valBL) || isNaN(valBR)) {
+          continue;
+        }
+
         const tl = r * cols + c;
         const tr = tl + 1;
         const bl = tl + cols;
         const br = bl + 1;
-        indices[iIdx++] = tl;
-        indices[iIdx++] = tr;
-        indices[iIdx++] = bl;
-        indices[iIdx++] = tr;
-        indices[iIdx++] = br;
-        indices[iIdx++] = bl;
+        indices.push(tl, tr, bl, tr, br, bl);
       }
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
     geo.computeVertexNormals();
     return geo;
   }, [grid, resolution]);

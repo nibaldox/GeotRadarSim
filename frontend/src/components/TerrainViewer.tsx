@@ -47,23 +47,30 @@ function TerrainMesh({
       }
     }
 
-    const quadCount = (rows - 1) * (cols - 1);
-    const ind = new Uint32Array(quadCount * 6);
-    let iIdx = 0;
+    const ind: number[] = [];
     for (let r = 0; r < rows - 1; r++) {
       for (let c = 0; c < cols - 1; c++) {
+        const valTL = grid[r]![c]!;
+        const valTR = grid[r]![c + 1]!;
+        const valBL = grid[r + 1]![c]!;
+        const valBR = grid[r + 1]![c + 1]!;
+
+        // Skip triangles if any vertex is NaN (empty data)
+        if (isNaN(valTL) || isNaN(valTR) || isNaN(valBL) || isNaN(valBR)) {
+          continue;
+        }
+
         const tl = r * cols + c;
         const tr = tl + 1;
         const bl = tl + cols;
         const br = bl + 1;
-        ind[iIdx++] = tl; ind[iIdx++] = tr; ind[iIdx++] = bl;
-        ind[iIdx++] = tr; ind[iIdx++] = br; ind[iIdx++] = bl;
+        ind.push(tl, tr, bl, tr, br, bl);
       }
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geo.setIndex(new THREE.BufferAttribute(ind, 1));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(ind), 1));
     geo.computeVertexNormals();
     return geo;
   }, [grid, resolution, minElev]);

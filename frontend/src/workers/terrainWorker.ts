@@ -196,9 +196,11 @@ function generateDTM(points: Array<[number, number, number]>, resolution: number
       
       if (sumWeight > 0) {
         grid[r][c] = sumZ / sumWeight;
-      } else {
+      } else if (closestDistSq !== Infinity) {
         // Fallback to nearest neighbor
         grid[r][c] = closestZ;
+      } else {
+        grid[r][c] = NaN; // Empty area, no points nearby
       }
     }
   }
