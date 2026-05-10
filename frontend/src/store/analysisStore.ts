@@ -17,6 +17,8 @@ export interface HistoryEntry {
   position: Point3D;
   coveragePct: number;
   timestamp: string;
+  result: LOSResponse;
+  radarId: string;
 }
 
 export interface AnalysisState {
@@ -43,6 +45,7 @@ export interface AnalysisState {
   runAnalysis: (terrainId: string) => Promise<void>;
   clearResult: () => void;
   clearHistory: () => void;
+  restoreHistoryEntry: (index: number) => void;
 }
 
 export const useAnalysisStore = create<AnalysisState>((set, get) => ({
@@ -134,6 +137,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
               position: radarPosition,
               coveragePct: statusResp.result.coverage_pct,
               timestamp: new Date().toLocaleTimeString(),
+              result: statusResp.result,
+              radarId: selectedRadarId,
             };
             set((s) => ({ history: [entry, ...s.history].slice(0, 10) }));
           } else if (statusResp.status === "FAILED") {
@@ -161,4 +166,14 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   clearResult: () => set({ losResult: null }),
   clearHistory: () => set({ history: [] }),
+
+  restoreHistoryEntry: (index) => {
+    const entry = get().history[index];
+    if (!entry) return;
+    set({
+      losResult: entry.result,
+      radarPosition: entry.position,
+      selectedRadarId: entry.radarId,
+    });
+  },
 }));
