@@ -6,7 +6,7 @@
  * State managed via Zustand stores.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { TerrainViewer } from "./components/TerrainViewer";
 import { RadarControls } from "./components/RadarControls";
 import { MultiRadarPanel } from "./components/MultiRadarPanel";
@@ -29,7 +29,13 @@ function App() {
   const setPreferredResolution = useTerrainStore((s) => s.setPreferredResolution);
   const setRadarPosition = useAnalysisStore((s) => s.setRadarPosition);
   const runAnalysis = useAnalysisStore((s) => s.runAnalysis);
+  const losResult = useAnalysisStore((s) => s.losResult);
   const analysisLoading = useAnalysisStore((s) => s.loading);
+
+  // Auto-show the overlay as soon as any analysis result arrives
+  useEffect(() => {
+    if (losResult) setShowShadowOverlay(true);
+  }, [losResult]);
 
   const handleGenerateTerrain = useCallback(async () => {
     await generateSynthetic({ size_x: 200, size_y: 200, depth: 30, resolution: 2.0 });
@@ -77,13 +83,11 @@ function App() {
       setRadarPosition({
         x: point.x + bounds.min_x,
         y: bounds.min_y - point.z,
-        z: point.y + bounds.min_z + 2.0, // Antenna height: +2 meters above ground
+        z: point.y + bounds.min_z + 2.0,
       });
 
-      await runAnalysis(terrainMetadata.terrain_id);
-      if (useAnalysisStore.getState().losResult) {
-        setShowShadowOverlay(true);
-      }
+      // Fire and forget — the useEffect above will show the overlay when done
+      void runAnalysis(terrainMetadata.terrain_id);
     },
     [setRadarPosition, runAnalysis, terrainMetadata],
   );
