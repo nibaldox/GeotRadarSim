@@ -1,8 +1,9 @@
 /**
- * Typed API client for the Radar Monitoring Simulator backend.
+ * Local API Client for the Radar Monitoring Simulator WebApp.
  *
- * All functions use fetch and return typed responses.
- * Errors are thrown as Error objects with the backend detail message.
+ * This replaces the previous HTTP fetch-based client. It delegates heavy processing
+ * to local Web Workers and synchronous operations to local services, enabling
+ * a 100% serverless WebApp deployable on GitHub Pages.
  */
 
 import type {
@@ -15,178 +16,198 @@ import type {
   JobStatusResponse,
 } from "../types/api";
 
-let baseUrl = "http://localhost:8000";
+import { generateSyntheticTerrain } from "./terrainEngine";
+import { saveLocalTerrain, getLocalTerrain } from "./localDataStore";
+import type { TerrainWorkerInput, TerrainWorkerOutput } from "../workers/terrainWorker";
+import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
 
-/** Override the base URL (useful for testing or proxy setups). */
-export function setApiBaseUrl(url: string): void {
-  baseUrl = url;
+// Simulated Job Store for long-running worker tasks
+const jobStore = new Map<string, JobStatusResponse>();
+
+// ────────────────────────────────────────────
+// Radar Definitions (Hardcoded for local app)
+// ────────────────────────────────────────────
+
+const LOCAL_RADARS: RadarConfig[] = [
+  {
+    model_id: "groundprobe-ssr-fx",
+    display_name: "GroundProbe SSR-FX",
+    manufacturer: "GroundProbe",
+    min_range_m: 0.0,
+    max_range_m: 850.0,
+    h_beam_width_deg: 90.0,
+    v_beam_width_deg: 30.0,
+    elevation_min_deg: -30.0,
+    elevation_max_deg: 30.0,
+    scan_pattern: "RAR",
+    azimuth_range_deg: [-45.0, 45.0]
+  },
+  {
+    model_id: "ibis-arcsar360",
+    display_name: "IBIS-ArcSAR360",
+    manufacturer: "IDS GeoRadar",
+    min_range_m: 10.0,
+    max_range_m: 400.0,
+    h_beam_width_deg: 360.0,
+    v_beam_width_deg: 40.0,
+    elevation_min_deg: -20.0,
+    elevation_max_deg: 20.0,
+    scan_pattern: "SAR360",
+    azimuth_range_deg: null
+  },
+  {
+    model_id: "reutech-msr",
+    display_name: "Reutech MSR",
+    manufacturer: "Reutech Radar Systems",
+    min_range_m: 0.0,
+    max_range_m: 500.0,
+    h_beam_width_deg: 120.0,
+    v_beam_width_deg: 30.0,
+    elevation_min_deg: -30.0,
+    elevation_max_deg: 30.0,
+    scan_pattern: "RAR",
+    azimuth_range_deg: [-60.0, 60.0]
+  }
+];
+
+export function setApiBaseUrl(_url: string): void {
+  // No-op in serverless mode
 }
 
-/** Extract error detail from a non-OK response. */
-async function extractError(response: Response): Promise<never> {
-  let detail = `HTTP ${response.status}`;
-  try {
-    const body = (await response.json()) as { detail?: string };
-    if (body.detail) {
-      detail = body.detail;
-    }
-  } catch {
-    // If JSON parsing fails, use the generic message
-  }
-  throw new Error(detail);
-}
-
-/** Generic JSON fetch helper. */
-async function fetchJSON<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string> ?? {}),
-  };
-  if (options.body && typeof options.body === "string") {
-    headers["Content-Type"] = "application/json";
-  }
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...options,
-    headers,
+// Helper to run Terrain Worker
+async function runTerrainWorker(input: TerrainWorkerInput): Promise<DTMMetadata> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../workers/terrainWorker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<TerrainWorkerOutput>) => {
+      if (e.data.error) {
+        reject(new Error(e.data.error));
+      } else {
+        const metadata = e.data.metadata!;
+        saveLocalTerrain({ metadata, grid: e.data.grid! });
+        resolve(metadata);
+      }
+      worker.terminate();
+    };
+    worker.onerror = (e) => {
+      reject(new Error("Worker error: " + e.message));
+      worker.terminate();
+    };
+    worker.postMessage(input);
   });
-  if (!response.ok) {
-    return extractError(response);
-  }
-  return (await response.json()) as T;
 }
 
 // ────────────────────────────────────────────
 // Terrain endpoints
 // ────────────────────────────────────────────
 
-/** Upload a DXF file and generate a DTM. */
 export async function uploadDXF(file: File, resolution?: number): Promise<DTMMetadata> {
-  const formData = new FormData();
-  formData.append("file", file);
-  const url = resolution 
-    ? `${baseUrl}/api/terrain/upload?resolution=${resolution}`
-    : `${baseUrl}/api/terrain/upload`;
-    
-  const response = await fetch(url, {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    return extractError(response);
-  }
-  return (await response.json()) as DTMMetadata;
+  const fileData = await file.arrayBuffer();
+  return runTerrainWorker({ fileData, filename: file.name, resolution: resolution || 1.0 });
 }
 
-/** Upload an STL file and generate a DTM. */
 export async function uploadSTL(file: File, resolution?: number): Promise<DTMMetadata> {
-  const formData = new FormData();
-  formData.append("file", file);
-  const url = resolution 
-    ? `${baseUrl}/api/terrain/upload-stl?resolution=${resolution}`
-    : `${baseUrl}/api/terrain/upload-stl`;
-
-  const response = await fetch(url, {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    return extractError(response);
-  }
-  return (await response.json()) as DTMMetadata;
+  const fileData = await file.arrayBuffer();
+  return runTerrainWorker({ fileData, filename: file.name, resolution: resolution || 1.0 });
 }
 
-/** Generate synthetic bowl-shaped terrain. */
-export async function generateSynthetic(
-  params: SyntheticTerrainRequest,
-): Promise<DTMMetadata> {
-  const body: Record<string, unknown> = {
-    size_x: params.size_x,
-    size_y: params.size_y,
-    depth: params.depth,
+export async function generateSynthetic(params: SyntheticTerrainRequest): Promise<DTMMetadata> {
+  // Can be synchronous because it's fast
+  const res = params.resolution || 2.0;
+  const result = generateSyntheticTerrain(params.size_x, params.size_y, params.depth, res);
+  saveLocalTerrain({ metadata: result.metadata, grid: result.grid });
+  return result.metadata;
+}
+
+export async function getTerrainGrid(terrainId: string): Promise<TerrainGridResponse> {
+  const terrain = getLocalTerrain(terrainId);
+  if (!terrain) {
+    throw new Error(`Terrain '${terrainId}' not found locally`);
+  }
+  return {
+    terrain_id: terrainId,
+    metadata: terrain.metadata,
+    grid: terrain.grid,
   };
-  if (params.resolution !== undefined) {
-    body.resolution = params.resolution;
-  }
-  return fetchJSON<DTMMetadata>("/api/terrain/synthetic", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-/** Retrieve terrain grid data by ID. */
-export async function getTerrainGrid(
-  terrainId: string,
-): Promise<TerrainGridResponse> {
-  return fetchJSON<TerrainGridResponse>(
-    `/api/terrain/${encodeURIComponent(terrainId)}/grid`,
-    { method: "GET" },
-  );
 }
 
 // ────────────────────────────────────────────
 // Analysis endpoints
 // ────────────────────────────────────────────
 
-/** Start Line-of-Sight analysis job. */
 export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
-  return fetchJSON<JobResponse>("/api/analysis/los", {
-    method: "POST",
-    body: JSON.stringify(req),
-  });
+  const terrain = getLocalTerrain(req.terrain_id);
+  if (!terrain) throw new Error("Terrain not loaded");
+
+  const radar = LOCAL_RADARS.find(r => r.model_id === req.radar_model_id);
+  if (!radar) throw new Error("Radar model not found");
+
+  const jobId = `job-${Math.random().toString(16).substring(2, 10)}`;
+  
+  jobStore.set(jobId, { job_id: jobId, status: "PENDING" });
+
+  const worker = new Worker(new URL('../workers/losWorker.ts', import.meta.url), { type: 'module' });
+  
+  const workerInput: LOSWorkerInput = {
+    grid: terrain.grid,
+    bounds: terrain.metadata.bounds,
+    resolution: terrain.metadata.resolution,
+    radar_position: [req.radar_position.x, req.radar_position.y, req.radar_position.z],
+    radar_config: radar
+  };
+
+  worker.onmessage = (e: MessageEvent<LOSWorkerOutput & {error?: string}>) => {
+    if (e.data.error) {
+      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error });
+    } else {
+      jobStore.set(jobId, {
+        job_id: jobId,
+        status: "COMPLETED",
+        result: e.data
+      });
+    }
+    worker.terminate();
+  };
+  
+  worker.onerror = (e) => {
+    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message });
+    worker.terminate();
+  };
+
+  worker.postMessage(workerInput);
+
+  return { job_id: jobId, status: "PENDING" };
 }
 
-/** Get status of an analysis job. */
 export async function getLOSJob(jobId: string): Promise<JobStatusResponse> {
-  return fetchJSON<JobStatusResponse>(`/api/analysis/jobs/${jobId}`, {
-    method: "GET",
-  });
+  const job = jobStore.get(jobId);
+  if (!job) throw new Error("Job not found");
+  return job;
 }
 
 // ────────────────────────────────────────────
 // Radar endpoints
 // ────────────────────────────────────────────
 
-/** List all available radar models. */
 export async function listRadars(): Promise<RadarConfig[]> {
-  return fetchJSON<RadarConfig[]>("/api/radars", { method: "GET" });
+  return LOCAL_RADARS;
 }
 
-/** Get a specific radar model configuration. */
 export async function getRadar(modelId: string): Promise<RadarConfig> {
-  return fetchJSON<RadarConfig>(
-    `/api/radars/${encodeURIComponent(modelId)}`,
-    { method: "GET" },
-  );
+  const radar = LOCAL_RADARS.find(r => r.model_id === modelId);
+  if (!radar) throw new Error("Radar not found");
+  return radar;
 }
 
 // ────────────────────────────────────────────
 // Export endpoints
 // ────────────────────────────────────────────
 
-/** Export analysis as PDF. Returns a Blob. */
-export async function exportPDF(req: LOSRequest): Promise<Blob> {
-  const response = await fetch(`${baseUrl}/api/export/pdf`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-  });
-  if (!response.ok) {
-    return extractError(response);
-  }
-  return response.blob();
+export async function exportPDF(_req: LOSRequest): Promise<Blob> {
+  // Not implemented locally yet. 
+  // TODO: Use jsPDF or similar in a real version.
+  throw new Error("PDF Export not implemented in WebApp version yet");
 }
 
-/** Export analysis data as CSV. Returns a Blob. */
-export async function exportCSV(req: LOSRequest): Promise<Blob> {
-  const response = await fetch(`${baseUrl}/api/export/data`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-  });
-  if (!response.ok) {
-    return extractError(response);
-  }
-  return response.blob();
+export async function exportCSV(_req: LOSRequest): Promise<Blob> {
+  throw new Error("CSV Export not implemented in WebApp version yet");
 }
