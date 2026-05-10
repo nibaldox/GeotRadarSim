@@ -212,7 +212,10 @@ export function TerrainViewer({
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
-      <Canvas camera={{ fov: 50, near: 0.1, far: 500000 }}>
+      <Canvas
+        camera={{ fov: 50, near: 0.1, far: 500000 }}
+        gl={{ preserveDrawingBuffer: true }}
+      >
         <Scene
           grid={grid}
           resolution={resolution}
