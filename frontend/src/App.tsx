@@ -9,6 +9,7 @@
 import { useState, useCallback, useRef } from "react";
 import { TerrainViewer } from "./components/TerrainViewer";
 import { RadarControls } from "./components/RadarControls";
+import { MultiRadarPanel } from "./components/MultiRadarPanel";
 import { AnalysisHistory } from "./components/AnalysisHistory";
 import { ExportPanel } from "./components/ExportPanel";
 import { useTerrainStore } from "./store/terrainStore";
@@ -161,6 +162,7 @@ function App() {
         </div>
 
         <RadarControls />
+        <MultiRadarPanel />
         <AnalysisHistory />
 
         <div className="glass-panel">

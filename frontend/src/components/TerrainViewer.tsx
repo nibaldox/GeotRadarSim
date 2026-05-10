@@ -92,23 +92,53 @@ function TerrainMesh({
   );
 }
 
-/** Radar marker sphere placed at the radar position */
-function RadarMarker() {
+/** All radar markers: current single + all deployed radars */
+function RadarMarkers() {
   const radarPosition = useAnalysisStore((s) => s.radarPosition);
+  const deployedRadars = useAnalysisStore((s) => s.deployedRadars);
   const metadata = useTerrainStore((s) => s.metadata);
 
-  if (!radarPosition || !metadata) return null;
-
+  if (!metadata) return null;
   const bounds = metadata.bounds;
-  const localX = radarPosition.x - bounds.min_x;
-  const localZ = bounds.min_y - radarPosition.y;
-  const localY = radarPosition.z - bounds.min_z;
+
+  const toLocal = (pos: { x: number; y: number; z: number }) => ({
+    lx: pos.x - bounds.min_x,
+    ly: pos.z - bounds.min_z,
+    lz: bounds.min_y - pos.y,
+  });
 
   return (
-    <mesh position={[localX, localY, localZ]}>
-      <sphereGeometry args={[2, 16, 16]} />
-      <meshStandardMaterial color="red" />
-    </mesh>
+    <>
+      {/* Current placement marker (white) */}
+      {radarPosition && (() => {
+        const { lx, ly, lz } = toLocal(radarPosition);
+        return (
+          <mesh position={[lx, ly, lz]}>
+            <sphereGeometry args={[3, 16, 16]} />
+            <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+          </mesh>
+        );
+      })()}
+
+      {/* Deployed radar markers (colored) */}
+      {deployedRadars.map((dr) => {
+        const { lx, ly, lz } = toLocal(dr.position);
+        return (
+          <group key={dr.id} position={[lx, ly, lz]}>
+            {/* Body sphere */}
+            <mesh>
+              <sphereGeometry args={[4, 16, 16]} />
+              <meshStandardMaterial color={dr.color} emissive={dr.color} emissiveIntensity={0.4} />
+            </mesh>
+            {/* Vertical antenna pole */}
+            <mesh position={[0, 6, 0]}>
+              <cylinderGeometry args={[0.5, 0.5, 12, 8]} />
+              <meshStandardMaterial color={dr.color} />
+            </mesh>
+          </group>
+        );
+      })}
+    </>
   );
 }
 
@@ -167,7 +197,7 @@ function Scene({ grid, resolution, showShadowOverlay, onTerrainClick }: TerrainM
         showShadowOverlay={showShadowOverlay}
         onTerrainClick={onTerrainClick}
       />
-      <RadarMarker />
+      <RadarMarkers />
       <OrbitControls ref={controlsRef} makeDefault />
       
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
