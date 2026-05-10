@@ -147,12 +147,37 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
 
   const worker = new Worker(new URL('../workers/losWorker.ts', import.meta.url), { type: 'module' });
   
+  const effectiveRadar: RadarConfig = { ...radar };
+  if (req.range_min_m !== undefined) effectiveRadar.min_range_m = req.range_min_m;
+  if (req.range_max_m !== undefined) effectiveRadar.max_range_m = req.range_max_m;
+  if (req.el_min_deg !== undefined) effectiveRadar.elevation_min_deg = req.el_min_deg;
+  if (req.el_max_deg !== undefined) effectiveRadar.elevation_max_deg = req.el_max_deg;
+  
+  if (req.az_center_deg !== undefined || req.az_width_deg !== undefined) {
+    const center = req.az_center_deg !== undefined ? req.az_center_deg : 0;
+    const width = req.az_width_deg !== undefined ? req.az_width_deg : radar.h_beam_width_deg;
+    const halfWidth = width / 2;
+    
+    let azStart = center - halfWidth;
+    let azEnd = center + halfWidth;
+    
+    // Normalize to [-180, 180] so the worker's logic works
+    while (azStart > 180) azStart -= 360;
+    while (azStart <= -180) azStart += 360;
+    
+    while (azEnd > 180) azEnd -= 360;
+    while (azEnd <= -180) azEnd += 360;
+    
+    effectiveRadar.azimuth_range_deg = [azStart, azEnd];
+    effectiveRadar.scan_pattern = "RAR"; // force RAR if azimuth is restricted
+  }
+
   const workerInput: LOSWorkerInput = {
     grid: terrain.grid,
     bounds: terrain.metadata.bounds,
     resolution: terrain.metadata.resolution,
     radar_position: [req.radar_position.x, req.radar_position.y, req.radar_position.z],
-    radar_config: radar
+    radar_config: effectiveRadar
   };
 
   worker.onmessage = (e: MessageEvent<LOSWorkerOutput & {error?: string}>) => {
