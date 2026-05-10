@@ -275,6 +275,7 @@ describe("listRadars", () => {
     const expected: RadarConfig[] = [
       {
         model_id: "groundprobe-ssr-fx",
+        min_range_m: 0,
         display_name: "GroundProbe SSR-FX",
         manufacturer: "GroundProbe",
         max_range_m: 850,
@@ -300,6 +301,7 @@ describe("getRadar", () => {
   it("GETs /api/radars/{model_id} and returns RadarConfig", async () => {
     const expected: RadarConfig = {
       model_id: "groundprobe-ssr-fx",
+      min_range_m: 0,
       display_name: "GroundProbe SSR-FX",
       manufacturer: "GroundProbe",
       max_range_m: 850,

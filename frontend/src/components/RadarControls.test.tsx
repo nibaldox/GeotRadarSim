@@ -25,6 +25,7 @@ beforeEach(() => {
 const radarConfigs: RadarConfig[] = [
   {
     model_id: "groundprobe-ssr-fx",
+    min_range_m: 0,
     display_name: "GroundProbe SSR-FX",
     manufacturer: "GroundProbe",
     max_range_m: 850,
@@ -37,6 +38,7 @@ const radarConfigs: RadarConfig[] = [
   },
   {
     model_id: "ibis-arcsar360",
+    min_range_m: 10,
     display_name: "IBIS-ArcSAR360",
     manufacturer: "IDS GeoRadar",
     max_range_m: 4000,

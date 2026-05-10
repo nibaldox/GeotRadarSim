@@ -143,7 +143,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
 
   const jobId = `job-${Math.random().toString(16).substring(2, 10)}`;
   
-  jobStore.set(jobId, { job_id: jobId, status: "PENDING" });
+  jobStore.set(jobId, { job_id: jobId, status: "PENDING", created_at: new Date().toISOString() });
 
   const worker = new Worker(new URL('../workers/losWorker.ts', import.meta.url), { type: 'module' });
   
@@ -157,19 +157,20 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
 
   worker.onmessage = (e: MessageEvent<LOSWorkerOutput & {error?: string}>) => {
     if (e.data.error) {
-      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error });
+      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
     } else {
       jobStore.set(jobId, {
         job_id: jobId,
         status: "COMPLETED",
-        result: e.data
+        result: e.data,
+        created_at: new Date().toISOString()
       });
     }
     worker.terminate();
   };
   
   worker.onerror = (e) => {
-    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message });
+    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message, created_at: new Date().toISOString() });
     worker.terminate();
   };
 

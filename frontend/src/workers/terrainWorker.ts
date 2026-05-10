@@ -84,21 +84,22 @@ function parseDXF(text: string): Array<[number, number, number]> {
   if (!dxf || !dxf.entities) return points;
   
   for (const entity of dxf.entities) {
-    if (entity.type === 'POINT' || entity.type === '3DFACE') {
-      if (entity.vertices) {
-        for (const v of entity.vertices) {
+    const ent = entity as any;
+    if (ent.type === 'POINT' || ent.type === '3DFACE') {
+      if (ent.vertices) {
+        for (const v of ent.vertices) {
           points.push([v.x, v.y, v.z || 0]);
         }
       }
-    } else if (entity.type === 'LINE') {
-      if (entity.vertices) {
-        for (const v of entity.vertices) {
+    } else if (ent.type === 'LINE') {
+      if (ent.vertices) {
+        for (const v of ent.vertices) {
           points.push([v.x, v.y, v.z || 0]);
         }
       }
-    } else if (entity.type === 'POLYLINE' || entity.type === 'LWPOLYLINE') {
-      if (entity.vertices) {
-        for (const v of entity.vertices) {
+    } else if (ent.type === 'POLYLINE' || ent.type === 'LWPOLYLINE') {
+      if (ent.vertices) {
+        for (const v of ent.vertices) {
           points.push([v.x, v.y, v.z || 0]);
         }
       }
@@ -175,7 +176,7 @@ function generateDTM(points: Array<[number, number, number]>, resolution: number
           const bin = bins.get(key);
           if (bin) {
             for (let i = 0; i < bin.length; i++) {
-              const p = bin[i];
+              const p = bin[i]!;
               const dSq = (p[0] - cx) * (p[0] - cx) + (p[1] - cy) * (p[1] - cy);
               
               if (dSq < closestDistSq) {
@@ -195,12 +196,12 @@ function generateDTM(points: Array<[number, number, number]>, resolution: number
       }
       
       if (sumWeight > 0) {
-        grid[r][c] = sumZ / sumWeight;
+        grid[r]![c] = sumZ / sumWeight;
       } else if (closestDistSq !== Infinity) {
         // Fallback to nearest neighbor
-        grid[r][c] = closestZ;
+        grid[r]![c] = closestZ;
       } else {
-        grid[r][c] = NaN; // Empty area, no points nearby
+        grid[r]![c] = NaN; // Empty area, no points nearby
       }
     }
   }

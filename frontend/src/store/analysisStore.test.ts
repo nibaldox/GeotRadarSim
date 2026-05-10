@@ -34,6 +34,7 @@ const sampleRadar: RadarConfig = {
   model_id: "groundprobe-ssr-fx",
   display_name: "GroundProbe SSR-FX",
   manufacturer: "GroundProbe",
+  min_range_m: 0,
   max_range_m: 850,
   h_beam_width_deg: 120,
   v_beam_width_deg: 30,

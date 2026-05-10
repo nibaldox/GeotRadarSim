@@ -155,7 +155,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
   //    Esto garantiza que Three.js suba la textura a la GPU en el próximo frame
   useEffect(() => {
     if (materialRef.current && qualityTexture) {
-      materialRef.current.uniforms.qualityTexture.value = qualityTexture;
+      (materialRef.current as any).uniforms.qualityTexture.value = qualityTexture;
       materialRef.current.needsUpdate = true;
     }
   }, [qualityTexture]);

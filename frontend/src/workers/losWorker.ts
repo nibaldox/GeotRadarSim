@@ -38,7 +38,7 @@ self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
 function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   const { grid, bounds, resolution, radar_position: [rx, ry, rz], radar_config } = input;
   const rows = grid.length;
-  const cols = grid[0].length;
+  const cols = grid[0]!.length;
   
   const minRange = radar_config.min_range_m || 0.0;
   const maxRange = radar_config.max_range_m;
@@ -76,7 +76,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       if (dist < minRange || dist > maxRange) continue;
       
       // Check elevation
-      const targetZ = grid[r][c];
+      const targetZ = grid[r]![c]!;
       const dz = targetZ - rz;
       const elevation = Math.atan2(dz, dist) * (180 / Math.PI);
       if (elevation < elMin || elevation > elMax) continue;
@@ -100,7 +100,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       
       // Raycast to check LOS
       if (dist < resolution) {
-        shadowGrid[r][c] = false;
+        shadowGrid[r]![c] = false;
         visibleCount++;
         continue;
       }
@@ -119,7 +119,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
         const c0 = Math.max(0, Math.min(cols - 1, Math.round((rayX - bounds.min_x) / resolution - 0.5)));
         const r0 = Math.max(0, Math.min(rows - 1, Math.round((rayY - bounds.min_y) / resolution - 0.5)));
         
-        const terrainAtSample = grid[r0][c0];
+        const terrainAtSample = grid[r0]![c0]!;
           
         if (terrainAtSample > rayZ) {
           shadowed = true;
@@ -127,7 +127,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
         }
       }
       
-      shadowGrid[r][c] = shadowed;
+      shadowGrid[r]![c] = shadowed;
       if (!shadowed) visibleCount++;
     }
   }
@@ -140,7 +140,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       const cy = bounds.min_y + resolution / 2 + r * resolution;
       
       for (let c = 0; c < cols; c++) {
-        if (!shadowGrid[r][c]) {
+        if (!shadowGrid[r]![c]) {
           const cx = bounds.min_x + resolution / 2 + c * resolution;
           
           coveragePolygon.push([cx, cy]);
@@ -150,10 +150,10 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
           let gradY = 0;
           
           if (c > 0 && c < cols - 1) {
-            gradX = (grid[r][c+1] - grid[r][c-1]) / (2 * resolution);
+            gradX = (grid[r]![c+1]! - grid[r]![c-1]!) / (2 * resolution);
           }
           if (r > 0 && r < rows - 1) {
-            gradY = (grid[r+1][c] - grid[r-1][c]) / (2 * resolution);
+            gradY = (grid[r+1]![c]! - grid[r-1]![c]!) / (2 * resolution);
           }
           
           const norm = Math.sqrt(gradX*gradX + gradY*gradY + 1.0);
@@ -163,7 +163,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
           
           const dx = cx - rx;
           const dy = cy - ry;
-          const dz = grid[r][c] - rz;
+          const dz = grid[r]![c]! - rz;
           const dist3d = Math.sqrt(dx*dx + dy*dy + dz*dz) || 0.1;
           
           const vx = dx / dist3d;
@@ -176,7 +176,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
           const dist = Math.sqrt(dx*dx + dy*dy);
           const distFactor = Math.sqrt(Math.max(0, 1.0 - (dist / maxRange)));
           
-          qualityGrid[r][c] = dotProduct * distFactor;
+          qualityGrid[r]![c] = dotProduct * distFactor;
         }
       }
     }
@@ -193,23 +193,24 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      if (shadowGrid[r][c] && !visited[r][c]) {
+      if (shadowGrid[r]![c] && !visited[r]![c]) {
         zoneId++;
         let count = 0;
         const queue: Array<[number, number]> = [[r, c]];
         let qHead = 0;
-        visited[r][c] = true;
+        visited[r]![c] = true;
         
         while (qHead < queue.length) {
-          const [cr, cc] = queue[qHead++];
+          const [cr, cc] = queue[qHead++]!;
           count++;
           
-          const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-          for (const [dr, dc] of neighbors) {
+          const neighbors = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+          for (let i = 0; i < neighbors.length; i++) {
+            const [dr, dc] = neighbors[i]!;
             const nr = cr + dr;
             const nc = cc + dc;
-            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !visited[nr][nc] && shadowGrid[nr][nc]) {
-              visited[nr][nc] = true;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !visited[nr]![nc] && shadowGrid[nr]![nc]) {
+              visited[nr]![nc] = true;
               queue.push([nr, nc]);
             }
           }

@@ -1,4 +1,4 @@
-import type { DTMMetadata, TerrainGridResponse } from "../types/api";
+import type { DTMMetadata } from "../types/api";
 
 export interface LocalTerrain {
   metadata: DTMMetadata;
