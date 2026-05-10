@@ -1,6 +1,7 @@
 """Terrain API endpoints — upload DXF/STL, generate synthetic terrain, retrieve grid."""
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +23,7 @@ class SyntheticTerrainRequest(BaseModel):
 
 
 @router.post("/upload")
-async def upload_terrain(file: UploadFile = File(...)):
+async def upload_terrain(resolution: float = 1.0, file: UploadFile = File(...)):
     """Upload a DXF file and generate a DTM."""
     if not file.filename:
         raise HTTPException(status_code=422, detail="No filename provided")
@@ -37,21 +38,21 @@ async def upload_terrain(file: UploadFile = File(...)):
     tmp.close()
 
     try:
-        points = parse_dxf(tmp.name)
+        points = await run_in_threadpool(parse_dxf, tmp.name)
     except DXFParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     finally:
         os.unlink(tmp.name)
 
     # Generate DTM from points
-    dtm_result = generate_dtm(points)
+    dtm_result = await run_in_threadpool(generate_dtm, points, resolution=resolution)
     terrain_id = store_terrain(dtm_result)
 
     return dtm_result.metadata.model_dump()
 
 
 @router.post("/upload-stl")
-async def upload_stl_terrain(file: UploadFile = File(...)):
+async def upload_stl_terrain(resolution: float = 1.0, file: UploadFile = File(...)):
     """Upload an STL file and generate a DTM."""
     if not file.filename:
         raise HTTPException(status_code=422, detail="No filename provided")
@@ -64,13 +65,8 @@ async def upload_stl_terrain(file: UploadFile = File(...)):
     tmp.write(contents)
     tmp.close()
 
-    # Use larger default resolution for STL (typically large mine surfaces)
-    # User can override via query param
-    import contextlib
-    resolution = 5.0  # Default 5m for STL — good balance of detail vs performance
-
     try:
-        dtm_result = stl_to_dtm(tmp.name, resolution=resolution)
+        dtm_result = await run_in_threadpool(stl_to_dtm, tmp.name, resolution=resolution)
     except STLParseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     finally:
@@ -82,7 +78,7 @@ async def upload_stl_terrain(file: UploadFile = File(...)):
 
 
 @router.post("/synthetic")
-async def create_synthetic_terrain(req: SyntheticTerrainRequest):
+def create_synthetic_terrain(req: SyntheticTerrainRequest):
     """Generate synthetic bowl-shaped terrain."""
     dtm_result = generate_synthetic_terrain(
         size_x=req.size_x,
@@ -96,7 +92,7 @@ async def create_synthetic_terrain(req: SyntheticTerrainRequest):
 
 
 @router.get("/{terrain_id}/grid")
-async def get_terrain_grid(terrain_id: str):
+def get_terrain_grid(terrain_id: str):
     """Retrieve terrain grid data."""
     dtm = get_terrain(terrain_id)
     if dtm is None:

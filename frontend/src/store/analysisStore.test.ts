@@ -12,9 +12,10 @@ vi.mock("../services/api", () => ({
   runLOSAnalysis: vi.fn(),
   listRadars: vi.fn(),
   getRadar: vi.fn(),
+  getLOSJob: vi.fn(),
 }));
 
-import { runLOSAnalysis, listRadars } from "../services/api";
+import { runLOSAnalysis, listRadars, getLOSJob } from "../services/api";
 import type { RadarConfig, LOSResponse } from "../types/api";
 
 beforeEach(() => {
@@ -132,19 +133,26 @@ describe("useAnalysisStore — setRadarPosition", () => {
 // ────────────────────────────────────────────
 describe("useAnalysisStore — runAnalysis", () => {
   it("runs LOS analysis and stores result", async () => {
-    vi.mocked(runLOSAnalysis).mockResolvedValueOnce(sampleLOS);
+    vi.mocked(runLOSAnalysis).mockResolvedValueOnce({ job_id: "job-1", status: "PENDING" });
+    vi.mocked(getLOSJob).mockResolvedValueOnce({ job_id: "job-1", status: "COMPLETED", created_at: "now", result: sampleLOS });
     useAnalysisStore.setState({
       selectedRadarId: "groundprobe-ssr-fx",
       radarPosition: { x: 100, y: 100, z: 5 },
     });
 
-    await useAnalysisStore.getState().runAnalysis("terrain-1");
+    vi.useFakeTimers();
+    useAnalysisStore.getState().runAnalysis("terrain-1");
+    // Advance timers so setTimeout fires
+    vi.advanceTimersByTime(1100);
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
 
     expect(runLOSAnalysis).toHaveBeenCalledWith({
       terrain_id: "terrain-1",
       radar_position: { x: 100, y: 100, z: 5 },
       radar_model_id: "groundprobe-ssr-fx",
     });
+    expect(getLOSJob).toHaveBeenCalledWith("job-1");
 
     const state = useAnalysisStore.getState();
     expect(state.losResult).toEqual(sampleLOS);

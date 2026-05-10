@@ -27,6 +27,7 @@ export interface RadarConfig {
   model_id: string;
   display_name: string;
   manufacturer: string;
+  min_range_m: number;
   max_range_m: number;
   h_beam_width_deg: number;
   v_beam_width_deg: number;
@@ -47,6 +48,7 @@ export interface LOSResponse {
   coverage_pct: number;
   visible_area_m2: number;
   shadow_zones: ShadowZone[];
+  quality_grid?: number[][];
 }
 
 export interface TerrainGridResponse {
@@ -66,4 +68,24 @@ export interface LOSRequest {
   terrain_id: string;
   radar_position: Point3D;
   radar_model_id: string;
+  range_min_m?: number;
+  range_max_m?: number;
+  el_min_deg?: number;
+  el_max_deg?: number;
+  az_center_deg?: number;
+  az_width_deg?: number;
 }
+
+export interface JobResponse {
+  job_id: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+}
+
+export interface JobStatusResponse {
+  job_id: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  created_at: string;
+  result?: LOSResponse;
+  error?: string;
+}
+

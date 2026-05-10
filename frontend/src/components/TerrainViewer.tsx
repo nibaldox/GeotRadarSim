@@ -6,11 +6,11 @@
  * Uses OrbitControls for camera manipulation.
  */
 
-import { useRef, useMemo, useCallback } from "react";
-import { Canvas, useThree, type ThreeEvent } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { useRef, useMemo, useEffect } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
+import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
-import { buildVertexData, getTerrainExtent } from "../utils/terrain";
+import { getTerrainExtent, getMinElevation } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
 import { ShadowOverlay } from "./ShadowOverlay";
@@ -29,44 +29,56 @@ function TerrainMesh({
   onTerrainClick,
 }: TerrainMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-
-  const { positions, colors, indices } = useMemo(
-    () => buildVertexData(grid, 0, 0, resolution),
-    [grid, resolution],
-  );
+  const minElev = useMemo(() => getMinElevation(grid), [grid]);
 
   const geometry = useMemo(() => {
+    const rows = grid.length;
+    const cols = grid[0]?.length ?? 0;
+    const vertexCount = rows * cols;
+
+    const pos = new Float32Array(vertexCount * 3);
+    let pIdx = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const val = grid[r]![c]!;
+        pos[pIdx++] = c * resolution;
+        pos[pIdx++] = (isNaN(val) ? 0 : val) - minElev;
+        pos[pIdx++] = -(r * resolution);
+      }
+    }
+
+    const quadCount = (rows - 1) * (cols - 1);
+    const ind = new Uint32Array(quadCount * 6);
+    let iIdx = 0;
+    for (let r = 0; r < rows - 1; r++) {
+      for (let c = 0; c < cols - 1; c++) {
+        const tl = r * cols + c;
+        const tr = tl + 1;
+        const bl = tl + cols;
+        const br = bl + 1;
+        ind[iIdx++] = tl; ind[iIdx++] = tr; ind[iIdx++] = bl;
+        ind[iIdx++] = tr; ind[iIdx++] = br; ind[iIdx++] = bl;
+      }
+    }
+
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(new THREE.BufferAttribute(ind, 1));
     geo.computeVertexNormals();
     return geo;
-  }, [positions, colors, indices]);
-
-  const handleClick = useCallback(
-    (event: ThreeEvent<MouseEvent>) => {
-      event.stopPropagation();
-      if (!onTerrainClick) return;
-
-      const point = event.point;
-      onTerrainClick({
-        x: point.x,
-        y: point.y,
-        z: point.z,
-      });
-    },
-    [onTerrainClick],
-  );
+  }, [grid, resolution, minElev]);
 
   return (
     <group>
       <mesh
         ref={meshRef}
         geometry={geometry}
-        onClick={handleClick}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onTerrainClick) onTerrainClick(e.point);
+        }}
       >
-        <meshStandardMaterial color="#8a8a7a" side={THREE.DoubleSide} flatShading />
+        <meshStandardMaterial color="#cccccc" side={THREE.DoubleSide} />
       </mesh>
       {showShadowOverlay && <ShadowOverlay grid={grid} resolution={resolution} />}
     </group>
@@ -76,11 +88,17 @@ function TerrainMesh({
 /** Radar marker sphere placed at the radar position */
 function RadarMarker() {
   const radarPosition = useAnalysisStore((s) => s.radarPosition);
+  const metadata = useTerrainStore((s) => s.metadata);
 
-  if (!radarPosition) return null;
+  if (!radarPosition || !metadata) return null;
+
+  const bounds = metadata.bounds;
+  const localX = radarPosition.x - bounds.min_x;
+  const localZ = bounds.min_y - radarPosition.y;
+  const localY = radarPosition.z - bounds.min_z;
 
   return (
-    <mesh position={[radarPosition.x, radarPosition.y, radarPosition.z]}>
+    <mesh position={[localX, localY, localZ]}>
       <sphereGeometry args={[2, 16, 16]} />
       <meshStandardMaterial color="red" />
     </mesh>
@@ -91,23 +109,51 @@ function RadarMarker() {
 function Scene({ grid, resolution, showShadowOverlay, onTerrainClick }: TerrainMeshProps) {
   const { camera } = useThree();
 
+  const controlsRef = useRef<any>(null);
+ 
   // Auto-fit camera to terrain extent
-  useMemo(() => {
+  useEffect(() => {
+    if (!grid || grid.length === 0 || !grid[0]) return;
+    
     const extent = getTerrainExtent(grid, resolution);
-    // Position camera at an angle showing the full terrain
     const maxDim = Math.max(extent.width, extent.depth);
+    
+    // Si los datos son inválidos, no movemos la cámara
+    if (isNaN(maxDim) || maxDim <= 0) return;
+
+    const targetX = extent.centerX;
+    const targetY = extent.height / 2;
+    const targetZ = extent.centerZ;
+
+    // Posición de la cámara: 
+    // Elevada y a una distancia proporcional al tamaño del terreno
     camera.position.set(
-      extent.centerX + maxDim * 0.3,
-      maxDim * 0.6,
-      extent.centerZ + maxDim * 0.5,
+      targetX + maxDim * 1.2,
+      maxDim * 1.0,
+      targetZ + maxDim * 1.2
     );
-    camera.lookAt(extent.centerX, extent.height / 2, extent.centerZ);
-  }, [grid, resolution, camera]);
+    
+    if (controlsRef.current) {
+      controlsRef.current.target.set(targetX, targetY, targetZ);
+      controlsRef.current.update();
+    }
+    
+    camera.lookAt(targetX, targetY, targetZ);
+    camera.far = Math.max(10000, maxDim * 10);
+    camera.updateProjectionMatrix();
+  }, [grid, resolution]);
 
   return (
     <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[100, 200, 100]} intensity={0.8} />
+      <color attach="background" args={["#111111"]} />
+      {/* Luz ambiental baja para que las sombras sean visibles */}
+      <ambientLight intensity={0.25} />
+      {/* Luz principal en ángulo rasante: revela el relieve */}
+      <directionalLight position={[1, 0.6, 0.5]} intensity={1.2} />
+      {/* Luz de relleno desde el lado opuesto para evitar sombras totalmente negras */}
+      <directionalLight position={[-1, 0.4, -0.5]} intensity={0.4} />
+      <gridHelper args={[10000, 100, "#333", "#222"]} position={[0, -1, 0]} />
+      
       <TerrainMesh
         grid={grid}
         resolution={resolution}
@@ -115,7 +161,15 @@ function Scene({ grid, resolution, showShadowOverlay, onTerrainClick }: TerrainM
         onTerrainClick={onTerrainClick}
       />
       <RadarMarker />
-      <OrbitControls makeDefault />
+      <OrbitControls ref={controlsRef} makeDefault />
+      
+      <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
+        <GizmoViewport
+          axisColors={['#ff3653', '#0adb21', '#2c8fdf']}
+          labelColor="white"
+          labels={['E', 'Y', 'N']}
+        />
+      </GizmoHelper>
     </>
   );
 }
@@ -151,7 +205,7 @@ export function TerrainViewer({
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
-      <Canvas camera={{ fov: 50, near: 0.1, far: 10000 }}>
+      <Canvas camera={{ fov: 50, near: 0.1, far: 500000 }}>
         <Scene
           grid={grid}
           resolution={resolution}

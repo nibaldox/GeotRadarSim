@@ -14,13 +14,14 @@ export function elevationToColor(
   minElevation: number,
   maxElevation: number,
 ): [number, number, number] {
-  if (minElevation >= maxElevation) {
-    throw new Error(
-      `Invalid elevation range: min (${minElevation}) >= max (${maxElevation})`,
-    );
+  // Terreno plano o datos inválidos → gris neutro, sin crashear
+  if (minElevation >= maxElevation || isNaN(elevation)) {
+    return [0.7, 0.7, 0.7];
   }
 
-  const t = (elevation - minElevation) / (maxElevation - minElevation);
+  const t = Math.max(0, Math.min(1,
+    (elevation - minElevation) / (maxElevation - minElevation)
+  ));
 
   // Blue (low) → Green (mid) → Red (high)
   if (t < 0.5) {
@@ -38,10 +39,10 @@ export function getMinElevation(grid: number[][]): number {
   let min = Infinity;
   for (const row of grid) {
     for (const val of row) {
-      if (val < min) min = val;
+      if (val !== null && !isNaN(val) && val < min) min = val;
     }
   }
-  return min;
+  return min === Infinity ? 0 : min;
 }
 
 /**
@@ -51,10 +52,10 @@ export function getMaxElevation(grid: number[][]): number {
   let max = -Infinity;
   for (const row of grid) {
     for (const val of row) {
-      if (val > max) max = val;
+      if (val !== null && !isNaN(val) && val > max) max = val;
     }
   }
-  return max;
+  return max === -Infinity ? 100 : max;
 }
 
 /**
@@ -76,7 +77,7 @@ export function normalizeGrid(
     for (let c = 0; c < cols; c++) {
       positions[idx++] = offsetX + c * resolution;
       positions[idx++] = grid[r]![c]!;
-      positions[idx++] = offsetZ + r * resolution;
+      positions[idx++] = offsetZ - r * resolution;
     }
   }
 
@@ -111,9 +112,10 @@ export function buildVertexData(
   let posIdx = 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
+      const val = grid[r]![c]!;
       positions[posIdx++] = offsetX + c * resolution;
-      positions[posIdx++] = grid[r]![c]! - minElev; // normalized Y
-      positions[posIdx++] = offsetZ + r * resolution;
+      positions[posIdx++] = (isNaN(val) ? 0 : val) - minElev; // normalized Y
+      positions[posIdx++] = offsetZ - r * resolution;
     }
   }
 
@@ -140,15 +142,15 @@ export function buildVertexData(
       const bottomLeft = topLeft + cols;
       const bottomRight = bottomLeft + 1;
 
-      // Triangle 1: topLeft → bottomLeft → topRight
+      // Triangle 1: topLeft → topRight → bottomLeft
       indices[iIdx++] = topLeft;
-      indices[iIdx++] = bottomLeft;
       indices[iIdx++] = topRight;
+      indices[iIdx++] = bottomLeft;
 
-      // Triangle 2: topRight → bottomLeft → bottomRight
+      // Triangle 2: topRight → bottomRight → bottomLeft
       indices[iIdx++] = topRight;
-      indices[iIdx++] = bottomLeft;
       indices[iIdx++] = bottomRight;
+      indices[iIdx++] = bottomLeft;
     }
   }
 
@@ -173,6 +175,6 @@ export function getTerrainExtent(
     depth: rows * resolution,
     height: maxElev - minElev,
     centerX: (cols * resolution) / 2,
-    centerZ: (rows * resolution) / 2,
+    centerZ: -(rows * resolution) / 2,
   };
 }

@@ -9,9 +9,10 @@ import type {
   DTMMetadata,
   TerrainGridResponse,
   RadarConfig,
-  LOSResponse,
   SyntheticTerrainRequest,
   LOSRequest,
+  JobResponse,
+  JobStatusResponse,
 } from "../types/api";
 
 let baseUrl = "http://localhost:8000";
@@ -61,10 +62,14 @@ async function fetchJSON<T>(
 // ────────────────────────────────────────────
 
 /** Upload a DXF file and generate a DTM. */
-export async function uploadDXF(file: File): Promise<DTMMetadata> {
+export async function uploadDXF(file: File, resolution?: number): Promise<DTMMetadata> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${baseUrl}/api/terrain/upload`, {
+  const url = resolution 
+    ? `${baseUrl}/api/terrain/upload?resolution=${resolution}`
+    : `${baseUrl}/api/terrain/upload`;
+    
+  const response = await fetch(url, {
     method: "POST",
     body: formData,
   });
@@ -75,10 +80,14 @@ export async function uploadDXF(file: File): Promise<DTMMetadata> {
 }
 
 /** Upload an STL file and generate a DTM. */
-export async function uploadSTL(file: File): Promise<DTMMetadata> {
+export async function uploadSTL(file: File, resolution?: number): Promise<DTMMetadata> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${baseUrl}/api/terrain/upload-stl`, {
+  const url = resolution 
+    ? `${baseUrl}/api/terrain/upload-stl?resolution=${resolution}`
+    : `${baseUrl}/api/terrain/upload-stl`;
+
+  const response = await fetch(url, {
     method: "POST",
     body: formData,
   });
@@ -120,11 +129,18 @@ export async function getTerrainGrid(
 // Analysis endpoints
 // ────────────────────────────────────────────
 
-/** Run Line-of-Sight analysis. */
-export async function runLOSAnalysis(req: LOSRequest): Promise<LOSResponse> {
-  return fetchJSON<LOSResponse>("/api/analysis/los", {
+/** Start Line-of-Sight analysis job. */
+export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
+  return fetchJSON<JobResponse>("/api/analysis/los", {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+/** Get status of an analysis job. */
+export async function getLOSJob(jobId: string): Promise<JobStatusResponse> {
+  return fetchJSON<JobStatusResponse>(`/api/analysis/jobs/${jobId}`, {
+    method: "GET",
   });
 }
 

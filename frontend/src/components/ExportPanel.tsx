@@ -58,68 +58,46 @@ export function ExportPanel() {
   };
 
   return (
-    <div style={{
-      padding: "12px",
-      backgroundColor: "#1e1e2e",
-      borderRadius: "8px",
-      color: "#e0e0e0",
-      fontSize: "14px",
-    }}>
-      <h3 style={{ margin: "0 0 8px 0", color: "#fff" }}>Export</h3>
+    <div className="glass-panel">
+      <h3>Export</h3>
 
       {hasAnalysis ? (
-        <div style={{ marginBottom: "8px", fontSize: "12px", color: "#aaa" }}>
-          Coverage: {losResult!.coverage_pct.toFixed(1)}%
-          <br />
-          Visible area: {losResult!.visible_area_m2.toFixed(0)} m²
-          <br />
-          Shadow zones: {losResult!.shadow_zones.length}
+        <div className="text-sm" style={{ marginBottom: "12px" }}>
+          <div><span className="text-value">Coverage:</span> {losResult!.coverage_pct.toFixed(1)}%</div>
+          <div><span className="text-value">Visible area:</span> {losResult!.visible_area_m2.toFixed(0)} m²</div>
+          <div><span className="text-value">Shadow zones:</span> {losResult!.shadow_zones.length}</div>
         </div>
       ) : (
-        <p style={{ fontSize: "12px", color: "#888", margin: "0 0 8px 0" }}>
+        <p className="text-sm" style={{ marginBottom: "12px", margin: "0 0 12px 0" }}>
           No analysis data. Run LOS analysis first.
         </p>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      <div className="flex-col">
         <button
           disabled={!hasAnalysis}
           onClick={() => void handleExportPDF()}
-          style={buttonStyle(!hasAnalysis)}
+          className="btn-secondary"
         >
           📄 PDF Report
         </button>
         <button
           disabled={!hasAnalysis}
           onClick={() => void handleExportCSV()}
-          style={buttonStyle(!hasAnalysis)}
+          className="btn-secondary"
         >
           📊 CSV Data
         </button>
         <button
           disabled={!hasAnalysis}
           onClick={handleExportImage}
-          style={buttonStyle(!hasAnalysis)}
+          className="btn-secondary"
         >
           🖼 Image (PNG)
         </button>
       </div>
     </div>
   );
-}
-
-function buttonStyle(disabled: boolean): React.CSSProperties {
-  return {
-    padding: "8px 12px",
-    borderRadius: "4px",
-    border: "none",
-    cursor: disabled ? "not-allowed" : "pointer",
-    backgroundColor: disabled ? "#333" : "#4a9eff",
-    color: disabled ? "#666" : "#fff",
-    fontSize: "13px",
-    fontWeight: "bold",
-    textAlign: "left",
-  };
 }
 
 function downloadBlob(blob: Blob, filename: string): void {

@@ -23,24 +23,28 @@ export interface TerrainState {
   grid: number[][] | null;
   loading: boolean;
   error: string | null;
+  preferredResolution: number;
 
   generateSynthetic: (params: SyntheticTerrainRequest) => Promise<void>;
   loadGrid: (terrainId: string) => Promise<void>;
   uploadDXF: (file: File) => Promise<void>;
   uploadSTL: (file: File) => Promise<void>;
+  setPreferredResolution: (res: number) => void;
   clearError: () => void;
 }
 
-export const useTerrainStore = create<TerrainState>((set) => ({
+export const useTerrainStore = create<TerrainState>((set, get) => ({
   metadata: null,
   grid: null,
   loading: false,
   error: null,
+  preferredResolution: 1.0,
 
   generateSynthetic: async (params) => {
     set({ loading: true, error: null });
     try {
-      const metadata = await apiGenerateSynthetic(params);
+      const { preferredResolution } = get();
+      const metadata = await apiGenerateSynthetic({ ...params, resolution: preferredResolution });
       set({ metadata, loading: false });
     } catch (err) {
       set({
@@ -66,7 +70,8 @@ export const useTerrainStore = create<TerrainState>((set) => ({
   uploadDXF: async (file) => {
     set({ loading: true, error: null });
     try {
-      const metadata = await apiUploadDXF(file);
+      const { preferredResolution } = get();
+      const metadata = await apiUploadDXF(file, preferredResolution);
       set({ metadata, loading: false });
     } catch (err) {
       set({
@@ -79,7 +84,8 @@ export const useTerrainStore = create<TerrainState>((set) => ({
   uploadSTL: async (file) => {
     set({ loading: true, error: null });
     try {
-      const metadata = await apiUploadSTL(file);
+      const { preferredResolution } = get();
+      const metadata = await apiUploadSTL(file, preferredResolution);
       set({ metadata, loading: false });
     } catch (err) {
       set({
@@ -90,4 +96,5 @@ export const useTerrainStore = create<TerrainState>((set) => ({
   },
 
   clearError: () => set({ error: null }),
+  setPreferredResolution: (res) => set({ preferredResolution: res }),
 }));

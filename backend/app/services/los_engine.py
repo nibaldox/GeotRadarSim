@@ -8,6 +8,8 @@ Uses NumPy vectorized operations for performance.
 import math
 from dataclasses import dataclass, field
 
+import os
+from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 
 from app.models.domain import RadarConfig
@@ -22,6 +24,67 @@ class LOSResult:
     coverage_pct: float
     visible_area_m2: float
     shadow_zones: list[dict] = field(default_factory=list)
+    quality_grid: list[list[float]] | None = None
+
+
+def _check_cell_los_worker(
+    chunk_indices: np.ndarray,
+    grid: np.ndarray,
+    rx: float, ry: float, rz: float,
+    xx: np.ndarray, yy: np.ndarray,
+    dist: np.ndarray,
+    bounds_min_x: float, bounds_min_y: float,
+    res: float,
+    rows: int, cols: int
+) -> list[tuple[int, int, bool]]:
+    """Worker function to process a chunk of cells in parallel."""
+    results = []
+    for idx in chunk_indices:
+        r, c = idx[0], idx[1]
+        if dist[r, c] < res:
+            results.append((r, c, False))
+            continue
+
+        target_z = grid[r, c]
+        cell_x = xx[r, c]
+        cell_y = yy[r, c]
+        cell_dist = dist[r, c]
+
+        # Sample points along the ray - increase density to 2x resolution
+        n_samples = max(2, int(cell_dist / (res * 0.5)))
+        t_values = np.linspace(0, 1, n_samples, endpoint=False)[1:]
+ 
+        ray_x = rx + t_values * (cell_x - rx)
+        ray_y = ry + t_values * (cell_y - ry)
+        ray_z = rz + t_values * (target_z - rz)
+ 
+        col_f = (ray_x - bounds_min_x) / res - 0.5
+        row_f = (ray_y - bounds_min_y) / res - 0.5
+ 
+        c0 = np.floor(col_f).astype(int).clip(0, cols - 1)
+        r0 = np.floor(row_f).astype(int).clip(0, rows - 1)
+        c1 = (c0 + 1).clip(0, cols - 1)
+        r1 = (r0 + 1).clip(0, rows - 1)
+ 
+        fc = col_f - np.floor(col_f)
+        fr = row_f - np.floor(row_f)
+ 
+        z00 = grid[r0, c0]
+        z01 = grid[r0, c1]
+        z10 = grid[r1, c0]
+        z11 = grid[r1, c1]
+ 
+        terrain_at_samples = (
+            z00 * (1 - fc) * (1 - fr) +
+            z01 * fc * (1 - fr) +
+            z10 * (1 - fc) * fr +
+            z11 * fc * fr
+        )
+ 
+        is_shadowed = np.any(terrain_at_samples > ray_z)
+        results.append((r, c, bool(is_shadowed)))
+    
+    return results
 
 
 def compute_los(
@@ -49,6 +112,7 @@ def compute_los(
     rows, cols = grid.shape
 
     rx, ry, rz = radar_position
+    min_range = getattr(radar_config, "min_range_m", 0.0)
     max_range = radar_config.max_range_m
 
     # Build coordinate arrays for each grid cell
@@ -64,8 +128,13 @@ def compute_los(
     # Angular check: compute azimuth angle of each cell relative to radar
     azimuth = np.degrees(np.arctan2(dx, dy))  # 0=North, clockwise
 
+    # Elevation angle check
+    dz = grid - rz
+    elevation = np.degrees(np.arctan2(dz, dist))
+
     # Determine which cells are within range and angular sector
-    in_range = dist <= max_range
+    in_range = (dist >= min_range) & (dist <= max_range)
+    in_el_sector = (elevation >= radar_config.elevation_min_deg) & (elevation <= radar_config.elevation_max_deg)
 
     if radar_config.scan_pattern == "SAR360" or radar_config.azimuth_range_deg is None:
         in_sector = np.ones((rows, cols), dtype=bool)
@@ -80,51 +149,33 @@ def compute_los(
             # Sector wraps around ±180
             in_sector = (azimuth >= az_start) | (azimuth <= az_end)
 
-    # Cells to analyze: within range AND within sector
-    analyzable = in_range & in_sector
+    # Cells to analyze: within range AND horizontal sector AND vertical sector
+    analyzable = in_range & in_sector & in_el_sector
 
-    # LOS ray-casting: for each analyzable cell, check if terrain blocks the ray
-    shadow = np.ones((rows, cols), dtype=bool)  # Default: shadowed
-
-    # Get analyzable cell indices
+    # Parallel LOS ray-casting
+    shadow = np.ones((rows, cols), dtype=bool)
     analyzable_indices = np.argwhere(analyzable)
-
-    for idx in analyzable_indices:
-        r, c = idx[0], idx[1]
-        if dist[r, c] < res:
-            # Cell is at radar position — visible
-            shadow[r, c] = False
-            continue
-
-        target_z = grid[r, c]
-        cell_x = xx[r, c]
-        cell_y = yy[r, c]
-        cell_dist = dist[r, c]
-
-        # Sample points along the ray
-        n_samples = max(2, int(cell_dist / res))
-        t_values = np.linspace(0, 1, n_samples, endpoint=False)[1:]  # Skip start point
-
-        ray_x = rx + t_values * (cell_x - rx)
-        ray_y = ry + t_values * (cell_y - ry)
-
-        # Elevation of the ray at each sample point
-        ray_z = rz + t_values * (target_z - rz)
-
-        # Get terrain elevation at each sample point (bilinear lookup)
-        col_f = (ray_x - bounds.min_x) / res - 0.5
-        row_f = (ray_y - bounds.min_y) / res - 0.5
-
-        col_i = np.clip(np.round(col_f).astype(int), 0, cols - 1)
-        row_i = np.clip(np.round(row_f).astype(int), 0, rows - 1)
-
-        terrain_at_samples = grid[row_i, col_i]
-
-        # If any terrain point is above the ray, the target is shadowed
-        if np.any(terrain_at_samples > ray_z):
-            shadow[r, c] = True
-        else:
-            shadow[r, c] = False
+    
+    if len(analyzable_indices) > 0:
+        # Use ProcessPoolExecutor for multi-core processing
+        num_workers = os.cpu_count() or 1
+        # Divide work into chunks
+        chunks = np.array_split(analyzable_indices, num_workers * 2)
+        
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = [
+                executor.submit(
+                    _check_cell_los_worker,
+                    chunk, grid, rx, ry, rz, xx, yy, dist,
+                    bounds.min_x, bounds.min_y, res, rows, cols
+                )
+                for chunk in chunks if len(chunk) > 0
+            ]
+            
+            for future in futures:
+                chunk_results = future.result()
+                for r, c, is_shadowed in chunk_results:
+                    shadow[r, c] = is_shadowed
 
     # Cells not analyzable are out of range — mark as shadowed
     # (already True by default)
@@ -153,12 +204,49 @@ def compute_los(
     shadow_list = shadow.tolist()
     shadow_zones = group_shadow_zones(shadow_list)
 
+    # Compute quality grid (only for non-shadowed areas)
+    quality = np.zeros((rows, cols), dtype=float)
+    visible_mask = ~shadow & analyzable
+    
+    if visible_mask.any():
+        # Calculate surface normals (simplified central differences)
+        # Gradient in X (cols) and Y (rows)
+        grad_y, grad_x = np.gradient(grid, res)
+        # Surface normal unit vectors: n = (-grad_x, -grad_y, 1) / norm
+        norm = np.sqrt(grad_x**2 + grad_y**2 + 1.0)
+        nx = -grad_x / norm
+        ny = -grad_y / norm
+        nz = 1.0 / norm
+        
+        # Unit vectors from radar to each visible cell
+        # Vector V = (dx, dy, dz)
+        dz = grid - rz
+        # dist is horizontal distance, let's get total 3D distance
+        dist3d = np.sqrt(dx**2 + dy**2 + dz**2)
+        dist3d = np.where(dist3d < 0.1, 0.1, dist3d) # Avoid division by zero
+        vx = dx / dist3d
+        vy = dy / dist3d
+        vz = dz / dist3d
+        
+        # Incidence angle cosine: dot product between surface normal and inverse radar ray
+        # dot = (-vx*nx) + (-vy*ny) + (-vz*nz)
+        dot_product = -(vx * nx + vy * ny + vz * nz)
+        dot_product = np.clip(dot_product, 0.0, 1.0)
+        
+        # Distance decay factor (1.0 at radar, 0.0 at max_range)
+        # Using a softer decay (1 - R/Rmax)^0.5 for modern long-range radars
+        dist_factor = (1.0 - (dist / max_range)).clip(0, 1) ** 0.5
+        
+        # Final quality score
+        quality[visible_mask] = dot_product[visible_mask] * dist_factor[visible_mask]
+
     return LOSResult(
         shadow_grid=shadow_list,
         coverage_polygon=coverage_polygon,
         coverage_pct=round(coverage_pct, 2),
         visible_area_m2=round(visible_area_m2, 2),
         shadow_zones=shadow_zones,
+        quality_grid=quality.tolist(),
     )
 
 

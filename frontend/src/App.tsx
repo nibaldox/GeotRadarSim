@@ -9,6 +9,7 @@
 import { useState, useCallback, useRef } from "react";
 import { TerrainViewer } from "./components/TerrainViewer";
 import { RadarControls } from "./components/RadarControls";
+import { AnalysisHistory } from "./components/AnalysisHistory";
 import { ExportPanel } from "./components/ExportPanel";
 import { useTerrainStore } from "./store/terrainStore";
 import { useAnalysisStore } from "./store/analysisStore";
@@ -23,43 +24,64 @@ function App() {
   const terrainLoading = useTerrainStore((s) => s.loading);
   const terrainMetadata = useTerrainStore((s) => s.metadata);
   const terrainError = useTerrainStore((s) => s.error);
+  const preferredResolution = useTerrainStore((s) => s.preferredResolution);
+  const setPreferredResolution = useTerrainStore((s) => s.setPreferredResolution);
   const setRadarPosition = useAnalysisStore((s) => s.setRadarPosition);
   const runAnalysis = useAnalysisStore((s) => s.runAnalysis);
   const analysisLoading = useAnalysisStore((s) => s.loading);
 
   const handleGenerateTerrain = useCallback(async () => {
     await generateSynthetic({ size_x: 200, size_y: 200, depth: 30, resolution: 2.0 });
-    // After terrain generation, fetch grid data for 3D visualization
     const metadata = useTerrainStore.getState().metadata;
     if (metadata) {
       await loadGrid(metadata.terrain_id);
     }
   }, [generateSynthetic, loadGrid]);
 
-  const handleFileUpload = useCallback(async () => {
-    const fileInput = fileInputRef.current;
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
-    const file = fileInput.files[0];
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Clear input so same file can be selected again if needed
+    e.target.value = '';
+    
     const ext = file.name.split('.').pop()?.toLowerCase();
 
-    // Auto-detect format and call appropriate endpoint
     if (ext === 'stl') {
       await uploadSTL(file);
     } else {
       await uploadDXF(file);
     }
-    // After upload, fetch grid data for 3D visualization
     const metadata = useTerrainStore.getState().metadata;
     if (metadata) {
       await loadGrid(metadata.terrain_id);
     }
   }, [uploadDXF, uploadSTL, loadGrid]);
 
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
   const handleTerrainClick = useCallback(
-    (point: { x: number; y: number; z: number }) => {
-      setRadarPosition(point);
-      if (terrainMetadata) {
-        void runAnalysis(terrainMetadata.terrain_id);
+    async (point: { x: number; y: number; z: number }) => {
+      if (useAnalysisStore.getState().loading) return;
+      if (!terrainMetadata) return;
+      
+      const bounds = terrainMetadata.bounds;
+      
+      // Mapeo: 
+      // X = Easting (X local + min_x)
+      // Y = Northing (min_y - Z local, porque Z avanza hacia negativo al ir al norte)
+      // Z = Elevación (Y local + min_z)
+      setRadarPosition({
+        x: point.x + bounds.min_x,
+        y: bounds.min_y - point.z,
+        z: point.y + bounds.min_z + 2.0, // Antenna height: +2 meters above ground
+      });
+
+      await runAnalysis(terrainMetadata.terrain_id);
+      if (useAnalysisStore.getState().losResult) {
+        setShowShadowOverlay(true);
       }
     },
     [setRadarPosition, runAnalysis, terrainMetadata],
@@ -70,102 +92,79 @@ function App() {
   }, []);
 
   return (
-    <div style={{
-      display: "flex",
-      width: "100vw",
-      height: "100vh",
-      backgroundColor: "#0f0f1a",
-      color: "#e0e0e0",
-    }}>
+    <div className="app-container">
       {/* Sidebar */}
-      <aside style={{
-        width: "280px",
-        padding: "12px",
-        overflowY: "auto",
-        borderRight: "1px solid #333",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-      }}>
-        <div style={{
-          padding: "12px",
-          backgroundColor: "#1e1e2e",
-          borderRadius: "8px",
-        }}>
-          <h2 style={{ margin: "0 0 8px 0", color: "#fff", fontSize: "16px" }}>
-            Terrain
-          </h2>
-          <button
-            onClick={() => void handleGenerateTerrain()}
-            disabled={terrainLoading}
-            style={{
-              width: "100%",
-              padding: "8px",
-              borderRadius: "4px",
-              border: "none",
-              cursor: terrainLoading ? "not-allowed" : "pointer",
-              backgroundColor: terrainLoading ? "#333" : "#4a9eff",
-              color: terrainLoading ? "#666" : "#fff",
-              fontWeight: "bold",
-              marginBottom: "8px",
-            }}
-          >
-            {terrainLoading ? "Generating..." : "Generate Synthetic Terrain"}
-          </button>
-
-          {/* Terrain Upload */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".dxf,.stl"
-              aria-label="Upload terrain file (DXF or STL)"
-              style={{
-                fontSize: "12px",
-                color: "#aaa",
-              }}
-            />
+      <aside className="sidebar">
+        <div className="glass-panel">
+          <h2>Terrain</h2>
+          <div className="flex-col">
             <button
-              onClick={() => void handleFileUpload()}
+              className="btn-primary"
+              onClick={() => void handleGenerateTerrain()}
               disabled={terrainLoading}
-              style={{
-                width: "100%",
-                padding: "8px",
-                borderRadius: "4px",
-                border: "none",
-                cursor: terrainLoading ? "not-allowed" : "pointer",
-                backgroundColor: terrainLoading ? "#333" : "#6c5ce7",
-                color: terrainLoading ? "#666" : "#fff",
-                fontWeight: "bold",
-              }}
             >
-              {terrainLoading ? "Uploading..." : "Upload Terrain (DXF/STL)"}
+              {terrainLoading ? "Generating..." : "Generate Synthetic Terrain"}
             </button>
+
+            {/* Resolution Selector */}
+            <div className="flex-col mt-4 p-2" style={{ background: "rgba(255,255,255,0.05)", borderRadius: "4px" }}>
+              <label className="text-xs" style={{ opacity: 0.7, marginBottom: "4px" }}>
+                Grid Resolution: <span className="text-value">{preferredResolution}m</span>
+              </label>
+              <input 
+                type="range" 
+                min="0.5" 
+                max="5.0" 
+                step="0.5" 
+                value={preferredResolution}
+                onChange={(e) => setPreferredResolution(Number(e.target.value))}
+                style={{ cursor: "pointer" }}
+              />
+              <div className="flex-row" style={{ justifyContent: "space-between", fontSize: "9px", opacity: 0.5 }}>
+                <span>High Detail (0.5m)</span>
+                <span>Performance (5m)</span>
+              </div>
+            </div>
+
+            {/* Terrain Upload */}
+            <div className="flex-col mt-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".dxf,.stl"
+                style={{ display: "none" }}
+                onChange={(e) => void handleFileChange(e)}
+              />
+              <button
+                className="btn-primary"
+                onClick={handleUploadClick}
+                disabled={terrainLoading}
+              >
+                {terrainLoading ? "Uploading..." : "Upload DXF / STL"}
+              </button>
+            </div>
           </div>
 
           {terrainMetadata && (
-            <div style={{ marginTop: "8px", fontSize: "12px", color: "#aaa" }}>
-              <div>ID: {terrainMetadata.terrain_id}</div>
-              <div>Grid: {terrainMetadata.grid_rows}×{terrainMetadata.grid_cols}</div>
-              <div>Resolution: {terrainMetadata.resolution}m</div>
+            <div className="text-sm mt-4">
+              <div><span className="text-value">ID:</span> {terrainMetadata.terrain_id}</div>
+              <div><span className="text-value">Grid:</span> {terrainMetadata.grid_rows}×{terrainMetadata.grid_cols}</div>
+              <div><span className="text-value">Resolution:</span> {terrainMetadata.resolution}m</div>
             </div>
           )}
 
           {terrainError && (
-            <div style={{ marginTop: "8px", fontSize: "12px", color: "#ff6b6b" }}>
+            <div className="error-text">
               Error: {terrainError}
             </div>
           )}
         </div>
 
         <RadarControls />
+        <AnalysisHistory />
 
-        <div style={{
-          padding: "12px",
-          backgroundColor: "#1e1e2e",
-          borderRadius: "8px",
-        }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px" }}>
+        <div className="glass-panel">
+          <label className="checkbox-label">
             <input
               type="checkbox"
               checked={showShadowOverlay}
@@ -178,19 +177,14 @@ function App() {
         <ExportPanel />
 
         {analysisLoading && (
-          <div style={{
-            padding: "8px",
-            textAlign: "center",
-            color: "#4a9eff",
-            fontSize: "13px",
-          }}>
+          <div className="loading-banner">
             Running analysis...
           </div>
         )}
       </aside>
 
       {/* Main viewer */}
-      <main style={{ flex: 1 }}>
+      <main className="main-content">
         <TerrainViewer
           showShadowOverlay={showShadowOverlay}
           onTerrainClick={handleTerrainClick}

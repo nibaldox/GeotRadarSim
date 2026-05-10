@@ -40,6 +40,7 @@ class RadarConfig(BaseModel):
     model_id: str
     display_name: str
     manufacturer: str
+    min_range_m: float = 0.0
     max_range_m: float
     h_beam_width_deg: float
     v_beam_width_deg: float
@@ -57,6 +58,12 @@ class LOSRequest(BaseModel):
     terrain_id: str = Field(min_length=1, description="ID of the terrain to analyze")
     radar_position: Point3D
     radar_model_id: str
+    range_min_m: float | None = None
+    range_max_m: float | None = None
+    el_min_deg: float | None = None
+    el_max_deg: float | None = None
+    az_center_deg: float | None = None
+    az_width_deg: float | None = None
 
 
 class ShadowZone(BaseModel):
@@ -72,3 +79,4 @@ class LOSResponse(BaseModel):
     coverage_pct: float = Field(ge=0, le=100, description="Percentage of visible terrain")
     visible_area_m2: float
     shadow_zones: list[ShadowZone] = Field(default_factory=list)
+    quality_grid: list[list[float]] | None = None
