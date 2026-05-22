@@ -10,6 +10,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { TerrainViewer } from "./components/TerrainViewer";
 import { RadarControls } from "./components/RadarControls";
 import { MultiRadarPanel } from "./components/MultiRadarPanel";
+import { VectorSynthesisPanel } from "./components/VectorSynthesisPanel";
 import { AnalysisHistory } from "./components/AnalysisHistory";
 import { ExportPanel } from "./components/ExportPanel";
 import { useTerrainStore } from "./store/terrainStore";
@@ -18,6 +19,68 @@ import { useAnalysisStore } from "./store/analysisStore";
 function App() {
   const [showShadowOverlay, setShowShadowOverlay] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Minimalist Theme, Sidebar Resize & Collapse States
+  const [theme, setTheme] = useState<"slate" | "charcoal" | "amber">(
+    () => {
+      if (typeof localStorage !== "undefined" && localStorage.getItem) {
+        return (localStorage.getItem("geotradar-theme") as "slate" | "charcoal" | "amber") || "slate";
+      }
+      return "slate";
+    }
+  );
+  const [sidebarWidth, setSidebarWidth] = useState<number>(
+    () => {
+      if (typeof localStorage !== "undefined" && localStorage.getItem) {
+        return Number(localStorage.getItem("geotradar-sidebar-width")) || 320;
+      }
+      return 320;
+    }
+  );
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Sync theme with Document Body
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("theme-slate", "theme-charcoal", "theme-amber");
+    root.classList.add(`theme-${theme}`);
+    if (typeof localStorage !== "undefined" && localStorage.setItem) {
+      localStorage.setItem("geotradar-theme", theme);
+    }
+  }, [theme]);
+
+  // Drag resizer interaction handler
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Limit sidebar width between 260px and 500px to ensure visual integrity
+      const newWidth = Math.max(260, Math.min(500, e.clientX));
+      setSidebarWidth(newWidth);
+      if (typeof localStorage !== "undefined" && localStorage.setItem) {
+        localStorage.setItem("geotradar-sidebar-width", String(newWidth));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
   const generateSynthetic = useTerrainStore((s) => s.generateSynthetic);
   const loadGrid = useTerrainStore((s) => s.loadGrid);
   const uploadDXF = useTerrainStore((s) => s.uploadDXF);
@@ -99,7 +162,46 @@ function App() {
   return (
     <div className="app-container">
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside 
+        className={`sidebar ${!isSidebarOpen ? 'collapsed' : ''}`}
+        style={{
+          width: isSidebarOpen ? `${sidebarWidth}px` : '0px',
+          minWidth: isSidebarOpen ? `${sidebarWidth}px` : '0px'
+        }}
+      >
+        {/* Console Header: Selector de temas y cierres */}
+        <div className="sidebar-header">
+          <div className="theme-switcher">
+            <span style={{ fontSize: "9px", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "0.06em", fontWeight: 600 }}>Theme</span>
+            <button 
+              className={`theme-dot slate ${theme === 'slate' ? 'active' : ''}`} 
+              onClick={() => setTheme('slate')}
+              title="Slate Theme"
+            />
+            <button 
+              className={`theme-dot charcoal ${theme === 'charcoal' ? 'active' : ''}`} 
+              onClick={() => setTheme('charcoal')}
+              title="Charcoal Theme"
+            />
+            <button 
+              className={`theme-dot amber ${theme === 'amber' ? 'active' : ''}`} 
+              onClick={() => setTheme('amber')}
+              title="Amber Theme"
+            />
+          </div>
+          
+          <button 
+            className="close-sidebar-btn" 
+            style={{ display: "flex" }} 
+            onClick={() => setIsSidebarOpen(false)}
+            title="Collapse Sidebar"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+        </div>
+
         <div className="glass-panel">
           <h2>Terrain</h2>
           <div className="flex-col">
@@ -112,9 +214,9 @@ function App() {
             </button>
 
             {/* Resolution Selector */}
-            <div className="flex-col mt-4 p-2" style={{ background: "rgba(255,255,255,0.05)", borderRadius: "4px" }}>
-              <label className="text-xs" style={{ opacity: 0.7, marginBottom: "4px" }}>
-                Grid Resolution: <span className="text-value">{preferredResolution}m</span>
+            <div className="hud-card flex-col" style={{ gap: "6px" }}>
+              <label className="text-sm" style={{ fontWeight: 500, fontSize: "11px", opacity: 0.8 }}>
+                Grid Resolution: <span className="text-value" style={{ color: "var(--accent-hover)" }}>{preferredResolution}m</span>
               </label>
               <input 
                 type="range" 
@@ -123,9 +225,9 @@ function App() {
                 step="0.5" 
                 value={preferredResolution}
                 onChange={(e) => setPreferredResolution(Number(e.target.value))}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", accentColor: "var(--accent-color)" }}
               />
-              <div className="flex-row" style={{ justifyContent: "space-between", fontSize: "9px", opacity: 0.5 }}>
+              <div className="flex-row" style={{ justifyContent: "space-between", fontSize: "9px", opacity: 0.5, fontFamily: "var(--font-mono)" }}>
                 <span>High Detail (0.5m)</span>
                 <span>Performance (5m)</span>
               </div>
@@ -139,6 +241,7 @@ function App() {
                 accept=".dxf,.stl"
                 style={{ display: "none" }}
                 onChange={(e) => void handleFileChange(e)}
+                aria-label="Upload Terrain"
               />
               <button
                 className="btn-primary"
@@ -167,6 +270,7 @@ function App() {
 
         <RadarControls />
         <MultiRadarPanel />
+        <VectorSynthesisPanel />
         <AnalysisHistory />
 
         <div className="glass-panel">
@@ -187,10 +291,29 @@ function App() {
             Running analysis...
           </div>
         )}
+
+        {/* Tirador táctil para redimensionamiento (Resizer Splitter) */}
+        <div 
+          className={`sidebar-resizer ${isResizing ? 'active' : ''}`} 
+          onMouseDown={handleMouseDown} 
+        />
       </aside>
 
       {/* Main viewer */}
       <main className="main-content">
+        {/* Botón flotante técnico para reabrir la consola cuando está colapsada */}
+        {!isSidebarOpen && (
+          <button 
+            className="sidebar-toggle" 
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Open Console"
+            title="Open Console"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        )}
         <TerrainViewer
           showShadowOverlay={showShadowOverlay}
           onTerrainClick={handleTerrainClick}

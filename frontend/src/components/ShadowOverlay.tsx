@@ -11,6 +11,7 @@
 import { useMemo, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useAnalysisStore } from "../store/analysisStore";
+import { useVectorStore } from "../store/vectorStore";
 import { getMinElevation } from "../utils/terrain";
 
 const vertexShader = `
@@ -24,6 +25,7 @@ const vertexShader = `
 const fragmentShader = `
   uniform sampler2D qualityTexture;
   uniform float opacity;
+  uniform float mapMode; // 0.0 = LOS, 1.0 = Sensitivity
   varying vec2 vUv;
 
   void main() {
@@ -34,15 +36,32 @@ const fragmentShader = `
       discard; 
     }
     
-    vec3 colorLow  = vec3(0.9, 0.1, 0.1);    // Rojo  (Pobre)
-    vec3 colorMid  = vec3(1.0, 0.8, 0.0);    // Amarillo (Medio)
-    vec3 colorHigh = vec3(0.0, 0.9, 0.2);    // Verde (Excelente)
-    
     vec3 finalColor;
-    if (q < 0.5) {
-      finalColor = mix(colorLow, colorMid, q / 0.5);
+    if (mapMode < 0.5) {
+      // Modo Calidad LOS: Rojo -> Amarillo -> Verde
+      vec3 colorLow  = vec3(0.9, 0.1, 0.1);    // Rojo  (Pobre)
+      vec3 colorMid  = vec3(1.0, 0.8, 0.0);    // Amarillo (Medio)
+      vec3 colorHigh = vec3(0.0, 0.9, 0.2);    // Verde (Excelente)
+      
+      if (q < 0.5) {
+        finalColor = mix(colorLow, colorMid, q / 0.5);
+      } else {
+        finalColor = mix(colorMid, colorHigh, (q - 0.5) / 0.5);
+      }
     } else {
-      finalColor = mix(colorMid, colorHigh, (q - 0.5) / 0.5);
+      // Modo Sensibilidad Geométrica: Púrpura (Muy ciego) -> Azul (Bajo) -> Cian (Medio) -> Verde (Óptimo)
+      vec3 colorBlind = vec3(0.5, 0.0, 0.5);
+      vec3 colorLow   = vec3(0.1, 0.2, 0.8);
+      vec3 colorMid   = vec3(0.0, 0.8, 0.8);
+      vec3 colorHigh  = vec3(0.0, 0.9, 0.2);
+
+      if (q < 0.2) {
+        finalColor = mix(colorBlind, colorLow, q / 0.2);
+      } else if (q < 0.6) {
+        finalColor = mix(colorLow, colorMid, (q - 0.2) / 0.4);
+      } else {
+        finalColor = mix(colorMid, colorHigh, (q - 0.6) / 0.4);
+      }
     }
     
     gl_FragColor = vec4(finalColor, opacity);
@@ -56,6 +75,8 @@ interface ShadowOverlayProps {
 
 export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
   const losResult = useAnalysisStore((s) => s.losResult);
+  const visualizationMode = useVectorStore((s) => s.visualizationMode);
+  const sensitivityGrid = useVectorStore((s) => s.sensitivityGrid);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
   // 1. Static Geometry (only rebuilds when terrain changes)
@@ -128,18 +149,24 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
     if (!shadowGrid) return null;
 
     const data = new Float32Array(rows * cols);
+    const isSensitivity = visualizationMode === "SENSITIVITY" && sensitivityGrid;
+
     for (let r = 0; r < rows; r++) {
       if (!grid[r]) continue;
       for (let c = 0; c < cols; c++) {
         const isShadowed = shadowGrid[r] ? shadowGrid[r]![c] ?? true : true;
-        const quality    = qualityGrid && qualityGrid[r] ? qualityGrid[r]![c] ?? 0 : 0;
         const idx = r * cols + c;
 
         if (isShadowed) {
           data[idx] = -1.0;  // Sentinel: zona en sombra → el shader descarta
         } else {
-          // Visible: garantizamos mínimo 0.001 para distinguir de sombra
-          data[idx] = Math.max(0.001, isNaN(quality) ? 0.001 : quality);
+          if (isSensitivity && sensitivityGrid[r]) {
+            const sens = sensitivityGrid[r]![c] ?? 0;
+            data[idx] = Math.max(0.001, isNaN(sens) ? 0.001 : sens);
+          } else {
+            const quality = qualityGrid && qualityGrid[r] ? qualityGrid[r]![c] ?? 0 : 0;
+            data[idx] = Math.max(0.001, isNaN(quality) ? 0.001 : quality);
+          }
         }
       }
     }
@@ -149,21 +176,29 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
     tex.magFilter = THREE.LinearFilter;
     tex.needsUpdate = true;
     return tex;
-  }, [losResult, grid]);
+  }, [losResult, grid, visualizationMode, sensitivityGrid]);
 
-  // 3. Actualizar el uniform directamente en el material via ref
+  // 3. Actualizar el uniform directamente en el material via ref si cambia en caliente
   //    Esto garantiza que Three.js suba la textura a la GPU en el próximo frame
   useEffect(() => {
     if (materialRef.current && qualityTexture) {
       (materialRef.current as any).uniforms.qualityTexture.value = qualityTexture;
+      (materialRef.current as any).uniforms.mapMode.value = visualizationMode === "SENSITIVITY" ? 1.0 : 0.0;
       materialRef.current.needsUpdate = true;
     }
-  }, [qualityTexture]);
+  }, [qualityTexture, visualizationMode]);
+
+  // Generar una clave única para forzar el re-montaje cuando cambie el análisis (individual o unificado)
+  const overlayKey = useMemo(() => {
+    if (!losResult) return "empty";
+    // Combinar el porcentaje de cobertura, área visible, número de zonas y modo para obtener una key reactiva
+    return `${losResult.coverage_pct}_${losResult.visible_area_m2}_${losResult.shadow_zones.length}_${visualizationMode}`;
+  }, [losResult, visualizationMode]);
 
   if (!losResult) return null;
 
   return (
-    <mesh geometry={geometry}>
+    <mesh key={overlayKey} geometry={geometry}>
       <shaderMaterial
         ref={materialRef}
         vertexShader={vertexShader}
@@ -172,8 +207,9 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
         depthWrite={false}
         side={THREE.DoubleSide}
         uniforms={{
-          qualityTexture: { value: null },
+          qualityTexture: { value: qualityTexture },
           opacity: { value: 0.6 },
+          mapMode: { value: visualizationMode === "SENSITIVITY" ? 1.0 : 0.0 }
         }}
       />
     </mesh>

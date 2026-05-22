@@ -66,6 +66,7 @@ describe("useTerrainStore — generateSynthetic", () => {
       size_x: 200,
       size_y: 200,
       depth: 30,
+      resolution: 1.0,
     });
 
     // State should have metadata and no error
@@ -134,7 +135,7 @@ describe("useTerrainStore — uploadDXF", () => {
 
     await useTerrainStore.getState().uploadDXF(file);
 
-    expect(uploadDXF).toHaveBeenCalledWith(file);
+    expect(uploadDXF).toHaveBeenCalledWith(file, 1.0);
     const state = useTerrainStore.getState();
     expect(state.metadata).toEqual(sampleMetadata);
     expect(state.error).toBeNull();
@@ -179,7 +180,7 @@ describe("useTerrainStore — uploadSTL", () => {
 
     await useTerrainStore.getState().uploadSTL(file);
 
-    expect(uploadSTL).toHaveBeenCalledWith(file);
+    expect(uploadSTL).toHaveBeenCalledWith(file, 1.0);
     const state = useTerrainStore.getState();
     expect(state.metadata).toEqual(sampleMetadata);
     expect(state.error).toBeNull();

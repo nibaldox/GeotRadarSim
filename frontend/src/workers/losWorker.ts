@@ -112,14 +112,30 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
         const t = i / nSamples;
         const rayZ = rz + t * dz;
         
-        // Fast nearest-neighbor instead of bilinear
+        // Bilinear interpolation for heightfield sampling
         const rayX = rx + t * dx;
         const rayY = ry + t * dy;
         
-        const c0 = Math.max(0, Math.min(cols - 1, Math.round((rayX - bounds.min_x) / resolution - 0.5)));
-        const r0 = Math.max(0, Math.min(rows - 1, Math.round((rayY - bounds.min_y) / resolution - 0.5)));
+        const cGrid = (rayX - bounds.min_x) / resolution - 0.5;
+        const rGrid = (rayY - bounds.min_y) / resolution - 0.5;
         
-        const terrainAtSample = grid[r0]![c0]!;
+        const cMin = Math.max(0, Math.min(cols - 1, Math.floor(cGrid)));
+        const cMax = Math.max(0, Math.min(cols - 1, cMin + 1));
+        const rMin = Math.max(0, Math.min(rows - 1, Math.floor(rGrid)));
+        const rMax = Math.max(0, Math.min(rows - 1, rMin + 1));
+        
+        const tx = Math.max(0, Math.min(1, cGrid - cMin));
+        const ty = Math.max(0, Math.min(1, rGrid - rMin));
+        
+        const h00 = grid[rMin]![cMin]!;
+        const h10 = grid[rMin]![cMax]!;
+        const h01 = grid[rMax]![cMin]!;
+        const h11 = grid[rMax]![cMax]!;
+        
+        const terrainAtSample = (1 - tx) * (1 - ty) * h00 +
+                                tx * (1 - ty) * h10 +
+                                (1 - tx) * ty * h01 +
+                                tx * ty * h11;
           
         if (terrainAtSample > rayZ) {
           shadowed = true;

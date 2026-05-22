@@ -26,11 +26,8 @@ export function MultiRadarPanel() {
     radars.find((r) => r.model_id === modelId)?.display_name ?? modelId;
 
   return (
-    <div className="glass-panel">
-      <div
-        className="flex-row"
-        style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}
-      >
+    <div className="glass-panel flex-col">
+      <div className="flex-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
         <h3 style={{ margin: 0 }}>Radar Network</h3>
         {deployedRadars.length > 0 && (
           <button
@@ -38,11 +35,12 @@ export function MultiRadarPanel() {
             style={{
               background: "transparent",
               border: "none",
-              color: "#ff5555",
+              color: "var(--danger)",
               cursor: "pointer",
               fontSize: "10px",
               textTransform: "uppercase",
               fontWeight: "bold",
+              outline: "none"
             }}
           >
             Clear All
@@ -53,7 +51,7 @@ export function MultiRadarPanel() {
       {/* Add current radar */}
       <button
         className="btn-primary"
-        style={{ marginBottom: "10px" }}
+        style={{ marginBottom: "2px" }}
         onClick={deployCurrentRadar}
         disabled={multiLoading}
       >
@@ -62,51 +60,51 @@ export function MultiRadarPanel() {
 
       {/* Deployed list */}
       {deployedRadars.length === 0 ? (
-        <p className="text-sm" style={{ margin: "0 0 8px 0", opacity: 0.6 }}>
+        <p className="text-sm" style={{ margin: "0 0 4px 0", opacity: 0.6 }}>
           Configure a radar, place it on terrain, then click Add.
         </p>
       ) : (
-        <div className="flex-col" style={{ gap: "6px", marginBottom: "10px" }}>
+        <div className="flex-col" style={{ gap: "8px", marginBottom: "4px" }}>
           {deployedRadars.map((dr, idx) => (
             <div
               key={dr.id}
+              className="hud-card flex-row"
               style={{
-                display: "flex",
                 alignItems: "center",
-                gap: "8px",
-                padding: "6px 8px",
-                background: "rgba(255,255,255,0.05)",
-                borderRadius: "4px",
-                fontSize: "11px",
+                gap: "10px",
                 borderLeft: `3px solid ${dr.color}`,
+                background: "hsla(0, 0%, 100%, 0.02)"
               }}
             >
               {/* Color dot */}
               <span
                 style={{
                   display: "inline-block",
-                  width: "10px",
-                  height: "10px",
+                  width: "8px",
+                  height: "8px",
                   borderRadius: "50%",
                   background: dr.color,
                   flexShrink: 0,
+                  boxShadow: `0 0 8px ${dr.color}`
                 }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: "bold", fontSize: "10px" }}>
+                <div style={{ fontWeight: "bold", fontSize: "11px", color: "#fff" }}>
                   #{idx + 1} — {getDisplayName(dr.modelId)}
                 </div>
-                <div style={{ opacity: 0.6 }}>
+                <div style={{ opacity: 0.6, fontSize: "10px", marginTop: "2px" }}>
                   X:{dr.position.x.toFixed(0)} Y:{dr.position.y.toFixed(0)} Z:{dr.position.z.toFixed(0)}
                 </div>
                 {dr.result && (
                   <div
                     style={{
-                      color: dr.result.coverage_pct > 50 ? "#0adb21" : "#ffbb00",
+                      color: dr.result.coverage_pct > 50 ? "var(--success)" : "var(--warning)",
                       fontSize: "10px",
+                      fontWeight: "bold",
+                      marginTop: "3px"
                     }}
                   >
-                    ✓ {dr.result.coverage_pct.toFixed(1)}%
+                    ✓ Cobertura: {dr.result.coverage_pct.toFixed(1)}%
                   </div>
                 )}
               </div>
@@ -115,11 +113,13 @@ export function MultiRadarPanel() {
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "#ff5555",
+                  color: "var(--danger)",
                   cursor: "pointer",
-                  fontSize: "14px",
+                  fontSize: "16px",
+                  fontWeight: "bold",
                   lineHeight: 1,
                   padding: "0 4px",
+                  outline: "none"
                 }}
                 title="Remove radar"
               >
@@ -130,48 +130,45 @@ export function MultiRadarPanel() {
         </div>
       )}
 
-      {/* Run unified analysis */}
-      <button
-        className="btn-primary"
-        onClick={() => terrainId && void runMultiAnalysis(terrainId)}
-        disabled={multiLoading || deployedRadars.length === 0 || !terrainId}
-        style={{
-          background: multiLoading
-            ? "rgba(100,100,100,0.3)"
-            : "linear-gradient(135deg, #0f3460, #16213e)",
-        }}
-      >
-        {multiLoading
-          ? `⟳ Computing ${deployedRadars.length} radars...`
-          : `▶ Run Network Analysis (${deployedRadars.length})`}
-      </button>
+      {/* Run unified analysis or Loading state */}
+      {multiLoading ? (
+        <div className="radar-loading-indicator">
+          <span className="flex-row" style={{ gap: "10px", alignItems: "center", justifyContent: "center" }}>
+            <span className="spinner-neon" /> Procesando Red...
+          </span>
+        </div>
+      ) : (
+        <button
+          className="btn-primary"
+          onClick={() => terrainId && void runMultiAnalysis(terrainId)}
+          disabled={deployedRadars.length === 0 || !terrainId}
+          style={{
+            background: deployedRadars.length === 0 || !terrainId
+              ? "var(--disabled-bg)"
+              : "linear-gradient(135deg, var(--accent-color), hsl(210, 100%, 65%))",
+          }}
+        >
+          ▶ Run Network Analysis ({deployedRadars.length})
+        </button>
+      )}
 
       {/* Unified result summary */}
       {unifiedLos && (
-        <div
-          className="text-sm"
-          style={{
-            marginTop: "10px",
-            padding: "8px",
-            background: "rgba(10,219,33,0.08)",
-            borderRadius: "4px",
-            borderLeft: "3px solid #0adb21",
-          }}
-        >
-          <div style={{ fontWeight: "bold", marginBottom: "4px", color: "#0adb21" }}>
-            Unified Coverage
+        <div className="hud-card" style={{ borderLeft: "4px solid var(--success)", background: "hsla(125, 85%, 45%, 0.03)" }}>
+          <div style={{ fontWeight: "bold", marginBottom: "6px", color: "var(--success)", fontSize: "11px", letterSpacing: "0.02em" }}>
+            🛡️ UNIFIED RADAR COVERAGE
           </div>
-          <div>
-            <span className="text-value">Coverage:</span>{" "}
-            {unifiedLos.coverage_pct.toFixed(1)}%
+          <div className="hud-metric-row">
+            <span className="hud-metric-label">Cobertura Global</span>
+            <span className="hud-metric-value highlight-green">{unifiedLos.coverage_pct.toFixed(1)}%</span>
           </div>
-          <div>
-            <span className="text-value">Visible area:</span>{" "}
-            {unifiedLos.visible_area_m2.toFixed(0)} m²
+          <div className="hud-metric-row">
+            <span className="hud-metric-label">Área Visible</span>
+            <span className="hud-metric-value">{unifiedLos.visible_area_m2.toFixed(0)} m²</span>
           </div>
-          <div>
-            <span className="text-value">Shadow zones:</span>{" "}
-            {unifiedLos.shadow_zones.length}
+          <div className="hud-metric-row">
+            <span className="hud-metric-label">Zonas de Sombra</span>
+            <span className="hud-metric-value highlight-red">{unifiedLos.shadow_zones.length} celdas</span>
           </div>
         </div>
       )}

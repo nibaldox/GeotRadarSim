@@ -87,16 +87,40 @@ describe("RadarControls", () => {
 
     render(<RadarControls />);
 
-    expect(screen.getByText(/50\.5/)).toBeInTheDocument();
-    expect(screen.getByText(/10\.2/)).toBeInTheDocument();
-    expect(screen.getByText(/75\.3/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("50.5")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("10.2")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("75.3")).toBeInTheDocument();
   });
 
-  it("shows no position message when radar not placed", () => {
+  it("shows helper message when radar not placed", () => {
     useAnalysisStore.setState({ radars: radarConfigs });
 
     render(<RadarControls />);
 
-    expect(screen.getByText(/click on terrain/i)).toBeInTheDocument();
+    expect(screen.getByText(/\* Click on terrain to place automatically/i)).toBeInTheDocument();
+  });
+
+  it("allows manual coordinate entry and calls setRadarPosition when Apply is clicked", () => {
+    useAnalysisStore.setState({
+      radars: radarConfigs,
+      selectedRadarId: "groundprobe-ssr-fx",
+      radarPosition: null,
+    });
+
+    const spy = vi.spyOn(useAnalysisStore.getState(), "setRadarPosition");
+
+    render(<RadarControls />);
+
+    const inputX = screen.getByPlaceholderText(/Easting/i);
+    const inputY = screen.getByPlaceholderText(/Northing/i);
+    const inputZ = screen.getByPlaceholderText(/Elevation/i);
+    const applyBtn = screen.getByRole("button", { name: /Apply Coordinates/i });
+
+    fireEvent.change(inputX, { target: { value: "100.5" } });
+    fireEvent.change(inputY, { target: { value: "200.2" } });
+    fireEvent.change(inputZ, { target: { value: "15.0" } });
+    fireEvent.click(applyBtn);
+
+    expect(spy).toHaveBeenCalledWith({ x: 100.5, y: 200.2, z: 15.0 });
   });
 });

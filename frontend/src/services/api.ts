@@ -14,15 +14,25 @@ import type {
   LOSRequest,
   JobResponse,
   JobStatusResponse,
+  Point3D,
+  VectorReconstructionRequest,
+  VectorReconstructionResponse,
+  SensitivityMapRequest,
+  SensitivityMapResponse,
 } from "../types/api";
 
 import { generateSyntheticTerrain } from "./terrainEngine";
 import { saveLocalTerrain, getLocalTerrain } from "./localDataStore";
 import type { TerrainWorkerInput, TerrainWorkerOutput } from "../workers/terrainWorker";
 import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
+import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
+import type { LOSResponse } from "../types/api";
 
 // Simulated Job Store for long-running worker tasks
 const jobStore = new Map<string, JobStatusResponse>();
+
+// Cache of the last computed LOS result for export fallbacks
+export let lastLOSResult: LOSResponse | null = null;
 
 // ────────────────────────────────────────────
 // Radar Definitions (Hardcoded for local app)
@@ -33,14 +43,14 @@ const LOCAL_RADARS: RadarConfig[] = [
     model_id: "groundprobe-ssr-fx",
     display_name: "GroundProbe SSR-FX",
     manufacturer: "GroundProbe",
-    min_range_m: 0.0,
-    max_range_m: 850.0,
-    h_beam_width_deg: 90.0,
+    min_range_m: 50.0,
+    max_range_m: 2500.0,
+    h_beam_width_deg: 150.0,
     v_beam_width_deg: 30.0,
-    elevation_min_deg: -30.0,
-    elevation_max_deg: 30.0,
+    elevation_min_deg: -60.0,
+    elevation_max_deg: 60.0,
     scan_pattern: "RAR",
-    azimuth_range_deg: [-45.0, 45.0]
+    azimuth_range_deg: [-75.0, 75.0]
   },
   {
     model_id: "ibis-arcsar360",
@@ -59,14 +69,14 @@ const LOCAL_RADARS: RadarConfig[] = [
     model_id: "reutech-msr",
     display_name: "Reutech MSR",
     manufacturer: "Reutech Radar Systems",
-    min_range_m: 0.0,
-    max_range_m: 500.0,
-    h_beam_width_deg: 120.0,
+    min_range_m: 50.0,
+    max_range_m: 2500.0,
+    h_beam_width_deg: 150.0,
     v_beam_width_deg: 30.0,
-    elevation_min_deg: -30.0,
-    elevation_max_deg: 30.0,
+    elevation_min_deg: -60.0,
+    elevation_max_deg: 60.0,
     scan_pattern: "RAR",
-    azimuth_range_deg: [-60.0, 60.0]
+    azimuth_range_deg: [-75.0, 75.0]
   }
 ];
 
@@ -184,6 +194,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     if (e.data.error) {
       jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
     } else {
+      lastLOSResult = e.data;
       jobStore.set(jobId, {
         job_id: jobId,
         status: "COMPLETED",
@@ -228,12 +239,100 @@ export async function getRadar(modelId: string): Promise<RadarConfig> {
 // Export endpoints
 // ────────────────────────────────────────────
 
-export async function exportPDF(_req: LOSRequest): Promise<Blob> {
-  // Not implemented locally yet. 
-  // TODO: Use jsPDF or similar in a real version.
-  throw new Error("PDF Export not implemented in WebApp version yet");
+export async function exportPDF(req: LOSRequest, customResult?: LOSResponse): Promise<Blob> {
+  const result = customResult || lastLOSResult;
+  if (!result) {
+    throw new Error("No analysis data available to export. Run LOS analysis first.");
+  }
+  return generatePDFBlob(
+    req.terrain_id,
+    req.radar_model_id,
+    req.radar_position,
+    result
+  );
 }
 
-export async function exportCSV(_req: LOSRequest): Promise<Blob> {
-  throw new Error("CSV Export not implemented in WebApp version yet");
+export async function exportCSV(req: LOSRequest, customResult?: LOSResponse): Promise<Blob> {
+  const result = customResult || lastLOSResult;
+  if (!result) {
+    throw new Error("No analysis data available to export. Run LOS analysis first.");
+  }
+  return generateCSVBlob(
+    req.terrain_id,
+    req.radar_model_id,
+    req.radar_position,
+    result
+  );
+}
+
+export function resetLastLOSResult(): void {
+  lastLOSResult = null;
+}
+
+export async function runVectorAnalysis(req: VectorReconstructionRequest): Promise<JobResponse> {
+  const jobId = `job-${Math.random().toString(16).substring(2, 10)}`;
+  jobStore.set(jobId, { job_id: jobId, status: "PENDING", created_at: new Date().toISOString() });
+
+  const worker = new Worker(new URL('../workers/vectorWorker.ts', import.meta.url), { type: 'module' });
+  
+  worker.onmessage = (e: MessageEvent<any>) => {
+    if (e.data.error) {
+      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
+    } else {
+      jobStore.set(jobId, {
+        job_id: jobId,
+        status: "COMPLETED",
+        result: e.data,
+        created_at: new Date().toISOString()
+      });
+    }
+    worker.terminate();
+  };
+
+  worker.onerror = (e) => {
+    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message, created_at: new Date().toISOString() });
+    worker.terminate();
+  };
+
+  worker.postMessage({ type: "RECONSTRUCT", ...req });
+  return { job_id: jobId, status: "PENDING" };
+}
+
+export async function runSensitivityAnalysis(req: SensitivityMapRequest): Promise<JobResponse> {
+  const terrain = getLocalTerrain(req.terrainId);
+  if (!terrain) throw new Error("Terrain not loaded");
+
+  const jobId = `job-${Math.random().toString(16).substring(2, 10)}`;
+  jobStore.set(jobId, { job_id: jobId, status: "PENDING", created_at: new Date().toISOString() });
+
+  const worker = new Worker(new URL('../workers/vectorWorker.ts', import.meta.url), { type: 'module' });
+
+  worker.onmessage = (e: MessageEvent<any>) => {
+    if (e.data.error) {
+      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
+    } else {
+      jobStore.set(jobId, {
+        job_id: jobId,
+        status: "COMPLETED",
+        result: e.data,
+        created_at: new Date().toISOString()
+      });
+    }
+    worker.terminate();
+  };
+
+  worker.onerror = (e) => {
+    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message, created_at: new Date().toISOString() });
+    worker.terminate();
+  };
+
+  worker.postMessage({
+    type: "SENSITIVITY",
+    grid: terrain.grid,
+    resolution: terrain.metadata.resolution,
+    bounds: terrain.metadata.bounds,
+    radarPositions: req.radarPositions
+  });
+
+  return { job_id: jobId, status: "PENDING" };
 }
