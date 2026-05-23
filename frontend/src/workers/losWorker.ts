@@ -16,12 +16,13 @@ export interface LOSWorkerInput {
 }
 
 export interface LOSWorkerOutput {
-  shadow_grid: boolean[][];
-  quality_grid: number[][];
+  shadow_grid?: boolean[][];
+  quality_grid?: number[][];
   coverage_pct: number;
   visible_area_m2: number;
   shadow_zones: Array<{ zone_id: number; cell_count: number }>;
   coverage_polygon: Array<[number, number]>;
+  flat_quality_grid?: Float32Array; // Performance optimization: zero-copy transferable float array
 }
 
 self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
@@ -29,7 +30,11 @@ self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
   
   try {
     const result = computeLOS(data);
-    self.postMessage(result);
+    if (result.flat_quality_grid) {
+      self.postMessage(result, [result.flat_quality_grid.buffer]);
+    } else {
+      self.postMessage(result);
+    }
   } catch (err: any) {
     self.postMessage({ error: err.message });
   }
@@ -57,6 +62,8 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   
   const shadowGrid: boolean[][] = Array(rows).fill(null).map(() => Array(cols).fill(true));
   const qualityGrid: number[][] = Array(rows).fill(null).map(() => Array(cols).fill(0));
+  const flatQualityGrid = new Float32Array(rows * cols);
+  flatQualityGrid.fill(-1.0);
   
   let totalAnalyzable = 0;
   let visibleCount = 0;
@@ -112,14 +119,35 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
         const t = i / nSamples;
         const rayZ = rz + t * dz;
         
-        // Fast nearest-neighbor instead of bilinear
+        // Bilinear interpolation for heightfield sampling
         const rayX = rx + t * dx;
         const rayY = ry + t * dy;
         
-        const c0 = Math.max(0, Math.min(cols - 1, Math.round((rayX - bounds.min_x) / resolution - 0.5)));
-        const r0 = Math.max(0, Math.min(rows - 1, Math.round((rayY - bounds.min_y) / resolution - 0.5)));
+        const cGrid = (rayX - bounds.min_x) / resolution - 0.5;
+        const rGrid = (rayY - bounds.min_y) / resolution - 0.5;
         
-        const terrainAtSample = grid[r0]![c0]!;
+        const cGridFloor = Math.floor(cGrid);
+        const cMin = cGridFloor < 0 ? 0 : (cGridFloor > cols - 1 ? cols - 1 : cGridFloor);
+        const cMax = cMin + 1 >= cols ? cols - 1 : cMin + 1;
+        
+        const rGridFloor = Math.floor(rGrid);
+        const rMin = rGridFloor < 0 ? 0 : (rGridFloor > rows - 1 ? rows - 1 : rGridFloor);
+        const rMax = rMin + 1 >= rows ? rows - 1 : rMin + 1;
+        
+        const diffX = cGrid - cMin;
+        const tx = diffX < 0 ? 0 : (diffX > 1 ? 1 : diffX);
+        const diffY = rGrid - rMin;
+        const ty = diffY < 0 ? 0 : (diffY > 1 ? 1 : diffY);
+        
+        const h00 = grid[rMin]![cMin]!;
+        const h10 = grid[rMin]![cMax]!;
+        const h01 = grid[rMax]![cMin]!;
+        const h11 = grid[rMax]![cMax]!;
+        
+        const terrainAtSample = (1 - tx) * (1 - ty) * h00 +
+                                tx * (1 - ty) * h10 +
+                                (1 - tx) * ty * h01 +
+                                tx * ty * h11;
           
         if (terrainAtSample > rayZ) {
           shadowed = true;
@@ -140,6 +168,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       const cy = bounds.min_y + resolution / 2 + r * resolution;
       
       for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c;
         if (!shadowGrid[r]![c]) {
           const cx = bounds.min_x + resolution / 2 + c * resolution;
           
@@ -171,20 +200,20 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
           const vz = dz / dist3d;
           
           let dotProduct = -(vx * nx + vy * ny + vz * nz);
-          dotProduct = Math.max(0.0, Math.min(1.0, dotProduct));
+          dotProduct = dotProduct < 0.0 ? 0.0 : (dotProduct > 1.0 ? 1.0 : dotProduct);
           
           const dist = Math.sqrt(dx*dx + dy*dy);
           const distFactor = Math.sqrt(Math.max(0, 1.0 - (dist / maxRange)));
           
-          qualityGrid[r]![c] = dotProduct * distFactor;
+          const qualityVal = dotProduct * distFactor;
+          qualityGrid[r]![c] = qualityVal;
+          flatQualityGrid[idx] = qualityVal;
+        } else {
+          flatQualityGrid[idx] = -1.0;
         }
       }
     }
   }
-  
-  // We skip proper convex hull for now and just return bounding box of coverage to simplify,
-  // or a subsampled set of boundary points. Actually, let's just return a few points to avoid massive payloads.
-  // The frontend map overlay will use the quality grid anyway.
   
   // 3. Shadow Zones (BFS)
   const shadowZones: Array<{ zone_id: number; cell_count: number }> = [];
@@ -225,11 +254,10 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   const visibleAreaM2 = visibleCount * cellArea;
 
   return {
-    shadow_grid: shadowGrid,
-    quality_grid: qualityGrid,
     coverage_pct: Number(coveragePct.toFixed(2)),
     visible_area_m2: Number(visibleAreaM2.toFixed(2)),
     shadow_zones: shadowZones,
     coverage_polygon: coveragePolygon.slice(0, 100), // simplified
+    flat_quality_grid: flatQualityGrid,
   };
 }

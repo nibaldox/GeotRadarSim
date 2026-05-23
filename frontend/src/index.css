@@ -1,26 +1,88 @@
-/* Premium Global Styles & Design System */
+/* 🛰️ Premium Global Design System & Geotechnical HUD Stylesheet */
 
-:root {
-  /* Colors */
-  --bg-color: #0b0c10;
-  --panel-bg: rgba(26, 28, 41, 0.6);
-  --panel-border: rgba(255, 255, 255, 0.08);
-  --text-primary: #f0f0f5;
-  --text-secondary: #9da0a8;
-  --accent-color: #6c5ce7;
-  --accent-hover: #8075ff;
-  --accent-active: #5a4bcf;
-  --danger: #ff4757;
-  --success: #2ed573;
-  --disabled-bg: rgba(255, 255, 255, 0.05);
-  --disabled-text: rgba(255, 255, 255, 0.3);
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap');
 
-  /* Typography */
-  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+:root, .theme-slate {
+  /* 💻 Industrial Slate (Defecto) - Gris acero y cian técnico frío */
+  --bg-color: hsl(220, 20%, 8%);
+  --bg-gradient: radial-gradient(circle at top right, hsl(220, 20%, 15%) 0%, hsl(220, 20%, 8%) 60%, hsl(220, 20%, 4%) 100%);
+  --sidebar-bg: hsla(220, 20%, 9%, 0.9);
+  --panel-bg: hsla(220, 16%, 14%, 0.5);
+  --panel-border: hsla(0, 0%, 100%, 0.05);
+  --panel-border-hover: hsla(210, 40%, 65%, 0.3);
+  
+  --text-primary: hsl(210, 15%, 92%);
+  --text-secondary: hsl(210, 10%, 65%);
+  
+  --accent-color: hsl(210, 35%, 60%); /* Cian grisáceo de precisión */
+  --accent-hover: hsl(210, 35%, 68%);
+  --accent-active: hsl(210, 35%, 52%);
+  --accent-glow: hsla(210, 35%, 60%, 0.2);
+  
+  --danger: hsl(351, 80%, 55%);
+  --success: hsl(140, 50%, 45%);
+  --warning: hsl(38, 80%, 50%);
+  
+  --disabled-bg: hsla(0, 0%, 100%, 0.03);
+  --disabled-text: hsla(0, 0%, 100%, 0.2);
 
-  /* Shadows & Glassmorphism */
-  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  --glass-blur: blur(12px);
+  /* Typography Design Tokens */
+  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Shadows & Glassmorphic Blur */
+  --glass-shadow: 0 16px 40px 0 hsla(0, 0%, 0%, 0.6);
+  --glass-blur: blur(20px);
+}
+
+.theme-charcoal {
+  /* ⚙️ Tactical Charcoal - Ultra Minimalista escandinavo en escala de grises */
+  --bg-color: hsl(0, 0%, 8%);
+  --bg-gradient: radial-gradient(circle at top right, hsl(0, 0%, 14%) 0%, hsl(0, 0%, 8%) 60%, hsl(0, 0%, 4%) 100%);
+  --sidebar-bg: hsla(0, 0%, 9%, 0.92);
+  --panel-bg: hsla(0, 0%, 15%, 0.55);
+  --panel-border: hsla(0, 0%, 100%, 0.05);
+  --panel-border-hover: hsla(0, 0%, 100%, 0.22);
+  
+  --text-primary: hsl(0, 0%, 94%);
+  --text-secondary: hsl(0, 0%, 65%);
+  
+  --accent-color: hsl(0, 0%, 82%); /* Blanco tiza / gris mate de alta precisión */
+  --accent-hover: hsl(0, 0%, 100%);
+  --accent-active: hsl(0, 0%, 68%);
+  --accent-glow: hsla(0, 0%, 100%, 0.12);
+  
+  --danger: hsl(0, 0%, 55%);
+  --success: hsl(0, 0%, 75%);
+  --warning: hsl(0, 0%, 68%);
+  
+  --disabled-bg: hsla(0, 0%, 100%, 0.02);
+  --disabled-text: hsla(0, 0%, 100%, 0.18);
+}
+
+.theme-amber {
+  /* 📟 Classic Amber - Fósforo radar retro-futurista táctico */
+  --bg-color: hsl(24, 20%, 6%);
+  --bg-gradient: radial-gradient(circle at top right, hsl(24, 25%, 12%) 0%, hsl(24, 20%, 6%) 60%, hsl(24, 25%, 3%) 100%);
+  --sidebar-bg: hsla(24, 20%, 7%, 0.9);
+  --panel-bg: hsla(24, 16%, 13%, 0.5);
+  --panel-border: hsla(28, 40%, 40%, 0.12);
+  --panel-border-hover: hsla(28, 80%, 55%, 0.35);
+  
+  --text-primary: hsl(28, 70%, 88%);
+  --text-secondary: hsl(28, 35%, 60%);
+  
+  --accent-color: hsl(28, 85%, 52%); /* Ámbar fósforo de radar clásico */
+  --accent-hover: hsl(28, 90%, 60%);
+  --accent-active: hsl(28, 85%, 44%);
+  --accent-glow: hsla(28, 85%, 52%, 0.22);
+  
+  --danger: hsl(12, 80%, 52%);
+  --success: hsl(45, 90%, 48%);
+  --warning: hsl(28, 90%, 50%);
+  
+  --disabled-bg: hsla(28, 20%, 100%, 0.02);
+  --disabled-text: hsla(28, 20%, 100%, 0.18);
 }
 
 body {
@@ -30,8 +92,24 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  /* Nice subtle background gradient */
-  background: radial-gradient(circle at top right, #1a1a2e 0%, #0b0c10 50%, #0b0c10 100%);
+  -webkit-font-smoothing: antialiased;
+  background: var(--bg-gradient);
+}
+
+/* Minimalist Tactical Cyber Scrollbar */
+.sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  background: hsla(0, 0%, 100%, 0.06);
+  border-radius: 10px;
+}
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 0 6px var(--accent-glow);
 }
 
 /* Layout */
@@ -39,84 +117,273 @@ body {
   display: flex;
   width: 100vw;
   height: 100vh;
+  position: relative;
+  overflow: hidden;
 }
 
 .sidebar {
-  width: 300px;
-  min-width: 300px;
-  padding: 20px;
+  position: relative;
+  height: 100%;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   overflow-y: auto;
+  overflow-x: hidden;
   border-right: 1px solid var(--panel-border);
-  background: rgba(11, 12, 16, 0.7);
+  background: var(--sidebar-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   z-index: 10;
   box-shadow: var(--glass-shadow);
+  /* Transiciones elásticas para colapsar y linear rápido para redimensionamiento del arrastre */
+  transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              opacity 0.4s ease,
+              width 0.08s cubic-bezier(0.25, 0.8, 0.25, 1),
+              min-width 0.08s cubic-bezier(0.25, 0.8, 0.25, 1),
+              padding 0.4s ease;
+}
+
+.sidebar.collapsed {
+  transform: translateX(-100%);
+  opacity: 0;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border-right-width: 0 !important;
+  pointer-events: none;
+}
+
+/* Redimensionador (Resizer Handle Splitter) */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  background: transparent;
+  transition: background 0.2s ease, border-right 0.2s ease;
+}
+
+.sidebar-resizer:hover, .sidebar-resizer.active {
+  background: var(--accent-glow);
+  border-right: 2px solid var(--accent-color);
+}
+
+/* Botón flotante para alternar barra lateral (Sidebar Toggle) */
+.sidebar-toggle {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--sidebar-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  outline: none;
+}
+
+.sidebar-toggle:hover {
+  background: var(--panel-bg);
+  color: var(--accent-hover);
+  border-color: var(--panel-border-hover);
+  transform: scale(1.06);
 }
 
 .main-content {
   flex: 1;
   position: relative;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
-/* Panels (Glassmorphism) */
+/* Panels (Glassmorphism Overhaul — NO vertical jitter) */
 .glass-panel {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: inset 0 1px 1px hsla(0, 0%, 100%, 0.05), 0 8px 24px hsla(0, 0%, 0%, 0.35);
+  transform: none !important; /* Desactivar transformaciones para evitar jitter */
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .glass-panel:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  border-color: var(--panel-border-hover);
+  box-shadow: inset 0 1px 1px hsla(0, 0%, 100%, 0.08), 
+              0 0 24px var(--accent-glow), 
+              0 12px 32px hsla(0, 0%, 0%, 0.45);
 }
 
-/* Typography */
+/* Typography Overhaul */
 h2, h3, h4 {
   margin: 0 0 12px 0;
+  font-family: var(--font-family);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
-h2 { font-size: 18px; color: #fff; }
-h3 { font-size: 15px; color: #fff; }
-h4 { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;}
+h2 { font-size: 20px; color: #fff; border-left: 3px solid var(--accent-color); padding-left: 10px; }
+h3 { font-size: 16px; color: #fff; }
+h4 { 
+  font-size: 12px; 
+  color: var(--text-secondary); 
+  text-transform: uppercase; 
+  letter-spacing: 0.08em; 
+  margin-bottom: 10px;
+}
 
 /* Typography Utils */
-.text-sm { font-size: 12px; color: var(--text-secondary); }
-.text-value { color: var(--text-primary); font-weight: 500; }
-.error-text { color: var(--danger); font-size: 12px; margin-top: 8px; }
+.text-sm { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.text-value { color: var(--text-primary); font-weight: 500; font-family: var(--font-mono); }
+.error-text { color: var(--danger); font-size: 12px; margin-top: 8px; font-family: var(--font-mono); }
+
+/* Tactical Scientific HUD Cards */
+.hud-card {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  background: hsla(0, 0%, 0%, 0.25);
+  border: 1px solid hsla(0, 0%, 100%, 0.04);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: inset 0 1px 2px hsla(0, 0%, 0%, 0.4);
+}
+
+.hud-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed hsla(0, 0%, 100%, 0.05);
+  padding: 6px 0;
+}
+
+.hud-metric-row:last-child {
+  border-bottom: none;
+}
+
+.hud-metric-label {
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hud-metric-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.hud-metric-value.highlight-blue { color: hsl(207, 73%, 57%); text-shadow: 0 0 10px hsla(207, 73%, 57%, 0.4); }
+.hud-metric-value.highlight-red { color: var(--danger); text-shadow: 0 0 10px hsla(351, 100%, 60%, 0.4); }
+.hud-metric-value.highlight-green { color: var(--success); text-shadow: 0 0 10px hsla(125, 85%, 45%, 0.4); }
+.hud-metric-value.highlight-warning { color: var(--warning); text-shadow: 0 0 10px hsla(40, 100%, 55%, 0.4); }
+
+
+/* Holographic Cyber Loader with GPU-accelerated Scanlines */
+.radar-loading-indicator {
+  position: relative;
+  overflow: hidden;
+  background: var(--accent-glow);
+  border: 1px solid var(--accent-color);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+.radar-loading-indicator::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-color), #ffffff, var(--accent-color), transparent);
+  animation: scanline 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: left;
+}
+
+@keyframes scanline {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* Spinner Neon */
+.spinner-neon {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid hsla(0, 0%, 100%, 0.2);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: spin-neon 0.8s linear infinite;
+}
+
+@keyframes spin-neon {
+  to { transform: rotate(360deg); }
+}
+
+/* Pulse Glow Active Radars */
+.pulse-glow-green {
+  animation: neon-glow-green 2s infinite alternate;
+}
+
+@keyframes neon-glow-green {
+  0% {
+    box-shadow: 0 0 5px var(--accent-glow), inset 0 0 2px var(--accent-glow);
+    border-color: var(--accent-color);
+    opacity: 0.7;
+  }
+  100% {
+    box-shadow: 0 0 15px var(--accent-glow), inset 0 0 5px var(--accent-glow);
+    border-color: var(--accent-color);
+    opacity: 1;
+  }
+}
 
 /* Buttons */
 .btn-primary {
   width: 100%;
-  padding: 10px 16px;
-  border-radius: 8px;
+  padding: 12px 18px;
+  border-radius: 10px;
   border: none;
-  background: linear-gradient(135deg, var(--accent-color), #4a9eff);
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-hover));
   color: #fff;
   font-weight: 600;
   font-size: 13px;
   font-family: var(--font-family);
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(108, 92, 231, 0.3);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 12px var(--accent-glow);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(108, 92, 231, 0.4);
-  background: linear-gradient(135deg, var(--accent-hover), #5cb2ff);
+  box-shadow: 0 6px 16px var(--accent-glow);
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent-color));
 }
 
 .btn-primary:active:not(:disabled) {
@@ -132,29 +399,30 @@ h4 { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; l
 
 .btn-secondary {
   width: 100%;
-  padding: 8px 12px;
-  border-radius: 6px;
+  padding: 10px 14px;
+  border-radius: 8px;
   border: 1px solid var(--panel-border);
-  background: rgba(255, 255, 255, 0.03);
+  background: hsla(0, 0%, 100%, 0.02);
   color: var(--text-primary);
   font-weight: 500;
   font-size: 12px;
   font-family: var(--font-family);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
   text-align: left;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: hsla(0, 0%, 100%, 0.08);
+  border-color: hsla(0, 0%, 100%, 0.15);
 }
 
 .btn-secondary:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/* Inputs */
+/* Inputs & Form Overhaul */
 .input-file {
   font-size: 12px;
   color: var(--text-secondary);
@@ -164,42 +432,45 @@ h4 { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; l
 
 .input-file::file-selector-button {
   border: 1px solid var(--panel-border);
-  background: rgba(255, 255, 255, 0.05);
+  background: hsla(0, 0%, 100%, 0.04);
   color: var(--text-primary);
-  padding: 6px 12px;
-  border-radius: 4px;
+  padding: 8px 14px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, border-color 0.2s;
   font-family: var(--font-family);
   margin-right: 12px;
 }
 
 .input-file::file-selector-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: hsla(0, 0%, 100%, 0.08);
+  border-color: hsla(0, 0%, 100%, 0.15);
 }
 
 .select-box {
   width: 100%;
-  padding: 8px;
-  border-radius: 6px;
-  background-color: rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  border-radius: 8px;
+  background-color: hsla(0, 0%, 0%, 0.35);
   color: var(--text-primary);
   border: 1px solid var(--panel-border);
   font-family: var(--font-family);
   font-size: 13px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .select-box:focus {
   border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
 }
 
-/* Checkbox */
+/* Checkbox Cyber Style */
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-size: 13px;
   color: var(--text-primary);
   cursor: pointer;
@@ -208,31 +479,342 @@ h4 { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; l
 
 .checkbox-label input {
   accent-color: var(--accent-color);
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   cursor: pointer;
 }
 
-/* Loading States */
+/* Loading Banner */
 .loading-banner {
-  padding: 10px;
+  padding: 12px;
   text-align: center;
   color: var(--accent-hover);
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: 500;
   border-radius: 8px;
-  background: rgba(108, 92, 231, 0.1);
-  border: 1px solid rgba(108, 92, 231, 0.2);
+  background: hsla(250, 85%, 65%, 0.08);
+  border: 1px solid hsla(250, 85%, 65%, 0.2);
   animation: pulse 1.5s infinite;
 }
 
 @keyframes pulse {
-  0% { opacity: 0.7; }
+  0% { opacity: 0.6; }
   50% { opacity: 1; }
-  100% { opacity: 0.7; }
+  100% { opacity: 0.6; }
 }
 
 /* Flex Utilities */
-.flex-col { display: flex; flex-direction: column; gap: 8px; }
-.mt-2 { margin-top: 8px; }
-.mt-4 { margin-top: 16px; }
+.flex-col { display: flex; flex-direction: column; gap: 10px; }
+.flex-row { display: flex; flex-direction: row; }
+.mt-2 { margin-top: 10px; }
+.mt-4 { margin-top: 20px; }
+
+/* AutoCAD Style Floating Toolbar Premium (Fluid Elastic Curves) */
+.autocad-toolbar {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: hsla(228, 24%, 6%, 0.85);
+  border: 1px solid hsla(0, 0%, 100%, 0.06);
+  border-radius: 16px;
+  padding: 16px 8px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 20px 45px hsla(0, 0%, 0%, 0.65), inset 0 1px 1px hsla(0, 0%, 100%, 0.05);
+  z-index: 100;
+}
+
+.toolbar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.toolbar-section-title {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
+  pointer-events: none;
+}
+
+.toolbar-divider {
+  height: 1px;
+  width: 75%;
+  background: hsla(0, 0%, 100%, 0.08);
+  margin: 6px 0;
+}
+
+.toolbar-btn {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid hsla(0, 0%, 100%, 0.04);
+  background: hsla(0, 0%, 100%, 0.02);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  outline: none;
+}
+
+.toolbar-btn:hover {
+  background: hsla(0, 0%, 100%, 0.08);
+  color: #fff;
+  border-color: hsla(0, 0%, 100%, 0.15);
+  transform: scale(1.08) translateY(-1px);
+  box-shadow: 0 4px 15px hsla(0, 0%, 0%, 0.3);
+}
+
+.toolbar-btn.active {
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-hover));
+  color: #fff;
+  border-color: transparent;
+  transform: scale(1.08);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+/* Tooltips Magnéticos Fluidos */
+.toolbar-btn .tooltip {
+  position: absolute;
+  right: 56px;
+  top: 50%;
+  transform: translateY(-50%) translateX(15px);
+  background: hsla(228, 24%, 6%, 0.95);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: var(--font-family);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 10px 25px hsla(0, 0%, 0%, 0.5);
+  border: 1px solid hsla(0, 0%, 100%, 0.08);
+}
+
+.toolbar-btn:hover .tooltip {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Selector de Temas Táctico Minimalista */
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.theme-switcher {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.theme-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.theme-dot:hover {
+  transform: scale(1.25);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.theme-dot.active {
+  border-color: #ffffff;
+  transform: scale(1.25);
+  box-shadow: 0 0 10px currentColor;
+}
+
+.theme-dot.slate {
+  background: hsl(210, 35%, 60%);
+  color: hsla(210, 35%, 60%, 0.4);
+}
+
+.theme-dot.charcoal {
+  background: hsl(0, 0%, 82%);
+  color: hsla(0, 0%, 82%, 0.4);
+}
+
+.theme-dot.amber {
+  background: hsl(28, 85%, 52%);
+  color: hsla(28, 85%, 52%, 0.4);
+}
+
+/* Botón de Cierre Responsivo */
+.close-sidebar-btn {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.close-sidebar-btn:hover {
+  background: var(--panel-bg);
+  color: var(--text-primary);
+}
+
+/* Responsive Overrides (Auto-Collapse & Absolute Overlay on Mobile/Tablet) */
+@media (max-width: 768px) {
+  .sidebar-resizer {
+    display: none !important;
+  }
+  
+  .sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100vw !important;
+    min-width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100%;
+    z-index: 200;
+    transform: translateX(0);
+    border-right: none;
+  }
+  
+  .sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+  }
+  
+  .close-sidebar-btn {
+    display: flex !important;
+  }
+  
+  .autocad-toolbar {
+    right: 12px;
+    padding: 10px 6px;
+    gap: 12px;
+  }
+  
+  .toolbar-btn {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+/* Geotechnical Tactical HUD Legend Panel */
+.geotechnical-hud-legend {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 320px;
+  background: hsla(228, 24%, 6%, 0.88);
+  border: 1px solid hsla(0, 0%, 100%, 0.08);
+  border-radius: 12px;
+  padding: 14px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 16px 36px hsla(0, 0%, 0%, 0.65), inset 0 1px 1px hsla(0, 0%, 100%, 0.05);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.3s ease;
+  font-family: var(--font-family);
+}
+
+.hud-legend-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid hsla(0, 0%, 100%, 0.06);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+
+.hud-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.hud-legend-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+}
+
+.hud-legend-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.hud-legend-desc {
+  font-size: 9.5px;
+  color: var(--text-secondary);
+  opacity: 0.8;
+  line-height: 1.3;
+}
+
+/* Tool explanation box inside HUD */
+.hud-tool-info {
+  background: hsla(0, 0%, 0%, 0.3);
+  border: 1px solid hsla(0, 0%, 100%, 0.03);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud-tool-info-title {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent-color);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hud-tool-info-text {
+  font-size: 10px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+@media (max-width: 768px) {
+  .geotechnical-hud-legend {
+    left: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    max-width: 320px;
+  }
+}
+
+
+

@@ -199,3 +199,125 @@ describe("useAnalysisStore — clearResult", () => {
     expect(useAnalysisStore.getState().losResult).toBeNull();
   });
 });
+
+// ────────────────────────────────────────────
+// Multi-Radar actions
+// ────────────────────────────────────────────
+describe("useAnalysisStore — Multi-Radar actions", () => {
+  it("deploys the current radar and clears deployed list", () => {
+    useAnalysisStore.setState({
+      selectedRadarId: "groundprobe-ssr-fx",
+      radarPosition: { x: 100, y: 200, z: 15 },
+      deployedRadars: [],
+    });
+
+    const store = useAnalysisStore.getState();
+    store.deployCurrentRadar();
+
+    const state = useAnalysisStore.getState();
+    expect(state.deployedRadars).toHaveLength(1);
+    expect(state.deployedRadars[0]!.modelId).toBe("groundprobe-ssr-fx");
+    expect(state.deployedRadars[0]!.position).toEqual({ x: 100, y: 200, z: 15 });
+    expect(state.deployedRadars[0]!.color).toBeDefined();
+
+    // Clear all
+    store.clearDeployedRadars();
+    expect(useAnalysisStore.getState().deployedRadars).toHaveLength(0);
+    expect(useAnalysisStore.getState().unifiedLos).toBeNull();
+  });
+
+  it("removes a single deployed radar", () => {
+    const radarId = "radar-1";
+    useAnalysisStore.setState({
+      deployedRadars: [
+        { id: radarId, modelId: "groundprobe-ssr-fx", position: { x: 10, y: 20, z: 3 }, color: "#ff4444" },
+        { id: "radar-2", modelId: "reutech-msr", position: { x: 40, y: 50, z: 6 }, color: "#44aaff" },
+      ],
+      unifiedLos: sampleLOS,
+    });
+
+    const store = useAnalysisStore.getState();
+    store.removeDeployedRadar(radarId);
+
+    const state = useAnalysisStore.getState();
+    expect(state.deployedRadars).toHaveLength(1);
+    expect(state.deployedRadars[0]!.id).toBe("radar-2");
+    expect(state.unifiedLos).toBeNull();
+  });
+
+  it("runs multi-radar analysis and merges results", async () => {
+    const terrainId = "test-terrain";
+    const radar1 = { id: "radar-1", modelId: "groundprobe-ssr-fx", position: { x: 10, y: 20, z: 3 }, color: "#ff4444" };
+    const radar2 = { id: "radar-2", modelId: "reutech-msr", position: { x: 40, y: 50, z: 6 }, color: "#44aaff" };
+
+    useAnalysisStore.setState({
+      deployedRadars: [radar1, radar2],
+      unifiedLos: null,
+      losResult: null,
+    });
+
+    const losResult1: LOSResponse = {
+      shadow_grid: [[false, true], [false, false]],
+      quality_grid: [[0.8, 0], [0.9, 0.7]],
+      coverage_polygon: [[10, 10]],
+      coverage_pct: 75,
+      visible_area_m2: 300,
+      shadow_zones: [{ zone_id: 1, cell_count: 1 }],
+    };
+
+    const losResult2: LOSResponse = {
+      shadow_grid: [[true, false], [false, true]],
+      quality_grid: [[0, 0.6], [0.5, 0]],
+      coverage_polygon: [[20, 20]],
+      coverage_pct: 50,
+      visible_area_m2: 200,
+      shadow_zones: [{ zone_id: 1, cell_count: 2 }],
+    };
+
+    vi.mocked(runLOSAnalysis)
+      .mockResolvedValueOnce({ job_id: "job-r1", status: "PENDING" })
+      .mockResolvedValueOnce({ job_id: "job-r2", status: "PENDING" });
+
+    vi.mocked(getLOSJob)
+      .mockResolvedValueOnce({ job_id: "job-r1", status: "COMPLETED", created_at: "now", result: losResult1 })
+      .mockResolvedValueOnce({ job_id: "job-r2", status: "COMPLETED", created_at: "now", result: losResult2 });
+
+    vi.useFakeTimers();
+    useAnalysisStore.getState().runMultiAnalysis(terrainId);
+    
+    // Trigger polling checks
+    vi.advanceTimersByTime(1100);
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+
+    const state = useAnalysisStore.getState();
+    expect(state.error).toBeNull();
+    expect(state.deployedRadars[0]!.result).toEqual(losResult1);
+    expect(state.deployedRadars[1]!.result).toEqual(losResult2);
+
+    expect(state.unifiedLos).toBeDefined();
+    const unified = state.unifiedLos!;
+    
+    // Check merged shadow_grid: true only if ALL radars say true
+    // res1.shadow_grid: [[false, true], [false, false]]
+    // res2.shadow_grid: [[true, false], [false, true]]
+    // [0,0]: false || true => false
+    // [0,1]: true || false => false
+    // [1,0]: false || false => false
+    // [1,1]: false || true => false
+    // So shadow_grid should be all false!
+    expect(unified.shadow_grid).toEqual([[false, false], [false, false]]);
+
+    // Check merged quality_grid: max of visible radars
+    // res1.quality_grid: [[0.8, 0], [0.9, 0.7]]
+    // res2.quality_grid: [[0, 0.6], [0.5, 0]]
+    // [0,0]: max(0.8, 0) => 0.8
+    // [0,1]: max(0, 0.6) => 0.6
+    // [1,0]: max(0.9, 0.5) => 0.9
+    // [1,1]: max(0.7, 0) => 0.7
+    expect(unified.quality_grid).toEqual([[0.8, 0.6], [0.9, 0.7]]);
+
+    expect(state.losResult).toEqual(unified);
+  });
+});
+

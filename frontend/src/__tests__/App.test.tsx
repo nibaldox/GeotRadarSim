@@ -21,12 +21,14 @@ vi.mock("@react-three/fiber", () => ({
     <div data-testid="r3f-canvas-mock">{children}</div>
   ),
   useThree: () => ({
-    camera: { position: { set: vi.fn() }, lookAt: vi.fn() },
+    camera: { position: { set: vi.fn() }, lookAt: vi.fn(), updateProjectionMatrix: vi.fn() },
   }),
 }));
 
 vi.mock("@react-three/drei", () => ({
   OrbitControls: () => null,
+  GizmoHelper: ({ children }: any) => <div data-testid="gizmo-helper">{children}</div>,
+  GizmoViewport: () => null,
 }));
 
 // Mock the API client
@@ -97,7 +99,7 @@ describe("App — Terrain Upload UI", () => {
   it("renders an Upload Terrain button", () => {
     render(<App />);
 
-    const uploadBtn = screen.getByRole("button", { name: /upload terrain/i });
+    const uploadBtn = screen.getByRole("button", { name: /upload dxf \/ stl/i });
     expect(uploadBtn).toBeInTheDocument();
   });
 });
@@ -117,7 +119,7 @@ describe("App — Auto loadGrid after generateSynthetic", () => {
         size_x: 200,
         size_y: 200,
         depth: 30,
-        resolution: 2.0,
+        resolution: 1.0,
       });
     });
 
@@ -139,11 +141,8 @@ describe("App — Auto loadGrid after DXF upload", () => {
     const file = new File(["dxf-content"], "test.dxf", { type: "application/dxf" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    const uploadBtn = screen.getByRole("button", { name: /upload terrain/i });
-    fireEvent.click(uploadBtn);
-
     await waitFor(() => {
-      expect(uploadDXF).toHaveBeenCalledWith(file);
+      expect(uploadDXF).toHaveBeenCalledWith(file, 1.0);
     });
 
     await waitFor(() => {
@@ -166,11 +165,8 @@ describe("App — Auto loadGrid after STL upload", () => {
     const stlFile = new File(["stl-content"], "terrain.stl", { type: "application/octet-stream" });
     fireEvent.change(fileInput, { target: { files: [stlFile] } });
 
-    const uploadBtn = screen.getByRole("button", { name: /upload terrain/i });
-    fireEvent.click(uploadBtn);
-
     await waitFor(() => {
-      expect(uploadSTL).toHaveBeenCalledWith(stlFile);
+      expect(uploadSTL).toHaveBeenCalledWith(stlFile, 1.0);
     });
 
     await waitFor(() => {

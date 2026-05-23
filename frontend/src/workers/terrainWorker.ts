@@ -136,20 +136,23 @@ function generateDTM(points: Array<[number, number, number]>, resolution: number
   const grid: number[][] = Array(gridRows).fill(null).map(() => Array(gridCols).fill(0));
   
   // Spatial hashing for fast neighbor lookup (Inverse Distance Weighting)
-  // Cell size for binning (e.g. 10x resolution)
+  // Cell size for binning (e.g. 5x resolution)
   const binSize = resolution * 5;
-  const bins = new Map<string, Array<[number, number, number]>>();
-  
-  for (const p of points) {
+  const maxBinX = Math.floor((maxX - minX) / binSize) + 1;
+  const maxBinY = Math.floor((maxY - minY) / binSize) + 1;
+  const numBins = maxBinX * maxBinY;
+
+  // Pre-allocate a 1D array of bins for spatial indexing
+  const bins: Array<Array<[number, number, number]>> = Array.from({ length: numBins }, () => []);
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
     const bx = Math.floor((p[0] - minX) / binSize);
     const by = Math.floor((p[1] - minY) / binSize);
-    const key = `${bx},${by}`;
-    let bin = bins.get(key);
-    if (!bin) {
-      bin = [];
-      bins.set(key, bin);
+    if (bx >= 0 && bx < maxBinX && by >= 0 && by < maxBinY) {
+      const idx = by * maxBinX + bx;
+      bins[idx]!.push(p);
     }
-    bin.push(p);
   }
   
   // IDW Interpolation
@@ -171,25 +174,34 @@ function generateDTM(points: Array<[number, number, number]>, resolution: number
       
       // Check 3x3 neighboring bins
       for (let dy = -1; dy <= 1; dy++) {
+        const ny = by + dy;
+        if (ny < 0 || ny >= maxBinY) continue;
+        const rowOffset = ny * maxBinX;
+
         for (let dx = -1; dx <= 1; dx++) {
-          const key = `${bx + dx},${by + dy}`;
-          const bin = bins.get(key);
-          if (bin) {
-            for (let i = 0; i < bin.length; i++) {
-              const p = bin[i]!;
-              const dSq = (p[0] - cx) * (p[0] - cx) + (p[1] - cy) * (p[1] - cy);
-              
-              if (dSq < closestDistSq) {
-                closestDistSq = dSq;
-                closestZ = p[2];
-              }
-              
-              if (dSq < radiusSq) {
-                // To avoid div by zero
-                const w = 1.0 / (dSq + 0.001);
-                sumWeight += w;
-                sumZ += p[2] * w;
-              }
+          const nx = bx + dx;
+          if (nx < 0 || nx >= maxBinX) continue;
+
+          const idx = rowOffset + nx;
+          const bin = bins[idx]!;
+          const len = bin.length;
+          
+          for (let i = 0; i < len; i++) {
+            const p = bin[i]!;
+            const dxSq = p[0] - cx;
+            const dySq = p[1] - cy;
+            const dSq = dxSq * dxSq + dySq * dySq;
+            
+            if (dSq < closestDistSq) {
+              closestDistSq = dSq;
+              closestZ = p[2];
+            }
+            
+            if (dSq < radiusSq) {
+              // To avoid div by zero
+              const w = 1.0 / (dSq + 0.001);
+              sumWeight += w;
+              sumZ += p[2] * w;
             }
           }
         }

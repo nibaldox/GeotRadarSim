@@ -5,8 +5,9 @@
  * Displays current radar position when placed on terrain.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
+import { useTerrainStore } from "../store/terrainStore";
 
 export function RadarControls() {
   const radars = useAnalysisStore((s) => s.radars);
@@ -24,6 +25,44 @@ export function RadarControls() {
   const azWidthOverride = useAnalysisStore((s) => s.azWidthOverride);
   const setAzimuthOverrides = useAnalysisStore((s) => s.setAzimuthOverrides);
 
+  // Manual coordinate entry local states
+  const [inputX, setInputX] = useState<string>("");
+  const [inputY, setInputY] = useState<string>("");
+  const [inputZ, setInputZ] = useState<string>("");
+
+  const terrainMetadata = useTerrainStore((s) => s.metadata);
+  const setRadarPosition = useAnalysisStore((s) => s.setRadarPosition);
+  const runAnalysis = useAnalysisStore((s) => s.runAnalysis);
+
+  // Sync inputs with store's radarPosition when it changes
+  useEffect(() => {
+    if (radarPosition) {
+      setInputX(radarPosition.x.toFixed(1));
+      setInputY(radarPosition.y.toFixed(1));
+      setInputZ(radarPosition.z.toFixed(1));
+    } else {
+      setInputX("");
+      setInputY("");
+      setInputZ("");
+    }
+  }, [radarPosition]);
+
+  const handleApplyPosition = useCallback(async () => {
+    if (!inputX || !inputY || !inputZ) return;
+    
+    const x = Number(inputX);
+    const y = Number(inputY);
+    const z = Number(inputZ);
+    
+    if (isNaN(x) || isNaN(y) || isNaN(z)) return;
+    
+    setRadarPosition({ x, y, z });
+    
+    if (terrainMetadata) {
+      await runAnalysis(terrainMetadata.terrain_id);
+    }
+  }, [inputX, inputY, inputZ, terrainMetadata, setRadarPosition, runAnalysis]);
+
   useEffect(() => {
     if (radars.length === 0) {
       void loadRadars();
@@ -33,123 +72,189 @@ export function RadarControls() {
   const selectedRadar = radars.find((r) => r.model_id === selectedRadarId);
 
   return (
-    <div className="glass-panel">
+    <div className="glass-panel flex-col">
       <h3>Radar Model</h3>
 
-      <label htmlFor="radar-select" className="text-sm" style={{ display: "block", marginBottom: "4px" }}>
-        Select Radar Model
-      </label>
-      <select
-        id="radar-select"
-        aria-label="Radar model selector"
-        className="select-box"
-        value={selectedRadarId ?? ""}
-        onChange={(e) => selectRadar(e.target.value || null)}
-      >
-        <option value="">-- Select model --</option>
-        {radars.map((r) => (
-          <option key={r.model_id} value={r.model_id}>
-            {r.display_name}
-          </option>
-        ))}
-      </select>
+      <div className="flex-col" style={{ gap: "4px" }}>
+        <label htmlFor="radar-select" className="text-sm" style={{ fontWeight: 500 }}>
+          Select Radar Model
+        </label>
+        <select
+          id="radar-select"
+          aria-label="Radar model selector"
+          className="select-box"
+          value={selectedRadarId ?? ""}
+          onChange={(e) => selectRadar(e.target.value || null)}
+        >
+          <option value="">-- Select model --</option>
+          {radars.map((r) => (
+            <option key={r.model_id} value={r.model_id}>
+              {r.display_name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {selectedRadar && (
-        <div className="text-sm mt-2">
-          <div><span className="text-value">Default Range:</span> {selectedRadar.min_range_m}m - {selectedRadar.max_range_m}m</div>
+        <div className="text-sm flex-col" style={{ gap: "10px", marginTop: "4px" }}>
+          <div className="hud-card flex-col" style={{ gap: "6px" }}>
+            <div style={{ fontWeight: "bold", color: "var(--text-secondary)", textTransform: "uppercase", fontSize: "9px", letterSpacing: "0.05em" }}>
+              📊 Parámetros del Haz de Fábrica
+            </div>
+            <div className="hud-metric-row">
+              <span className="hud-metric-label">Rango Default</span>
+              <span className="hud-metric-value">{selectedRadar.min_range_m}m - {selectedRadar.max_range_m}m</span>
+            </div>
+            <div className="hud-metric-row">
+              <span className="hud-metric-label">Escáner</span>
+              <span className="hud-metric-value">{selectedRadar.scan_pattern}</span>
+            </div>
+            <div className="hud-metric-row">
+              <span className="hud-metric-label">Haz Horizontal</span>
+              <span className="hud-metric-value">{selectedRadar.h_beam_width_deg}°</span>
+            </div>
+          </div>
           
-          <div className="flex-col mt-2" style={{ gap: "4px" }}>
-            <div className="flex-col">
-              <label className="text-xs" style={{ opacity: 0.7 }}>Min Range (m)</label>
-              <input
-                type="number"
-                className="select-box"
-                style={{ padding: "4px 8px" }}
-                placeholder={String(selectedRadar.min_range_m)}
-                value={rangeMinOverride ?? ""}
-                onChange={(e) => setRangeOverrides(e.target.value ? Number(e.target.value) : null, rangeMaxOverride)}
-              />
+          <div className="flex-col" style={{ gap: "8px" }}>
+            <span style={{ fontSize: "10px", textTransform: "uppercase", fontWeight: "bold", opacity: 0.8, letterSpacing: "0.05em" }}>
+              Overrides de Configuración:
+            </span>
+            
+            <div className="flex-row" style={{ gap: "8px" }}>
+              <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
+                <label className="text-sm" style={{ fontSize: "10px", opacity: 0.7 }}>Min Range (m)</label>
+                <input
+                  type="number"
+                  className="select-box"
+                  style={{ padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                  placeholder={String(selectedRadar.min_range_m)}
+                  value={rangeMinOverride ?? ""}
+                  onChange={(e) => setRangeOverrides(e.target.value ? Number(e.target.value) : null, rangeMaxOverride)}
+                />
+              </div>
+              <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
+                <label className="text-sm" style={{ fontSize: "10px", opacity: 0.7 }}>Max Range (m)</label>
+                <input
+                  type="number"
+                  className="select-box"
+                  style={{ padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                  placeholder={String(selectedRadar.max_range_m)}
+                  value={rangeMaxOverride ?? ""}
+                  onChange={(e) => setRangeOverrides(rangeMinOverride, e.target.value ? Number(e.target.value) : null)}
+                />
+              </div>
             </div>
-            <div className="flex-col">
-              <label className="text-xs" style={{ opacity: 0.7 }}>Max Range (m)</label>
-              <input
-                type="number"
-                className="select-box"
-                style={{ padding: "4px 8px" }}
-                placeholder={String(selectedRadar.max_range_m)}
-                value={rangeMaxOverride ?? ""}
-                onChange={(e) => setRangeOverrides(rangeMinOverride, e.target.value ? Number(e.target.value) : null)}
-              />
+
+            <div className="flex-row" style={{ gap: "8px" }}>
+              <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
+                <label className="text-sm" style={{ fontSize: "10px", opacity: 0.7 }}>Min Elevación (°)</label>
+                <input
+                  type="number"
+                  className="select-box"
+                  style={{ padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                  placeholder={String(selectedRadar.elevation_min_deg)}
+                  value={elMinOverride ?? ""}
+                  onChange={(e) => setElevationOverrides(e.target.value ? Number(e.target.value) : null, elMaxOverride)}
+                />
+              </div>
+              <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
+                <label className="text-sm" style={{ fontSize: "10px", opacity: 0.7 }}>Max Elevación (°)</label>
+                <input
+                  type="number"
+                  className="select-box"
+                  style={{ padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                  placeholder={String(selectedRadar.elevation_max_deg)}
+                  value={elMaxOverride ?? ""}
+                  onChange={(e) => setElevationOverrides(elMinOverride, e.target.value ? Number(e.target.value) : null)}
+                />
+              </div>
+            </div>
+
+            <div className="flex-row" style={{ gap: "8px" }}>
+              <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
+                <label className="text-sm" style={{ fontSize: "10px", opacity: 0.7 }}>Azimut Centro (°)</label>
+                <input
+                  type="number"
+                  className="select-box"
+                  style={{ padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                  placeholder="0"
+                  value={azCenterOverride ?? ""}
+                  onChange={(e) => setAzimuthOverrides(e.target.value ? Number(e.target.value) : null, azWidthOverride)}
+                />
+              </div>
+              <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
+                <label className="text-sm" style={{ fontSize: "10px", opacity: 0.7 }}>Apertura Escán (°)</label>
+                <input
+                  type="number"
+                  className="select-box"
+                  style={{ padding: "6px 10px", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                  placeholder={String(selectedRadar.scan_pattern === "SAR360" ? 360 : 120)}
+                  value={azWidthOverride ?? ""}
+                  onChange={(e) => setAzimuthOverrides(azCenterOverride, e.target.value ? Number(e.target.value) : null)}
+                />
+              </div>
             </div>
           </div>
-
-          <div className="flex-col mt-2" style={{ gap: "4px" }}>
-            <div className="flex-col">
-              <label className="text-xs" style={{ opacity: 0.7 }}>Min Elevation (°)</label>
-              <input
-                type="number"
-                className="select-box"
-                style={{ padding: "4px 8px" }}
-                placeholder={String(selectedRadar.elevation_min_deg)}
-                value={elMinOverride ?? ""}
-                onChange={(e) => setElevationOverrides(e.target.value ? Number(e.target.value) : null, elMaxOverride)}
-              />
-            </div>
-            <div className="flex-col">
-              <label className="text-xs" style={{ opacity: 0.7 }}>Max Elevation (°)</label>
-              <input
-                type="number"
-                className="select-box"
-                style={{ padding: "4px 8px" }}
-                placeholder={String(selectedRadar.elevation_max_deg)}
-                value={elMaxOverride ?? ""}
-                onChange={(e) => setElevationOverrides(elMinOverride, e.target.value ? Number(e.target.value) : null)}
-              />
-            </div>
-          </div>
-
-          <div className="flex-col mt-2" style={{ gap: "4px" }}>
-            <div className="flex-col">
-              <label className="text-xs" style={{ opacity: 0.7 }}>Azimuth Center (°)</label>
-              <input
-                type="number"
-                className="select-box"
-                style={{ padding: "4px 8px" }}
-                placeholder="0"
-                value={azCenterOverride ?? ""}
-                onChange={(e) => setAzimuthOverrides(e.target.value ? Number(e.target.value) : null, azWidthOverride)}
-              />
-            </div>
-            <div className="flex-col">
-              <label className="text-xs" style={{ opacity: 0.7 }}>Scan Aperture (°)</label>
-              <input
-                type="number"
-                className="select-box"
-                style={{ padding: "4px 8px" }}
-                placeholder={String(selectedRadar.scan_pattern === "SAR360" ? 360 : 120)}
-                value={azWidthOverride ?? ""}
-                onChange={(e) => setAzimuthOverrides(azCenterOverride, e.target.value ? Number(e.target.value) : null)}
-              />
-            </div>
-          </div>
-
-          <div className="mt-2"><span className="text-value">Scan:</span> {selectedRadar.scan_pattern}</div>
-          <div><span className="text-value">H-Beam:</span> {selectedRadar.h_beam_width_deg}°</div>
         </div>
       )}
 
-      <h4 className="mt-4">Position</h4>
-      {radarPosition ? (
-        <div className="text-sm">
-          <div><span className="text-value">X:</span> {radarPosition.x.toFixed(1)}</div>
-          <div><span className="text-value">Y:</span> {radarPosition.y.toFixed(1)}</div>
-          <div><span className="text-value">Z:</span> {radarPosition.z.toFixed(1)}</div>
+      <h4 className="mt-2" style={{ marginBottom: "6px" }}>Position Settings</h4>
+      <div className="flex-col text-sm" style={{ gap: "8px" }}>
+        <div className="flex-row" style={{ gap: "10px", alignItems: "center" }}>
+          <label htmlFor="radar-coord-x" style={{ width: "20px", fontWeight: "bold", fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>X:</label>
+          <input
+            id="radar-coord-x"
+            type="number"
+            step="0.1"
+            className="select-box"
+            style={{ padding: "6px 10px", flex: 1, fontFamily: "var(--font-mono)" }}
+            placeholder="Easting"
+            value={inputX}
+            onChange={(e) => setInputX(e.target.value)}
+          />
         </div>
-      ) : (
-        <p className="text-sm" style={{ margin: 0 }}>
-          Click on terrain to place radar
-        </p>
-      )}
+        <div className="flex-row" style={{ gap: "10px", alignItems: "center" }}>
+          <label htmlFor="radar-coord-y" style={{ width: "20px", fontWeight: "bold", fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>Y:</label>
+          <input
+            id="radar-coord-y"
+            type="number"
+            step="0.1"
+            className="select-box"
+            style={{ padding: "6px 10px", flex: 1, fontFamily: "var(--font-mono)" }}
+            placeholder="Northing"
+            value={inputY}
+            onChange={(e) => setInputY(e.target.value)}
+          />
+        </div>
+        <div className="flex-row" style={{ gap: "10px", alignItems: "center" }}>
+          <label htmlFor="radar-coord-z" style={{ width: "20px", fontWeight: "bold", fontFamily: "var(--font-mono)", color: "var(--text-secondary)" }}>Z:</label>
+          <input
+            id="radar-coord-z"
+            type="number"
+            step="0.1"
+            className="select-box"
+            style={{ padding: "6px 10px", flex: 1, fontFamily: "var(--font-mono)" }}
+            placeholder="Elevation"
+            value={inputZ}
+            onChange={(e) => setInputZ(e.target.value)}
+          />
+        </div>
+        
+        <button
+          className="btn-primary mt-2"
+          onClick={handleApplyPosition}
+          disabled={!inputX || !inputY || !inputZ || !selectedRadarId}
+          style={{ padding: "10px 14px", fontSize: "12px", alignSelf: "stretch" }}
+        >
+          Apply Coordinates
+        </button>
+        
+        {!radarPosition && (
+          <p className="text-sm" style={{ margin: "2px 0 0", opacity: 0.6, fontSize: "11px", textAlign: "center" }}>
+            * Click on terrain to place automatically
+          </p>
+        )}
+      </div>
     </div>
   );
 }

@@ -35,9 +35,9 @@ describe("elevationToColor", () => {
     expect(g).toBeGreaterThan(0.3);
   });
 
-  it("throws on min >= max (degenerate range)", () => {
-    expect(() => elevationToColor(50, 100, 100)).toThrow();
-    expect(() => elevationToColor(50, 101, 100)).toThrow();
+  it("returns neutral grey on min >= max (degenerate range)", () => {
+    expect(elevationToColor(50, 100, 100)).toEqual([0.7, 0.7, 0.7]);
+    expect(elevationToColor(50, 101, 100)).toEqual([0.7, 0.7, 0.7]);
   });
 });
 
