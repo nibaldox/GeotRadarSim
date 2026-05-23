@@ -20,12 +20,12 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Minimalist Theme, Sidebar Resize & Collapse States
-  const [theme, setTheme] = useState<"slate" | "charcoal" | "amber">(
+  const [theme, setTheme] = useState<"dark" | "light">(
     () => {
       if (typeof localStorage !== "undefined" && localStorage.getItem) {
-        return (localStorage.getItem("geotradar-theme") as "slate" | "charcoal" | "amber") || "slate";
+        return (localStorage.getItem("geotradar-theme") as "dark" | "light") || "dark";
       }
-      return "slate";
+      return "dark";
     }
   );
   const [sidebarWidth, setSidebarWidth] = useState<number>(
@@ -42,7 +42,7 @@ function App() {
   // Sync theme with Document Body
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("theme-slate", "theme-charcoal", "theme-amber");
+    root.classList.remove("theme-dark", "theme-light", "theme-slate", "theme-charcoal", "theme-amber");
     root.classList.add(`theme-${theme}`);
     if (typeof localStorage !== "undefined" && localStorage.setItem) {
       localStorage.setItem("geotradar-theme", theme);
@@ -170,24 +170,28 @@ function App() {
       >
         {/* Console Header: Selector de temas y cierres */}
         <div className="sidebar-header">
-          <div className="theme-switcher">
-            <span style={{ fontSize: "9px", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "0.06em", fontWeight: 600 }}>Theme</span>
-            <button 
-              className={`theme-dot slate ${theme === 'slate' ? 'active' : ''}`} 
-              onClick={() => setTheme('slate')}
-              title="Slate Theme"
-            />
-            <button 
-              className={`theme-dot charcoal ${theme === 'charcoal' ? 'active' : ''}`} 
-              onClick={() => setTheme('charcoal')}
-              title="Charcoal Theme"
-            />
-            <button 
-              className={`theme-dot amber ${theme === 'amber' ? 'active' : ''}`} 
-              onClick={() => setTheme('amber')}
-              title="Amber Theme"
-            />
-          </div>
+          <button 
+            className="theme-toggle-btn"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? "Cambiar a Tema Claro" : "Cambiar a Tema Oscuro"}
+          >
+            {theme === 'dark' ? (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(207, 73%, 70%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="hsl(207, 73%, 70%)" />
+                </svg>
+                <span className="theme-toggle-text" style={{ color: "hsl(207, 73%, 70%)" }}>Oscuro</span>
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="hsl(38, 90%, 45%)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="4" fill="hsl(38, 90%, 45%)" />
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                </svg>
+                <span className="theme-toggle-text" style={{ color: "hsl(38, 90%, 45%)" }}>Claro</span>
+              </>
+            )}
+          </button>
           
           <button 
             className="close-sidebar-btn" 

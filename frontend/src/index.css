@@ -2,8 +2,8 @@
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap');
 
-:root, .theme-slate {
-  /* 💻 Industrial Slate (Defecto) - Gris acero y cian técnico frío */
+:root, .theme-dark {
+  /* 💻 Industrial Slate Dark Theme (Defecto) - Gris acero y cian técnico frío */
   --bg-color: hsl(220, 20%, 8%);
   --bg-gradient: radial-gradient(circle at top right, hsl(220, 20%, 15%) 0%, hsl(220, 20%, 8%) 60%, hsl(220, 20%, 4%) 100%);
   --sidebar-bg: hsla(220, 20%, 9%, 0.9);
@@ -35,54 +35,37 @@
   --glass-blur: blur(20px);
 }
 
-.theme-charcoal {
-  /* ⚙️ Tactical Charcoal - Ultra Minimalista escandinavo en escala de grises */
-  --bg-color: hsl(0, 0%, 8%);
-  --bg-gradient: radial-gradient(circle at top right, hsl(0, 0%, 14%) 0%, hsl(0, 0%, 8%) 60%, hsl(0, 0%, 4%) 100%);
-  --sidebar-bg: hsla(0, 0%, 9%, 0.92);
-  --panel-bg: hsla(0, 0%, 15%, 0.55);
-  --panel-border: hsla(0, 0%, 100%, 0.05);
-  --panel-border-hover: hsla(0, 0%, 100%, 0.22);
+.theme-light {
+  /* ☀️ Premium Light Theme - Claro, limpio y con excelente contraste */
+  --bg-color: hsl(210, 20%, 93%);
+  --bg-gradient: radial-gradient(circle at top right, hsl(210, 20%, 98%) 0%, hsl(210, 20%, 93%) 60%, hsl(210, 20%, 88%) 100%);
+  --sidebar-bg: hsla(210, 20%, 96%, 0.9);
+  --panel-bg: hsla(210, 20%, 100%, 0.65);
+  --panel-border: hsla(210, 16%, 10%, 0.08);
+  --panel-border-hover: hsla(210, 50%, 40%, 0.25);
   
-  --text-primary: hsl(0, 0%, 94%);
-  --text-secondary: hsl(0, 0%, 65%);
+  --text-primary: hsl(210, 30%, 15%);
+  --text-secondary: hsl(210, 15%, 45%);
   
-  --accent-color: hsl(0, 0%, 82%); /* Blanco tiza / gris mate de alta precisión */
-  --accent-hover: hsl(0, 0%, 100%);
-  --accent-active: hsl(0, 0%, 68%);
-  --accent-glow: hsla(0, 0%, 100%, 0.12);
+  --accent-color: hsl(210, 50%, 40%); /* Cian oscuro técnico y elegante */
+  --accent-hover: hsl(210, 50%, 48%);
+  --accent-active: hsl(210, 50%, 32%);
+  --accent-glow: hsla(210, 50%, 40%, 0.12);
   
-  --danger: hsl(0, 0%, 55%);
-  --success: hsl(0, 0%, 75%);
-  --warning: hsl(0, 0%, 68%);
+  --danger: hsl(351, 80%, 45%);
+  --success: hsl(140, 50%, 35%);
+  --warning: hsl(38, 80%, 40%);
   
-  --disabled-bg: hsla(0, 0%, 100%, 0.02);
-  --disabled-text: hsla(0, 0%, 100%, 0.18);
-}
+  --disabled-bg: hsla(210, 16%, 10%, 0.04);
+  --disabled-text: hsla(210, 16%, 10%, 0.3);
 
-.theme-amber {
-  /* 📟 Classic Amber - Fósforo radar retro-futurista táctico */
-  --bg-color: hsl(24, 20%, 6%);
-  --bg-gradient: radial-gradient(circle at top right, hsl(24, 25%, 12%) 0%, hsl(24, 20%, 6%) 60%, hsl(24, 25%, 3%) 100%);
-  --sidebar-bg: hsla(24, 20%, 7%, 0.9);
-  --panel-bg: hsla(24, 16%, 13%, 0.5);
-  --panel-border: hsla(28, 40%, 40%, 0.12);
-  --panel-border-hover: hsla(28, 80%, 55%, 0.35);
-  
-  --text-primary: hsl(28, 70%, 88%);
-  --text-secondary: hsl(28, 35%, 60%);
-  
-  --accent-color: hsl(28, 85%, 52%); /* Ámbar fósforo de radar clásico */
-  --accent-hover: hsl(28, 90%, 60%);
-  --accent-active: hsl(28, 85%, 44%);
-  --accent-glow: hsla(28, 85%, 52%, 0.22);
-  
-  --danger: hsl(12, 80%, 52%);
-  --success: hsl(45, 90%, 48%);
-  --warning: hsl(28, 90%, 50%);
-  
-  --disabled-bg: hsla(28, 20%, 100%, 0.02);
-  --disabled-text: hsla(28, 20%, 100%, 0.18);
+  /* Typography Design Tokens */
+  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Shadows & Light Glassmorphic Blur */
+  --glass-shadow: 0 16px 40px 0 hsla(210, 20%, 10%, 0.08);
+  --glass-blur: blur(20px);
 }
 
 body {
@@ -621,45 +604,54 @@ h4 {
   margin-bottom: 5px;
 }
 
-.theme-switcher {
+.theme-toggle-btn {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  cursor: pointer;
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  user-select: none;
 }
 
-.theme-dot {
+.theme-toggle-btn:hover {
+  border-color: var(--panel-border-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+}
+
+.theme-toggle-btn svg {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), fill 0.3s ease, stroke 0.3s ease;
 }
 
-.theme-dot:hover {
-  transform: scale(1.25);
-  border-color: rgba(255, 255, 255, 0.8);
+.theme-toggle-btn:hover svg {
+  transform: rotate(20deg) scale(1.1);
 }
 
-.theme-dot.active {
-  border-color: #ffffff;
-  transform: scale(1.25);
-  box-shadow: 0 0 10px currentColor;
+.theme-toggle-text {
+  font-size: 10px;
+  font-family: var(--font-family);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color 0.3s ease;
 }
 
-.theme-dot.slate {
-  background: hsl(210, 35%, 60%);
-  color: hsla(210, 35%, 60%, 0.4);
-}
-
-.theme-dot.charcoal {
-  background: hsl(0, 0%, 82%);
-  color: hsla(0, 0%, 82%, 0.4);
-}
-
-.theme-dot.amber {
-  background: hsl(28, 85%, 52%);
-  color: hsla(28, 85%, 52%, 0.4);
+/* Smooth targeted theme transitions for primary layout elements */
+body, .sidebar, .glass-panel, .btn-primary, .btn-secondary, .hud-card, .hud-metric-row, h1, h2, h3, h4, span, label, input, select, textarea {
+  transition: background-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              background 0.4s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              color 0.3s ease, 
+              box-shadow 0.4s ease;
 }
 
 /* Botón de Cierre Responsivo */
