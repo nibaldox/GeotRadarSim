@@ -90,6 +90,16 @@ export interface JobStatusResponse {
   error?: string;
 }
 
+export interface SensitivityMapRequest {
+  terrainId: string;
+  radarPositions: Point3D[];
+}
+
+export interface SensitivityMapResponse {
+  sensitivityGrid?: number[][]; // Grid de la misma dimension que el terreno
+  flat_sensitivity_grid?: Float32Array; // Performance optimization: flat 1D array representing sensitivity
+}
+
 
 
 
