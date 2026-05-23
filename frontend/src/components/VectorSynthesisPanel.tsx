@@ -1,10 +1,28 @@
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useVectorStore } from "../store/vectorStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
 
 export function VectorSynthesisPanel() {
   const selectedCell = useVectorStore((s) => s.selectedCell);
+
+  // Collapsible state
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof localStorage !== "undefined" && localStorage.getItem) {
+      return localStorage.getItem("geotradar-collapse-vector") === "true";
+    }
+    return false;
+  });
+
+  const toggleCollapse = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      if (typeof localStorage !== "undefined" && localStorage.setItem) {
+        localStorage.setItem("geotradar-collapse-vector", String(next));
+      }
+      return next;
+    });
+  }, []);
   const trueSlideMagnitude = useVectorStore((s) => s.trueSlideMagnitude);
   const noiseLevel = useVectorStore((s) => s.noiseLevel);
   const reconstructionResult = useVectorStore((s) => s.reconstructionResult);
@@ -94,26 +112,50 @@ export function VectorSynthesisPanel() {
 
   return (
     <div className="glass-panel flex-col">
-      <div className="flex-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-        <h3 style={{ margin: 0 }}>Síntesis Vectorial 3D</h3>
-        {selectedCell && (
-          <button
-            onClick={reset}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--danger)",
-              cursor: "pointer",
-              fontSize: "10px",
-              textTransform: "uppercase",
-              fontWeight: "bold",
-              outline: "none"
-            }}
-          >
-            Quitar Selección
-          </button>
-        )}
+      <div 
+        onClick={toggleCollapse}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+      >
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>Síntesis Vectorial 3D</h3>
+          {selectedCell && (
+            <button
+              onClick={(e) => { e.stopPropagation(); reset(); }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--danger)",
+                cursor: "pointer",
+                fontSize: "10px",
+                textTransform: "uppercase",
+                fontWeight: "bold",
+                outline: "none"
+              }}
+            >
+              Quitar Selección
+            </button>
+          )}
+        </div>
+        <svg 
+          viewBox="0 0 24 24" 
+          width="16" 
+          height="16" 
+          fill="none" 
+          stroke="var(--text-secondary)" 
+          strokeWidth="2.5" 
+          strokeLinecap="round" 
+          strokeLinejoin="round"
+          style={{ 
+            transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
+            transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
+          }}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </div>
+
+      {!isCollapsed && (
+        <div className="flex-col" style={{ marginTop: "10px" }}>
 
       {deployedRadars.length < 2 ? (
         <div style={{
@@ -368,6 +410,8 @@ export function VectorSynthesisPanel() {
             </div>
           )}
         </>
+      )}
+        </div>
       )}
     </div>
   );
