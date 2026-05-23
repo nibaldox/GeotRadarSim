@@ -11,7 +11,7 @@ vi.mock("../services/api", () => ({
   getLOSJob: vi.fn(),
 }));
 
-import { runVectorAnalysis, runSensitivityAnalysis, getLOSJob } from "../services/api";
+import { runVectorAnalysis, getLOSJob } from "../services/api";
 import type { Point3D } from "../types/api";
 
 vi.mock("./analysisStore", () => ({
@@ -133,6 +133,7 @@ describe("useVectorStore — Actions", () => {
     vi.mocked(getLOSJob).mockResolvedValueOnce({
       job_id: "job-v123",
       status: "COMPLETED",
+      created_at: new Date().toISOString(),
       result: {
         trueVector: [50, 0, 0],
         reconstructedVector: [49.5, 0.2, -0.1],

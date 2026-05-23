@@ -128,12 +128,15 @@ function computeVectorReconstruction(input: ReconstructionInput) {
   const ty = trueVector[1];
   const tz = trueVector[2];
   const tNorm = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1.0;
-  const uFailure = [tx / tNorm, ty / tNorm, tz / tNorm];
+  const uFailure: [number, number, number] = [tx / tNorm, ty / tNorm, tz / tNorm];
 
   let sumSquares = 0;
   for (let i = 0; i < N; i++) {
-    const dot = A[i]![0] * uFailure[0] + A[i]![1] * uFailure[1] + A[i]![2] * uFailure[2];
-    sumSquares += dot * dot;
+    const uRad = A[i];
+    if (uRad) {
+      const dot = uRad[0] * uFailure[0] + uRad[1] * uFailure[1] + uRad[2] * uFailure[2];
+      sumSquares += dot * dot;
+    }
   }
   const sensitivity = Math.sqrt(sumSquares / N);
 

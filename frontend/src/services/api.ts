@@ -14,11 +14,8 @@ import type {
   LOSRequest,
   JobResponse,
   JobStatusResponse,
-  Point3D,
   VectorReconstructionRequest,
-  VectorReconstructionResponse,
   SensitivityMapRequest,
-  SensitivityMapResponse,
 } from "../types/api";
 
 import { generateSyntheticTerrain } from "./terrainEngine";
@@ -194,7 +191,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     if (e.data.error) {
       jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
     } else {
-      const resultData = { ...e.data };
+      const resultData = { ...e.data } as LOSResponse;
       if (resultData.flat_quality_grid && (!resultData.shadow_grid || !resultData.quality_grid)) {
         const { shadow_grid, quality_grid } = inflateLOSResult(
           resultData.flat_quality_grid,
@@ -372,7 +369,7 @@ function inflateLOSResult(
     const qualityRow = new Array<number>(cols);
     const rowOffset = r * cols;
     for (let c = 0; c < cols; c++) {
-      const q = flatQuality[rowOffset + c];
+      const q = flatQuality[rowOffset + c] ?? -1.0;
       if (q === -1.0) {
         shadowRow[c] = true;
         qualityRow[c] = 0;
@@ -398,7 +395,7 @@ function inflateSensitivityResult(
     const row = new Array<number>(cols);
     const rowOffset = r * cols;
     for (let c = 0; c < cols; c++) {
-      row[c] = flatSensitivity[rowOffset + c];
+      row[c] = flatSensitivity[rowOffset + c] ?? 0;
     }
     sensitivityGrid.push(row);
   }

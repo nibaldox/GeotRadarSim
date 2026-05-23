@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, beforeAll } from "vitest";
 
 // Setup global self mock for Web Worker environment simulation in Node
-const globalSelf = global as any;
+const globalSelf = globalThis as any;
 let messagesSent: any[] = [];
 
 beforeAll(async () => {
