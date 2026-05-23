@@ -2,6 +2,8 @@
 
 **Free, open-source, browser-based tool for simulating slope monitoring radar coverage on real mine topography.**
 
+> [Leer en Español 🇪🇸](README.es.md)
+
 > Built by a geotechnical engineer, for geotechnical engineers.  
 > Because radar positioning decisions should be based on data — not intuition.
 
