@@ -12,7 +12,7 @@ import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
 import { getTerrainExtent, getMinElevation } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
-import { useAnalysisStore } from "../store/analysisStore";
+import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
 import { useVectorStore } from "../store/vectorStore";
 import { ShadowOverlay } from "./ShadowOverlay";
 
@@ -148,8 +148,17 @@ function TerrainMesh({
 /** All radar markers: current single + all deployed radars */
 function RadarMarkers() {
   const radarPosition = useAnalysisStore((s) => s.radarPosition);
-  const deployedRadars = useAnalysisStore((s) => s.deployedRadars);
+  const history = useAnalysisStore((s) => s.history);
   const metadata = useTerrainStore((s) => s.metadata);
+
+  const deployedRadars = useMemo(() => {
+    const selected = history.filter(h => h.selected);
+    return selected.map((h, idx) => ({
+      id: h.timestamp + '-' + idx,
+      position: h.position,
+      color: RADAR_COLORS[idx % RADAR_COLORS.length] || "#ff4444"
+    }));
+  }, [history]);
 
   if (!metadata) return null;
   const bounds = metadata.bounds;
@@ -445,6 +454,23 @@ export function TerrainViewer({
   // Tools state (PAN is safe, ADD_RADAR places radars, SELECT_CELL simulates vector landslides)
   const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR" | "SELECT_CELL">("PAN");
   const [cameraView, setCameraView] = useState<"HOME" | "TOP" | "FRONT" | "SIDE" | null>(null);
+  const visualizationMode = useVectorStore((s) => s.visualizationMode);
+
+  // Tool explanations mapping
+  const toolExplanations = {
+    PAN: {
+      title: "Safe Navigation Mode",
+      desc: "Rotación libre y encuadre seguro de cámara. Clic izquierdo para orbitar, Clic derecho para encuadre (Pan), Scroll para Zoom."
+    },
+    ADD_RADAR: {
+      title: "Radar Placement Mode",
+      desc: "Haz clic izquierdo sobre cualquier celda del terreno 3D para desplegar un radar y proyectar su raycasting inmediatamente."
+    },
+    SELECT_CELL: {
+      title: "Vector Landslide Simulation",
+      desc: "Haz clic sobre cualquier celda del talud para simular un vector de falla (máxima pendiente) y resolver la reconstrucción 3D."
+    }
+  };
 
   if (!grid || grid.length === 0) {
     return (
@@ -589,6 +615,92 @@ export function TerrainViewer({
           </button>
         </div>
       </div>
+
+      {/* Geotechnical Tactical HUD Legend Panel */}
+      {showShadowOverlay && (
+        <div className="geotechnical-hud-legend">
+          <div className="hud-legend-title">
+            {visualizationMode === "SENSITIVITY"
+              ? "Geometric Sensitivity Legend"
+              : "LOS Quality Legend"}
+          </div>
+
+          {visualizationMode === "SENSITIVITY" ? (
+            <>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
+                <div>
+                  <span className="hud-legend-label">Obstructed Zone (Shadow)</span>
+                  <div className="hud-legend-desc">Obstructed by topography or out of range. Rendered transparent.</div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(300, 100%, 25%)" }} />
+                <div>
+                  <span className="hud-legend-label">Critical Blind Zone (0.0 - 0.2)</span>
+                  <div className="hud-legend-desc">Displacement is perpendicular to radar LOS. Complete detection failure.</div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(220, 80%, 45%)" }} />
+                <div>
+                  <span className="hud-legend-label">Low/Medium Sensitivity (0.2 - 0.6)</span>
+                  <div className="hud-legend-desc">Oblique angle. Signal detects partial motion vector components.</div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
+                <div>
+                  <span className="hud-legend-label">Optimal Sensitivity (0.6 - 1.0)</span>
+                  <div className="hud-legend-desc">Aligned direction. Radar visual is parallel to slope movement direction.</div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
+                <div>
+                  <span className="hud-legend-label">Shadowed Zone (Obstructed)</span>
+                  <div className="hud-legend-desc">No line of sight (LOS) to any active radar. Obstructed or out of range.</div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(351, 80%, 50%)" }} />
+                <div>
+                  <span className="hud-legend-label">Poor Quality (0.0 - 0.3)</span>
+                  <div className="hud-legend-desc">Suboptimal signal angle or long distance. Hard to monitor.</div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(38, 90%, 45%)" }} />
+                <div>
+                  <span className="hud-legend-label">Medium Quality (0.3 - 0.7)</span>
+                  <div className="hud-legend-desc">Adequate signal. Reliable geotechnical data collection.</div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
+                <div>
+                  <span className="hud-legend-label">Excellent Quality (0.7 - 1.0)</span>
+                  <div className="hud-legend-desc">Perfect angle of incidence and short distance. Ideal SNR.</div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Active Tool Help Box */}
+          <div className="hud-tool-info">
+            <div className="hud-tool-info-title">Active Tool Status</div>
+            <div style={{ fontSize: "10.5px", fontWeight: "bold", color: "var(--text-primary)" }}>
+              {toolExplanations[activeTool].title}
+            </div>
+            <div className="hud-tool-info-text">
+              {toolExplanations[activeTool].desc}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

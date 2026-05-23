@@ -10,6 +10,7 @@ export interface VectorState {
   noiseLevel: number; // mm
   reconstructionResult: VectorReconstructionResponse | null;
   sensitivityGrid: number[][] | null;
+  flat_sensitivity_grid: Float32Array | null;
   visualizationMode: "QUALITY" | "SENSITIVITY";
   loading: boolean;
   error: string | null;
@@ -32,11 +33,15 @@ async function triggerReconstruction(
   noiseLevel: number,
   set: any
 ) {
-  const deployedRadars = useAnalysisStore.getState().deployedRadars;
+  const selectedHistory = useAnalysisStore.getState().history.filter(h => h.selected);
+  const deployedRadars = selectedHistory.map(h => ({
+    position: h.position,
+    modelId: h.radarId
+  }));
   
   if (deployedRadars.length === 0) {
     set({
-      error: "Despliega al menos un radar en la red para poder realizar la síntesis vectorial.",
+      error: "Selecciona al menos un análisis en el historial para realizar la síntesis vectorial.",
       loading: false,
       reconstructionResult: null
     });
@@ -166,6 +171,7 @@ export const useVectorStore = create<VectorState>((set, get) => ({
   noiseLevel: 1.0, // 1mm noise default
   reconstructionResult: null,
   sensitivityGrid: null,
+  flat_sensitivity_grid: null,
   visualizationMode: "QUALITY",
   loading: false,
   error: null,
@@ -225,9 +231,14 @@ export const useVectorStore = create<VectorState>((set, get) => ({
   },
 
   computeSensitivityMap: async (terrainId) => {
-    const deployedRadars = useAnalysisStore.getState().deployedRadars;
+    const selectedHistory = useAnalysisStore.getState().history.filter(h => h.selected);
+    const deployedRadars = selectedHistory.map(h => ({
+      position: h.position,
+      modelId: h.radarId
+    }));
+
     if (deployedRadars.length === 0) {
-      set({ sensitivityGrid: null });
+      set({ sensitivityGrid: null, flat_sensitivity_grid: null });
       return;
     }
 
@@ -244,7 +255,11 @@ export const useVectorStore = create<VectorState>((set, get) => ({
         try {
           const s = await getLOSJob(jobResp.job_id);
           if (s.status === "COMPLETED" && s.result) {
-            set({ sensitivityGrid: s.result.sensitivityGrid, loading: false });
+            set({
+              sensitivityGrid: s.result.sensitivityGrid,
+              flat_sensitivity_grid: s.result.flat_sensitivity_grid || null,
+              loading: false
+            });
           } else if (s.status === "FAILED") {
             set({ error: s.error || "Failed to calculate sensitivity map", loading: false });
           } else {
@@ -273,6 +288,7 @@ export const useVectorStore = create<VectorState>((set, get) => ({
     selectedCell: null,
     selectedCellLocal: null,
     reconstructionResult: null,
+    flat_sensitivity_grid: null,
     error: null
   })
 }));

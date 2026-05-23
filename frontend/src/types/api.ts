@@ -49,6 +49,7 @@ export interface LOSResponse {
   visible_area_m2: number;
   shadow_zones: ShadowZone[];
   quality_grid?: number[][];
+  flat_quality_grid?: Float32Array; // Performance optimization: flat 1D array representing SNR quality / shadow (-1.0)
 }
 
 export interface TerrainGridResponse {
@@ -111,7 +112,8 @@ export interface SensitivityMapRequest {
 }
 
 export interface SensitivityMapResponse {
-  sensitivityGrid: number[][]; // Grid de la misma dimension que el terreno
+  sensitivityGrid?: number[][]; // Grid de la misma dimension que el terreno
+  flat_sensitivity_grid?: Float32Array; // Performance optimization: flat 1D array representing sensitivity
 }
 
 

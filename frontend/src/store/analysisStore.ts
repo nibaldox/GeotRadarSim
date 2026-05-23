@@ -21,6 +21,7 @@ export interface HistoryEntry {
   timestamp: string;
   result: LOSResponse;
   radarId: string;
+  selected?: boolean;
 }
 
 // ─── Multi-Radar types ───────────────────────────────────────────────────────
@@ -78,6 +79,8 @@ export interface AnalysisState {
   clearResult: () => void;
   clearHistory: () => void;
   restoreHistoryEntry: (index: number) => void;
+  toggleHistoryEntrySelection: (index: number) => void;
+  removeHistoryEntry: (index: number) => void;
 
   // Multi-radar actions
   deployCurrentRadar: () => void;
@@ -92,25 +95,59 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
   if (results.length === 0) throw new Error("No results to merge");
   if (results.length === 1) return results[0]!;
 
-  const rows = results[0]!.shadow_grid.length;
-  const cols = results[0]!.shadow_grid[0]?.length ?? 0;
+  const firstRes = results[0]!;
+  let rows = 0;
+  let cols = 0;
+  if (firstRes.shadow_grid && firstRes.shadow_grid.length > 0) {
+    rows = firstRes.shadow_grid.length;
+    cols = firstRes.shadow_grid[0]?.length ?? 0;
+  } else if (firstRes.flat_quality_grid) {
+    rows = Math.sqrt(firstRes.flat_quality_grid.length);
+    cols = rows;
+  }
 
-  // shadow = true only if ALL radars say shadow (= no radar can see it)
-  const shadow_grid: boolean[][] = Array.from({ length: rows }, (_, r) =>
-    Array.from({ length: cols }, (__, c) =>
-      results.every((res) => res.shadow_grid[r]?.[c] ?? true)
-    )
-  );
+  const size = rows * cols;
+  const flat_quality_grid = new Float32Array(size);
+  flat_quality_grid.fill(-1.0);
 
-  // quality = max across all radars for visible cells
-  const quality_grid: number[][] = Array.from({ length: rows }, (_, r) =>
-    Array.from({ length: cols }, (__, c) => {
-      if (shadow_grid[r]![c]) return 0;
-      return Math.max(...results.map((res) => res.quality_grid?.[r]?.[c] ?? 0));
-    })
-  );
+  const shadow_grid: boolean[][] = [];
+  const quality_grid: number[][] = [];
+  let visibleCount = 0;
 
-  const visibleCount = shadow_grid.flat().filter((v) => !v).length;
+  for (let r = 0; r < rows; r++) {
+    shadow_grid.push(new Array<boolean>(cols));
+    quality_grid.push(new Array<number>(cols));
+  }
+
+  for (let idx = 0; idx < size; idx++) {
+    let maxQ = -1.0;
+    const r = Math.floor(idx / cols);
+    const c = idx % cols;
+    for (let i = 0; i < results.length; i++) {
+      const res = results[i]!;
+      let q = -1.0;
+      if (res.flat_quality_grid) {
+        q = res.flat_quality_grid[idx];
+      } else if (res.shadow_grid && res.quality_grid) {
+        const shadow = res.shadow_grid[r]?.[c] ?? true;
+        if (!shadow) {
+          q = res.quality_grid[r]?.[c] ?? 0;
+        }
+      }
+      if (q > maxQ) maxQ = q;
+    }
+    flat_quality_grid[idx] = maxQ;
+
+    if (maxQ === -1.0) {
+      shadow_grid[r]![c] = true;
+      quality_grid[r]![c] = 0;
+    } else {
+      shadow_grid[r]![c] = false;
+      quality_grid[r]![c] = maxQ;
+      visibleCount++;
+    }
+  }
+
   const total = rows * cols;
   const coverage_pct = total > 0 ? (visibleCount / total) * 100 : 0;
 
@@ -128,6 +165,7 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
   return {
     shadow_grid,
     quality_grid,
+    flat_quality_grid,
     coverage_pct: Number(coverage_pct.toFixed(2)),
     visible_area_m2: Number(visible_area_m2.toFixed(2)),
     coverage_polygon,
@@ -234,8 +272,11 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
               timestamp: new Date().toLocaleTimeString(),
               result: statusResp.result,
               radarId: selectedRadarId,
+              selected: true,
             };
-            set((s) => ({ history: [entry, ...s.history].slice(0, 10) }));
+            set((s) => ({
+              history: [entry, ...s.history.map((h) => ({ ...h, selected: false }))].slice(0, 10),
+            }));
           } else if (statusResp.status === "FAILED") {
             set({ error: statusResp.error || "Analysis failed", loading: false });
           } else {
@@ -260,15 +301,56 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   clearResult: () => set({ losResult: null }),
   clearHistory: () => set({ history: [] }),
-
   restoreHistoryEntry: (index) => {
-    const entry = get().history[index];
+    const history = get().history.map((entry, idx) => ({
+      ...entry,
+      selected: idx === index
+    }));
+    const entry = history[index];
     if (!entry) return;
     set({
+      history,
       losResult: entry.result,
       radarPosition: entry.position,
       selectedRadarId: entry.radarId,
     });
+  },
+  toggleHistoryEntrySelection: (index) => {
+    const history = get().history.map((entry, idx) => {
+      if (idx === index) {
+        return { ...entry, selected: !entry.selected };
+      }
+      return entry;
+    });
+
+    const selectedEntries = history.filter((e) => e.selected);
+    let newLosResult = get().losResult;
+
+    if (selectedEntries.length === 0) {
+      newLosResult = null;
+    } else if (selectedEntries.length === 1) {
+      newLosResult = selectedEntries[0]!.result;
+    } else {
+      newLosResult = mergeResults(selectedEntries.map((e) => e.result));
+    }
+
+    set({ history, losResult: newLosResult });
+  },
+  removeHistoryEntry: (index) => {
+    const history = get().history.filter((_, idx) => idx !== index);
+
+    const selectedEntries = history.filter((e) => e.selected);
+    let newLosResult = get().losResult;
+
+    if (selectedEntries.length === 0) {
+      newLosResult = null;
+    } else if (selectedEntries.length === 1) {
+      newLosResult = selectedEntries[0]!.result;
+    } else {
+      newLosResult = mergeResults(selectedEntries.map((e) => e.result));
+    }
+
+    set({ history, losResult: newLosResult });
   },
 
   // ─── Multi-Radar ────────────────────────────────────────────────────────

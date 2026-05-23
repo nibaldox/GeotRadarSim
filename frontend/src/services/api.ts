@@ -56,12 +56,12 @@ const LOCAL_RADARS: RadarConfig[] = [
     model_id: "ibis-arcsar360",
     display_name: "IBIS-ArcSAR360",
     manufacturer: "IDS GeoRadar",
-    min_range_m: 10.0,
-    max_range_m: 400.0,
+    min_range_m: 50.0,
+    max_range_m: 2500.0,
     h_beam_width_deg: 360.0,
     v_beam_width_deg: 40.0,
-    elevation_min_deg: -20.0,
-    elevation_max_deg: 20.0,
+    elevation_min_deg: -60.0,
+    elevation_max_deg: 60.0,
     scan_pattern: "SAR360",
     azimuth_range_deg: null
   },
@@ -194,11 +194,21 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     if (e.data.error) {
       jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
     } else {
-      lastLOSResult = e.data;
+      const resultData = { ...e.data };
+      if (resultData.flat_quality_grid && (!resultData.shadow_grid || !resultData.quality_grid)) {
+        const { shadow_grid, quality_grid } = inflateLOSResult(
+          resultData.flat_quality_grid,
+          terrain.metadata.grid_rows,
+          terrain.metadata.grid_cols
+        );
+        resultData.shadow_grid = shadow_grid;
+        resultData.quality_grid = quality_grid;
+      }
+      lastLOSResult = resultData;
       jobStore.set(jobId, {
         job_id: jobId,
         status: "COMPLETED",
-        result: e.data,
+        result: resultData,
         created_at: new Date().toISOString()
       });
     }
@@ -311,10 +321,18 @@ export async function runSensitivityAnalysis(req: SensitivityMapRequest): Promis
     if (e.data.error) {
       jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
     } else {
+      const resultData = { ...e.data };
+      if (resultData.flat_sensitivity_grid && !resultData.sensitivityGrid) {
+        resultData.sensitivityGrid = inflateSensitivityResult(
+          resultData.flat_sensitivity_grid,
+          terrain.metadata.grid_rows,
+          terrain.metadata.grid_cols
+        );
+      }
       jobStore.set(jobId, {
         job_id: jobId,
         status: "COMPLETED",
-        result: e.data,
+        result: resultData,
         created_at: new Date().toISOString()
       });
     }
@@ -335,4 +353,54 @@ export async function runSensitivityAnalysis(req: SensitivityMapRequest): Promis
   });
 
   return { job_id: jobId, status: "PENDING" };
+}
+
+// ────────────────────────────────────────────
+// Helper decoders to inflate 1D flat arrays to 2D
+// ────────────────────────────────────────────
+
+function inflateLOSResult(
+  flatQuality: Float32Array,
+  rows: number,
+  cols: number
+): { shadow_grid: boolean[][]; quality_grid: number[][] } {
+  const shadow_grid: boolean[][] = [];
+  const quality_grid: number[][] = [];
+  
+  for (let r = 0; r < rows; r++) {
+    const shadowRow = new Array<boolean>(cols);
+    const qualityRow = new Array<number>(cols);
+    const rowOffset = r * cols;
+    for (let c = 0; c < cols; c++) {
+      const q = flatQuality[rowOffset + c];
+      if (q === -1.0) {
+        shadowRow[c] = true;
+        qualityRow[c] = 0;
+      } else {
+        shadowRow[c] = false;
+        qualityRow[c] = q;
+      }
+    }
+    shadow_grid.push(shadowRow);
+    quality_grid.push(qualityRow);
+  }
+  
+  return { shadow_grid, quality_grid };
+}
+
+function inflateSensitivityResult(
+  flatSensitivity: Float32Array,
+  rows: number,
+  cols: number
+): number[][] {
+  const sensitivityGrid: number[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const row = new Array<number>(cols);
+    const rowOffset = r * cols;
+    for (let c = 0; c < cols; c++) {
+      row[c] = flatSensitivity[rowOffset + c];
+    }
+    sensitivityGrid.push(row);
+  }
+  return sensitivityGrid;
 }

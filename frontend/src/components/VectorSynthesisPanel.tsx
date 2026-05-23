@@ -21,7 +21,15 @@ export function VectorSynthesisPanel() {
 
   const grid = useTerrainStore((s) => s.grid);
   const metadata = useTerrainStore((s) => s.metadata);
-  const deployedRadars = useAnalysisStore((s) => s.deployedRadars);
+  const history = useAnalysisStore((s) => s.history);
+  const deployedRadars = useMemo(() => {
+    const selected = history.filter(h => h.selected);
+    return selected.map((h, idx) => ({
+      id: h.timestamp + '-' + idx,
+      modelId: h.radarId,
+      position: h.position
+    }));
+  }, [history]);
   const activeRadarModel = useAnalysisStore((s) => s.selectedRadarId);
 
   const activeRadarName = useMemo(() => {
@@ -107,7 +115,7 @@ export function VectorSynthesisPanel() {
         )}
       </div>
 
-      {deployedRadars.length === 0 ? (
+      {deployedRadars.length < 2 ? (
         <div style={{
           padding: "12px",
           background: "hsla(351, 100%, 60%, 0.08)",
@@ -117,7 +125,7 @@ export function VectorSynthesisPanel() {
           color: "hsl(351, 100%, 80%)",
           lineHeight: "1.5"
         }}>
-          <strong>⚠️ Red Vacía:</strong> Despliega al menos 2 radares en diferentes posiciones de la ladera (en el panel "Radar Network") para habilitar la reconstrucción vectorial 3D. Un solo radar solo capta movimientos 1D.
+          <strong>⚠️ Red Incompleta:</strong> Selecciona al menos 2 análisis de radar en el panel de <strong>Historial</strong> (mediante sus casillas de verificación) para habilitar la reconstrucción vectorial 3D. Un solo radar solo capta movimientos 1D (en la línea de visión).
         </div>
       ) : (
         <>

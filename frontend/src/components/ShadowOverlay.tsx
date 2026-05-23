@@ -77,6 +77,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
   const losResult = useAnalysisStore((s) => s.losResult);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
   const sensitivityGrid = useVectorStore((s) => s.sensitivityGrid);
+  const flatSensitivityGrid = useVectorStore((s) => s.flat_sensitivity_grid);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
   // 1. Static Geometry (only rebuilds when terrain changes)
@@ -144,39 +145,78 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
       return null;
     }
 
-    const shadowGrid = losResult.shadow_grid;
-    const qualityGrid = losResult.quality_grid;
-    if (!shadowGrid) return null;
+    const isSensitivity = visualizationMode === "SENSITIVITY";
+    let data: Float32Array | null = null;
 
-    const data = new Float32Array(rows * cols);
-    const isSensitivity = visualizationMode === "SENSITIVITY" && sensitivityGrid;
-
-    for (let r = 0; r < rows; r++) {
-      if (!grid[r]) continue;
-      for (let c = 0; c < cols; c++) {
-        const isShadowed = shadowGrid[r] ? shadowGrid[r]![c] ?? true : true;
-        const idx = r * cols + c;
-
-        if (isShadowed) {
-          data[idx] = -1.0;  // Sentinel: zona en sombra → el shader descarta
-        } else {
-          if (isSensitivity && sensitivityGrid[r]) {
-            const sens = sensitivityGrid[r]![c] ?? 0;
-            data[idx] = Math.max(0.001, isNaN(sens) ? 0.001 : sens);
-          } else {
-            const quality = qualityGrid && qualityGrid[r] ? qualityGrid[r]![c] ?? 0 : 0;
-            data[idx] = Math.max(0.001, isNaN(quality) ? 0.001 : quality);
+    if (isSensitivity) {
+      if (flatSensitivityGrid) {
+        const size = rows * cols;
+        data = new Float32Array(size);
+        if (losResult.flat_quality_grid) {
+          const flatLOS = losResult.flat_quality_grid;
+          for (let i = 0; i < size; i++) {
+            data[i] = flatLOS[i] === -1.0 ? -1.0 : flatSensitivityGrid[i];
+          }
+        } else if (losResult.shadow_grid) {
+          const shadowGrid = losResult.shadow_grid;
+          for (let r = 0; r < rows; r++) {
+            const shadowRow = shadowGrid[r];
+            const rowOffset = r * cols;
+            for (let c = 0; c < cols; c++) {
+              const isShadowed = shadowRow ? shadowRow[c] ?? true : true;
+              const idx = rowOffset + c;
+              data[idx] = isShadowed ? -1.0 : flatSensitivityGrid[idx];
+            }
+          }
+        }
+      } else if (sensitivityGrid) {
+        data = new Float32Array(rows * cols);
+        const shadowGrid = losResult.shadow_grid;
+        for (let r = 0; r < rows; r++) {
+          if (!grid[r]) continue;
+          for (let c = 0; c < cols; c++) {
+            const isShadowed = shadowGrid[r] ? shadowGrid[r]![c] ?? true : true;
+            const idx = r * cols + c;
+            if (isShadowed) {
+              data[idx] = -1.0;
+            } else {
+              const sens = sensitivityGrid[r] ? sensitivityGrid[r]![c] ?? 0 : 0;
+              data[idx] = Math.max(0.001, isNaN(sens) ? 0.001 : sens);
+            }
+          }
+        }
+      }
+    } else {
+      if (losResult.flat_quality_grid) {
+        data = losResult.flat_quality_grid;
+      } else if (losResult.shadow_grid && losResult.quality_grid) {
+        data = new Float32Array(rows * cols);
+        const shadowGrid = losResult.shadow_grid;
+        const qualityGrid = losResult.quality_grid;
+        for (let r = 0; r < rows; r++) {
+          if (!grid[r]) continue;
+          for (let c = 0; c < cols; c++) {
+            const isShadowed = shadowGrid[r] ? shadowGrid[r]![c] ?? true : true;
+            const idx = r * cols + c;
+            if (isShadowed) {
+              data[idx] = -1.0;
+            } else {
+              const quality = qualityGrid[r] ? qualityGrid[r]![c] ?? 0 : 0;
+              data[idx] = Math.max(0.001, isNaN(quality) ? 0.001 : quality);
+            }
           }
         }
       }
     }
+
+    if (!data) return null;
 
     const tex = new THREE.DataTexture(data, cols, rows, THREE.RedFormat, THREE.FloatType);
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.needsUpdate = true;
     return tex;
-  }, [losResult, grid, visualizationMode, sensitivityGrid]);
+  }, [losResult, grid, visualizationMode, sensitivityGrid, flatSensitivityGrid]);
 
   // 3. Actualizar el uniform directamente en el material via ref si cambia en caliente
   //    Esto garantiza que Three.js suba la textura a la GPU en el próximo frame

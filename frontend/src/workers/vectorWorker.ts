@@ -11,7 +11,12 @@ self.onmessage = (e: MessageEvent<any>) => {
       self.postMessage(result);
     } else if (data.type === "SENSITIVITY") {
       const result = computeSensitivityMap(data);
-      self.postMessage(result);
+      if (result.flat_sensitivity_grid) {
+        const { sensitivityGrid, ...optimizedResult } = result;
+        self.postMessage(optimizedResult, [result.flat_sensitivity_grid.buffer]);
+      } else {
+        self.postMessage(result);
+      }
     } else {
       throw new Error(`Unknown job type '${data.type}'`);
     }
@@ -160,20 +165,23 @@ function computeSensitivityMap(input: SensitivityInput) {
   const N = radarPositions.length;
 
   const sensitivityGrid: number[][] = Array(rows).fill(null).map(() => Array(cols).fill(0));
+  const flatSensitivityGrid = new Float32Array(rows * cols);
 
   if (N === 0) {
-    return { sensitivityGrid };
+    return { sensitivityGrid, flat_sensitivity_grid: flatSensitivityGrid };
   }
 
   for (let r = 0; r < rows; r++) {
     const cy = bounds.min_y + resolution / 2 + r * resolution;
     
     for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
       const cx = bounds.min_x + resolution / 2 + c * resolution;
       const cz = grid[r]![c]!;
 
       if (isNaN(cz)) {
         sensitivityGrid[r]![c] = 0;
+        flatSensitivityGrid[idx] = 0;
         continue;
       }
 
@@ -221,9 +229,11 @@ function computeSensitivityMap(input: SensitivityInput) {
       }
 
       // Root-mean-square sensitivity (always claps between 0.0 and 1.0)
-      sensitivityGrid[r]![c] = Math.sqrt(sumSquares / N);
+      const sensVal = Math.sqrt(sumSquares / N);
+      sensitivityGrid[r]![c] = sensVal;
+      flatSensitivityGrid[idx] = sensVal;
     }
   }
 
-  return { sensitivityGrid };
+  return { sensitivityGrid, flat_sensitivity_grid: flatSensitivityGrid };
 }

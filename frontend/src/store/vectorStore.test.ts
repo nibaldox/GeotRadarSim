@@ -14,22 +14,25 @@ vi.mock("../services/api", () => ({
 import { runVectorAnalysis, runSensitivityAnalysis, getLOSJob } from "../services/api";
 import type { Point3D } from "../types/api";
 
-// Mock the analysis store for deployed radars
 vi.mock("./analysisStore", () => ({
   useAnalysisStore: {
     getState: () => ({
-      deployedRadars: [
+      history: [
         {
-          id: "rad-1",
-          modelId: "groundprobe-ssr-fx",
-          color: "#ff3653",
+          timestamp: "rad-1",
+          radarId: "groundprobe-ssr-fx",
           position: { x: 50, y: 30, z: 10 },
+          selected: true,
+          coveragePct: 80,
+          result: {} as any
         },
         {
-          id: "rad-2",
-          modelId: "reutech-msr",
-          color: "#0adb21",
+          timestamp: "rad-2",
+          radarId: "reutech-msr",
           position: { x: 150, y: 30, z: 15 },
+          selected: true,
+          coveragePct: 75,
+          result: {} as any
         }
       ],
       selectedRadarId: "groundprobe-ssr-fx",

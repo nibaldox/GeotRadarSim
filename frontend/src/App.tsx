@@ -9,7 +9,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { TerrainViewer } from "./components/TerrainViewer";
 import { RadarControls } from "./components/RadarControls";
-import { MultiRadarPanel } from "./components/MultiRadarPanel";
 import { VectorSynthesisPanel } from "./components/VectorSynthesisPanel";
 import { AnalysisHistory } from "./components/AnalysisHistory";
 import { ExportPanel } from "./components/ExportPanel";
@@ -269,7 +268,6 @@ function App() {
         </div>
 
         <RadarControls />
-        <MultiRadarPanel />
         <VectorSynthesisPanel />
         <AnalysisHistory />
 
