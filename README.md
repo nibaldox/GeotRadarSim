@@ -32,9 +32,10 @@ This mental 3D exercise is unreliable. Commercial tools exist — but their lice
 | 🏗️ **Synthetic terrain** | Generate example hilly terrain for quick testing |
 | 📡 **LOS analysis** | Ray-traced Line-of-Sight analysis with signal quality map |
 | 🎯 **Radar parameters** | Override range, elevation, and azimuth per analysis |
-| 🔴 **Multi-radar network** | Deploy multiple radars and compute unified coverage |
-| 📊 **Coverage metrics** | Coverage %, visible area (m²), shadow zone count |
-| 🕓 **History** | Click any past result to instantly restore the coverage overlay |
+| 🔴 **Multi-radar network** | Dynamic union of multiple coverage overlays by toggling history checkboxes |
+| 🧮 **3D Vector Synthesis** | Moore-Penrose analytical solver reconstructing 3D gravity vectors from 1D LOS |
+| 📊 **Coverage metrics** | Coverage %, visible area (m²), shadow zones, and geometric sensitivity |
+| 🕓 **History Panel** | Toggle checkboxes to merge multiple analyses, or click "X" to delete |
 | 📄 **PDF Report** | Structured coverage report with tables |
 | 📋 **CSV Export** | Full quality grid for post-processing |
 | 🖼️ **PNG Snapshot** | Capture the 3D view as an image |
@@ -95,16 +96,25 @@ Open [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/)
 3. **Click on terrain** — the radar is placed and analysis runs automatically
 
 ### Multi-Radar Network Analysis
-1. Configure each radar and click on the terrain to place it
-2. Click **"+ Add Current Radar to Network"** in the *Radar Network* panel
-3. Repeat for each radar (each gets a unique color marker)
-4. Click **"▶ Run Network Analysis"** — all radars run in parallel, unified coverage is displayed
+1. **Place multiple radars** — configure and place a radar on the terrain. It is automatically analyzed and stored in the History panel.
+2. **Toggle checkboxes** — in the **History** panel, tick the checkboxes of the past analyses you want to merge.
+3. **Instant sub-millisecond merging** — the coverages are merged on-the-fly and displayed together in the 3D viewer, automatically updating global metrics!
+4. **Delete records** — click the **"X"** button on any history card to instantly delete and clean up that entry.
+
+### 3D Vector Reconstructions & Sensitivity Map
+1. **Enable synthesis** — select/tick **at least 2** radar analysis entries in the **History** panel.
+2. **Select overlay mode** — choose between **Calidad LOS (1D)** or **Sensibilidad (3D)** under the *Síntesis Vectorial 3D* panel.
+3. **Global Sensitivity** — click **"🗺️ Calcular Mapa de Sensibilidad 3D"** to color-code the terrain according to the geometric sensitivity index ($S_v$). Shadowed/obstructed zones are automatically masked and kept transparent.
+4. **Induce local slide (Double click)** — double-click any cell on the 3D terrain to trigger a local slide simulation. The Moore-Penrose pseudo-inverse solver immediately calculates and displays:
+   - **True displacement vector** (3D direction & magnitude)
+   - **Apparent reading** (1D Line-of-Sight) showing the signal loss percentage ($-\%$)
+   - **Reconstructed 3D vector** highlighting geometric singular alignment or blind spot warnings.
 
 ### Supported Radar Models
 | Model | Max Range | Pattern | Notes |
 |---|---|---|---|
 | GroundProbe SSR-FX | 850 m | RAR | Standard slope monitoring radar |
-| IBIS-ArcSAR360 | 400 m | 360° SAR | Full azimuth, shorter range |
+| IBIS-ArcSAR360 | 2500 m | 360° SAR | Full 360° azimuth, premium long range (+-60° elevation) |
 | Reutech MSR | 500 m | RAR | 120° aperture |
 
 ---
@@ -136,10 +146,11 @@ Browser Only — No Server Required
 └─────────────────────────────────────────────────┘
 ```
 
-- **Terrain processing**: DXF/STL parsing + IDW interpolation → regular grid (DTM) in a Web Worker
-- **LOS engine**: Ray-traced analysis per cell, azimuth/elevation filtering, signal quality (normal-weighted dot product × distance factor)
-- **Multi-radar merge**: Union of visible cells (OR logic) + max quality per cell
-- **No data leaves your browser** — everything runs locally
+- **Terrain processing**: DTM contour / STL triangulation parsed and mapped through high-performance 1D integer spatial bins in a Web Worker (10x faster IDW).
+- **LOS engine**: Zero-copy Raycasting in Web Workers transferring flat float arrays (`Float32Array`) via Transferable Objects to bypass serialization overhead.
+- **Direct GPU Texture Binding**: Raw float buffers bind directly to Three.js `THREE.DataTexture` for zero-allocation rendering, avoiding main-thread React packing loops.
+- **Sub-millisecond merge**: Recalculates unified coverages in less than **1 millisecond** in 1D memory space.
+- **No data leaves your browser** — everything runs locally in your browser.
 
 ---
 
