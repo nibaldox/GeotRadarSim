@@ -35,7 +35,7 @@ Este ejercicio visual en 3D es propenso a errores. Existen herramientas comercia
 | 📡 **Análisis de Línea de Visión (LOS)** | Análisis de trazado de rayos con mapa dinámico de calidad de señal (SNR) |
 | 🎯 **Parámetros de Radar** | Configura límites y overrides de rango, elevación y azimut por cada análisis |
 | 🔴 **Red Multi-Radar** | Fusión dinámica de múltiples coberturas de radar mediante casillas en el historial |
-| 🧮 **Síntesis Vectorial 3D** | Resolvedor analítico de Moore-Penrose que reconstruye vectores de desplazamiento reales en 3D a partir de lecturas 1D (LOS) |
+| 🧮 **Sensibilidad Geométrica** | Análisis del ángulo de ataque/incidencia 1D y de la sensibilidad combinada tridimensional de la red |
 | 📊 **Métricas de Cobertura** | Cálculo instantáneo de % de cobertura, área visible ($m^2$), recuento de zonas ciegas y sensibilidad geométrica |
 | 🕓 **Historial Interactivo** | Activa o desactiva casillas en el historial para fusionar coberturas en sub-milisegundos, o presiona "X" para eliminar |
 | 📄 **Reporte PDF** | Genera reportes estructurados con tablas y métricas listos para impresión |
@@ -103,14 +103,11 @@ Abre [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/) 
 3. **Fusión Instantánea** — Las coberturas se fusionarán en vivo en el shader del visor 3D en menos de 1 milisegundo, recalculando las métricas globales automáticamente.
 4. **Limpieza** — Haz clic en el botón **"X"** de cualquier tarjeta en el historial para eliminar análisis obsoletos.
 
-### Síntesis Vectorial 3D y Mapa de Sensibilidad
-1. **Activar Red** — Marca **al menos 2** análisis de radar en el panel de **Historial**.
-2. **Seleccionar Capa** — Alterna al modo **Sensibilidad (3D)** en el panel *Síntesis Vectorial 3D*.
-3. **Calcular Sensibilidad** — Haz clic en **"🗺️ Calcular Mapa de Sensibilidad 3D"** para teñir el terreno con el índice de sensibilidad geométrica ($S_v$). Las zonas ciegas físicas de los radares se enmascaran automáticamente como transparentes.
-4. **Simular Deslizamiento (Doble Clic)** — Da doble clic en cualquier punto de la ladera del visor 3D para inducir un vector de falla gravitacional local. El solver analítico de mínimos cuadrados (Moore-Penrose) calculará instantáneamente:
-   * **Vector Real de Desplazamiento** (magnitud y dirección 3D inducidas).
-   * **Lectura Aparente (1D)** que registraría el radar seleccionado, reflejando la pérdida geométrica por desalineación ($-\%$) en la línea de visión.
-   * **Vector Reconstruido en 3D**, alertando sobre alineaciones singulares o zonas ciegas vectoriales de la red de radares.
+### Mapa de Sensibilidad Geométrica 3D
+1. **Activar Red** — Marca **al menos 1** análisis de radar en el panel de **Historial**.
+2. **Seleccionar Capa** — Alterna al modo **Sensibilidad (3D)** en el panel *Sensibilidad Geométrica 3D*.
+3. **Alerta Dinámica** — Si hay 1 radar seleccionado, el sistema opera en **Modo 1D** mostrando el **Ángulo de Incidencia / Ángulo de Ataque** bruto. Si se seleccionan 2 o más radares, se activa el **Modo 3D** para la sensibilidad combinada vectorial de la red.
+4. **Calcular Sensibilidad** — Haz clic en **"🗺️ Calcular Mapa de Sensibilidad 3D"** para teñir el terreno con el índice de sensibilidad geométrica ($S_v$) procesado en Web Workers. Las zonas ciegas físicas se enmascaran automáticamente como transparentes.
 
 ---
 

@@ -35,7 +35,7 @@ This mental 3D exercise is unreliable. Commercial tools exist — but their lice
 | 📡 **LOS analysis** | Ray-traced Line-of-Sight analysis with signal quality map |
 | 🎯 **Radar parameters** | Override range, elevation, and azimuth per analysis |
 | 🔴 **Multi-radar network** | Dynamic union of multiple coverage overlays by toggling history checkboxes |
-| 🧮 **3D Vector Synthesis** | Moore-Penrose analytical solver reconstructing 3D gravity vectors from 1D LOS |
+| 🧮 **Geometric Sensitivity** | Analyze 1D angle of incidence (incident angle) and 3D combined multi-directional network sensitivity |
 | 📊 **Coverage metrics** | Coverage %, visible area (m²), shadow zones, and geometric sensitivity |
 | 🕓 **History Panel** | Toggle checkboxes to merge multiple analyses, or click "X" to delete |
 | 📄 **PDF Report** | Structured coverage report with tables |
@@ -103,14 +103,11 @@ Open [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/)
 3. **Instant sub-millisecond merging** — the coverages are merged on-the-fly and displayed together in the 3D viewer, automatically updating global metrics!
 4. **Delete records** — click the **"X"** button on any history card to instantly delete and clean up that entry.
 
-### 3D Vector Reconstructions & Sensitivity Map
-1. **Enable synthesis** — select/tick **at least 2** radar analysis entries in the **History** panel.
-2. **Select overlay mode** — choose between **Calidad LOS (1D)** or **Sensibilidad (3D)** under the *Síntesis Vectorial 3D* panel.
-3. **Global Sensitivity** — click **"🗺️ Calcular Mapa de Sensibilidad 3D"** to color-code the terrain according to the geometric sensitivity index ($S_v$). Shadowed/obstructed zones are automatically masked and kept transparent.
-4. **Induce local slide (Double click)** — double-click any cell on the 3D terrain to trigger a local slide simulation. The Moore-Penrose pseudo-inverse solver immediately calculates and displays:
-   - **True displacement vector** (3D direction & magnitude)
-   - **Apparent reading** (1D Line-of-Sight) showing the signal loss percentage ($-\%$)
-   - **Reconstructed 3D vector** highlighting geometric singular alignment or blind spot warnings.
+### 3D Geometric Sensitivity Map
+1. **Enable sensitivity** — Select/tick **at least 1** radar analysis entry in the **History** panel.
+2. **Select overlay mode** — Under the *Sensibilidad Geométrica 3D* panel, choose **Sensibilidad (3D)**.
+3. **Dynamic Warning** — If only 1 radar is selected, the system runs in **1D Mode** to calculate the raw **Angle of Incidence / Angle of Attack** projection. If 2 or more radars are selected, it runs in **3D Mode** to calculate combined vector sensitivity.
+4. **Global Sensitivity** — Click **"🗺️ Calcular Mapa de Sensibilidad 3D"** to color-code the terrain according to the geometric sensitivity index ($S_v$) using Web Workers. Shadowed/obstructed zones are automatically masked and kept transparent.
 
 ### Supported Radar Models
 | Model | Max Range | Pattern | Notes |
