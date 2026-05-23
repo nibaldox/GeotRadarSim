@@ -155,7 +155,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
         if (losResult.flat_quality_grid) {
           const flatLOS = losResult.flat_quality_grid;
           for (let i = 0; i < size; i++) {
-            data[i] = flatLOS[i] === -1.0 ? -1.0 : flatSensitivityGrid[i];
+            data[i] = (flatLOS[i] ?? -1.0) === -1.0 ? -1.0 : (flatSensitivityGrid[i] ?? 0);
           }
         } else if (losResult.shadow_grid) {
           const shadowGrid = losResult.shadow_grid;
@@ -165,7 +165,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
             for (let c = 0; c < cols; c++) {
               const isShadowed = shadowRow ? shadowRow[c] ?? true : true;
               const idx = rowOffset + c;
-              data[idx] = isShadowed ? -1.0 : flatSensitivityGrid[idx];
+              data[idx] = isShadowed ? -1.0 : (flatSensitivityGrid[idx] ?? 0);
             }
           }
         }

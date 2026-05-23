@@ -127,7 +127,7 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
       const res = results[i]!;
       let q = -1.0;
       if (res.flat_quality_grid) {
-        q = res.flat_quality_grid[idx];
+        q = res.flat_quality_grid[idx] ?? -1.0;
       } else if (res.shadow_grid && res.quality_grid) {
         const shadow = res.shadow_grid[r]?.[c] ?? true;
         if (!shadow) {

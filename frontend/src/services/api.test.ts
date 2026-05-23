@@ -30,9 +30,9 @@ import type { DTMMetadata } from "../types/api";
 class MockWorker implements Worker {
   url: URL | string;
   options?: WorkerOptions;
-  onmessage: ((this: Worker, ev: MessageEvent) => any) | null = null;
-  onerror: ((this: Worker, ev: ErrorEvent) => any) | null = null;
-  onmessageerror: ((this: Worker, ev: MessageEvent) => any) | null = null;
+  onmessage: ((ev: MessageEvent) => any) | null = null;
+  onerror: ((ev: ErrorEvent) => any) | null = null;
+  onmessageerror: ((ev: MessageEvent) => any) | null = null;
 
   static instances: MockWorker[] = [];
   static mockResponses: any[] = [];
@@ -43,7 +43,7 @@ class MockWorker implements Worker {
     MockWorker.instances.push(this);
   }
 
-  postMessage(message: any): void {
+  postMessage(_message: any): void {
     // Simulate async execution using setTimeout
     setTimeout(() => {
       const response = MockWorker.mockResponses.shift();
@@ -66,18 +66,18 @@ class MockWorker implements Worker {
   }
 
   addEventListener<K extends keyof WorkerEventMap>(
-    type: K,
-    listener: (this: Worker, ev: WorkerEventMap[K]) => any,
-    options?: boolean | AddEventListenerOptions
+    _type: K,
+    _listener: (this: Worker, ev: WorkerEventMap[K]) => any,
+    _options?: boolean | AddEventListenerOptions
   ): void {}
 
   removeEventListener<K extends keyof WorkerEventMap>(
-    type: K,
-    listener: (this: Worker, ev: WorkerEventMap[K]) => any,
-    options?: boolean | EventListenerOptions
+    _type: K,
+    _listener: (this: Worker, ev: WorkerEventMap[K]) => any,
+    _options?: boolean | EventListenerOptions
   ): void {}
 
-  dispatchEvent(event: Event): boolean {
+  dispatchEvent(_event: Event): boolean {
     return true;
   }
 }
