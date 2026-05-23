@@ -26,6 +26,26 @@
   --disabled-bg: hsla(0, 0%, 100%, 0.03);
   --disabled-text: hsla(0, 0%, 100%, 0.2);
 
+  /* Premium HUD & Form variables */
+  --hud-bg: hsla(0, 0%, 0%, 0.25);
+  --hud-border: hsla(0, 0%, 100%, 0.04);
+  --input-bg: hsla(0, 0%, 0%, 0.35);
+
+  /* Glow effects */
+  --glow-blue: 0 0 10px hsla(207, 73%, 57%, 0.4);
+  --glow-red: 0 0 10px hsla(351, 100%, 60%, 0.4);
+  --glow-green: 0 0 10px hsla(125, 85%, 45%, 0.4);
+  --glow-warning: 0 0 10px hsla(40, 100%, 55%, 0.4);
+
+  /* Metric Highlights (Strategic contrasts) */
+  --highlight-blue: hsl(207, 73%, 60%);
+  --highlight-red: hsl(351, 80%, 55%);
+  --highlight-green: hsl(140, 50%, 45%);
+  --highlight-warning: hsl(38, 80%, 50%);
+
+  /* Scrollbar Theme Token */
+  --scrollbar-thumb: hsla(0, 0%, 100%, 0.08);
+
   /* Typography Design Tokens */
   --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -35,12 +55,12 @@
   --glass-blur: blur(20px);
 }
 
-.theme-light {
+:root.theme-light, .theme-light {
   /* ☀️ Premium Light Theme - Claro, limpio y con excelente contraste */
   --bg-color: hsl(210, 20%, 93%);
   --bg-gradient: radial-gradient(circle at top right, hsl(210, 20%, 98%) 0%, hsl(210, 20%, 93%) 60%, hsl(210, 20%, 88%) 100%);
-  --sidebar-bg: hsla(210, 20%, 96%, 0.9);
-  --panel-bg: hsla(210, 20%, 100%, 0.65);
+  --sidebar-bg: hsla(210, 20%, 96%, 0.95);
+  --panel-bg: hsl(0, 0%, 100%);
   --panel-border: hsla(210, 16%, 10%, 0.08);
   --panel-border-hover: hsla(210, 50%, 40%, 0.25);
   
@@ -56,15 +76,35 @@
   --success: hsl(140, 50%, 35%);
   --warning: hsl(38, 80%, 40%);
   
-  --disabled-bg: hsla(210, 16%, 10%, 0.04);
-  --disabled-text: hsla(210, 16%, 10%, 0.3);
+  --disabled-bg: hsla(210, 16%, 10%, 0.06);
+  --disabled-text: hsla(210, 16%, 10%, 0.4);
+
+  /* Premium HUD & Form variables */
+  --hud-bg: hsla(210, 20%, 93%, 0.6);
+  --hud-border: hsla(210, 16%, 10%, 0.08);
+  --input-bg: hsl(210, 20%, 98%);
+
+  /* Glow effects (disabled in light mode to prevent text blur) */
+  --glow-blue: none;
+  --glow-red: none;
+  --glow-green: none;
+  --glow-warning: none;
+
+  /* Metric Highlights (Premium dark technical colors) */
+  --highlight-blue: hsl(210, 80%, 45%);
+  --highlight-red: hsl(351, 80%, 45%);
+  --highlight-green: hsl(140, 50%, 35%);
+  --highlight-warning: hsl(38, 80%, 40%);
+
+  /* Scrollbar Theme Token */
+  --scrollbar-thumb: hsla(210, 16%, 10%, 0.15);
 
   /* Typography Design Tokens */
   --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* Shadows & Light Glassmorphic Blur */
-  --glass-shadow: 0 16px 40px 0 hsla(210, 20%, 10%, 0.08);
+  --glass-shadow: 0 12px 32px 0 hsla(210, 20%, 10%, 0.08);
   --glass-blur: blur(20px);
 }
 
@@ -87,7 +127,7 @@ body {
   background: transparent;
 }
 .sidebar::-webkit-scrollbar-thumb {
-  background: hsla(0, 0%, 100%, 0.06);
+  background: var(--scrollbar-thumb);
   border-radius: 10px;
 }
 .sidebar::-webkit-scrollbar-thumb:hover {
@@ -220,8 +260,8 @@ h2, h3, h4 {
   letter-spacing: -0.01em;
 }
 
-h2 { font-size: 20px; color: #fff; border-left: 3px solid var(--accent-color); padding-left: 10px; }
-h3 { font-size: 16px; color: #fff; }
+h2 { font-size: 20px; color: var(--text-primary); border-left: 3px solid var(--accent-color); padding-left: 10px; }
+h3 { font-size: 16px; color: var(--text-primary); }
 h4 { 
   font-size: 12px; 
   color: var(--text-secondary); 
@@ -240,18 +280,19 @@ h4 {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
-  background: hsla(0, 0%, 0%, 0.25);
-  border: 1px solid hsla(0, 0%, 100%, 0.04);
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: inset 0 1px 2px hsla(0, 0%, 0%, 0.4);
+  box-shadow: inset 0 1px 2px hsla(0, 0%, 0%, 0.15);
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .hud-metric-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px dashed hsla(0, 0%, 100%, 0.05);
+  border-bottom: 1px dashed var(--panel-border);
   padding: 6px 0;
 }
 
@@ -271,10 +312,10 @@ h4 {
   font-weight: 500;
 }
 
-.hud-metric-value.highlight-blue { color: hsl(207, 73%, 57%); text-shadow: 0 0 10px hsla(207, 73%, 57%, 0.4); }
-.hud-metric-value.highlight-red { color: var(--danger); text-shadow: 0 0 10px hsla(351, 100%, 60%, 0.4); }
-.hud-metric-value.highlight-green { color: var(--success); text-shadow: 0 0 10px hsla(125, 85%, 45%, 0.4); }
-.hud-metric-value.highlight-warning { color: var(--warning); text-shadow: 0 0 10px hsla(40, 100%, 55%, 0.4); }
+.hud-metric-value.highlight-blue { color: var(--highlight-blue); text-shadow: var(--glow-blue); }
+.hud-metric-value.highlight-red { color: var(--highlight-red); text-shadow: var(--glow-red); }
+.hud-metric-value.highlight-green { color: var(--highlight-green); text-shadow: var(--glow-green); }
+.hud-metric-value.highlight-warning { color: var(--highlight-warning); text-shadow: var(--glow-warning); }
 
 
 /* Holographic Cyber Loader with GPU-accelerated Scanlines */
@@ -434,14 +475,15 @@ h4 {
   width: 100%;
   padding: 10px;
   border-radius: 8px;
-  background-color: hsla(0, 0%, 0%, 0.35);
+  background-color: var(--input-bg);
   color: var(--text-primary);
   border: 1px solid var(--panel-border);
   font-family: var(--font-family);
   font-size: 13px;
   outline: none;
   transition: border-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
-              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              background-color 0.3s ease;
 }
 
 .select-box:focus {
@@ -502,13 +544,13 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: hsla(228, 24%, 6%, 0.85);
-  border: 1px solid hsla(0, 0%, 100%, 0.06);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 16px;
   padding: 16px 8px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 20px 45px hsla(0, 0%, 0%, 0.65), inset 0 1px 1px hsla(0, 0%, 100%, 0.05);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
   z-index: 100;
 }
 
@@ -721,13 +763,13 @@ body, .sidebar, .glass-panel, .btn-primary, .btn-secondary, .hud-card, .hud-metr
   left: 24px;
   bottom: 24px;
   width: 320px;
-  background: hsla(228, 24%, 6%, 0.88);
-  border: 1px solid hsla(0, 0%, 100%, 0.08);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 12px;
   padding: 14px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 16px 36px hsla(0, 0%, 0%, 0.65), inset 0 1px 1px hsla(0, 0%, 100%, 0.05);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
   z-index: 90;
   display: flex;
   flex-direction: column;
@@ -742,7 +784,7 @@ body, .sidebar, .glass-panel, .btn-primary, .btn-secondary, .hud-card, .hud-metr
   text-transform: uppercase;
   color: var(--text-secondary);
   letter-spacing: 0.1em;
-  border-bottom: 1px solid hsla(0, 0%, 100%, 0.06);
+  border-bottom: 1px solid var(--panel-border);
   padding-bottom: 6px;
   margin-bottom: 2px;
 }
@@ -776,8 +818,8 @@ body, .sidebar, .glass-panel, .btn-primary, .btn-secondary, .hud-card, .hud-metr
 
 /* Tool explanation box inside HUD */
 .hud-tool-info {
-  background: hsla(0, 0%, 0%, 0.3);
-  border: 1px solid hsla(0, 0%, 100%, 0.03);
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
   border-radius: 8px;
   padding: 8px 10px;
   display: flex;
