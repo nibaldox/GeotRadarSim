@@ -78,7 +78,7 @@ export function VectorSynthesisPanel() {
       {!isCollapsed && (
         <div className="flex-col" style={{ marginTop: "10px" }}>
 
-          {deployedRadars.length < 2 ? (
+          {deployedRadars.length < 1 ? (
             <div style={{
               padding: "12px",
               background: "hsla(351, 100%, 60%, 0.08)",
@@ -88,10 +88,31 @@ export function VectorSynthesisPanel() {
               color: "hsl(351, 100%, 80%)",
               lineHeight: "1.5"
             }}>
-              <strong>⚠️ Red Incompleta:</strong> Selecciona al menos 2 análisis de radar en el panel de <strong>Historial</strong> (mediante sus casillas de verificación) para habilitar el análisis de sensibilidad geométrica 3D.
+              <strong>⚠️ Sin radares seleccionados:</strong> Selecciona al menos 1 análisis de radar en el panel de <strong>Historial</strong> (mediante sus casillas de verificación) para habilitar el análisis de sensibilidad.
             </div>
           ) : (
             <>
+              {/* Dynamic warning/info badge based on posture count */}
+              <div style={{
+                padding: "10px 12px",
+                background: deployedRadars.length === 1 ? "hsla(38, 90%, 45%, 0.08)" : "hsla(125, 85%, 45%, 0.08)",
+                borderRadius: "8px",
+                borderLeft: deployedRadars.length === 1 ? "4px solid var(--warning)" : "4px solid var(--success)",
+                fontSize: "11px",
+                color: deployedRadars.length === 1 ? "var(--text-primary)" : "hsl(125, 85%, 80%)",
+                lineHeight: "1.5",
+                marginBottom: "12px"
+              }}>
+                {deployedRadars.length === 1 ? (
+                  <>
+                    <strong>💡 Monitoreo 1D Activo:</strong> Tienes 1 postura seleccionada. El mapa mostrará el <strong>Ángulo de Incidencia / Ángulo de Ataque (1D)</strong>. Agrega una segunda postura desde el historial para evaluar coberturas combinadas en 3D.
+                  </>
+                ) : (
+                  <>
+                    <strong>✓ Red Multidireccional Activa:</strong> Tienes {deployedRadars.length} posturas seleccionadas. El mapa evaluará la sensibilidad de combinación vectorial en 3D para reducir las zonas ciegas.
+                  </>
+                )}
+              </div>
               {/* Visual Overlay Mode Selection */}
               <div className="flex-col" style={{ gap: "6px" }}>
                 <span style={{ fontSize: "10px", textTransform: "uppercase", fontWeight: "bold", opacity: 0.8, letterSpacing: "0.05em" }}>
