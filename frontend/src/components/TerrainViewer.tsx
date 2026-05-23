@@ -13,7 +13,6 @@ import * as THREE from "three";
 import { getTerrainExtent, getMinElevation } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
-import { useVectorStore } from "../store/vectorStore";
 import { ShadowOverlay } from "./ShadowOverlay";
 
 interface TerrainMeshProps {
@@ -21,7 +20,7 @@ interface TerrainMeshProps {
   resolution: number;
   showShadowOverlay: boolean;
   onTerrainClick?: (point: { x: number; y: number; z: number }) => void;
-  activeTool: "PAN" | "ADD_RADAR" | "SELECT_CELL";
+  activeTool: "PAN" | "ADD_RADAR";
 }
 
 function TerrainMesh({
@@ -40,18 +39,24 @@ function TerrainMesh({
     const cols = grid[0]?.length ?? 0;
     const vertexCount = rows * cols;
 
-    const pos = new Float32Array(vertexCount * 3);
-    let pIdx = 0;
+    const positions = new Float32Array(vertexCount * 3);
+    const uvs = new Float32Array(vertexCount * 2);
+    
+    let posIdx = 0;
+    let uvIdx = 0;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const val = grid[r]![c]!;
-        pos[pIdx++] = c * resolution;
-        pos[pIdx++] = (isNaN(val) ? 0 : val) - minElev;
-        pos[pIdx++] = -(r * resolution);
+        positions[posIdx++] = c * resolution;
+        positions[posIdx++] = (isNaN(val) ? 0 : val) - minElev;
+        positions[posIdx++] = -(r * resolution);
+        
+        uvs[uvIdx++] = c / (cols - 1);
+        uvs[uvIdx++] = r / (rows - 1);
       }
     }
 
-    const ind: number[] = [];
+    const indices: number[] = [];
     for (let r = 0; r < rows - 1; r++) {
       for (let c = 0; c < cols - 1; c++) {
         const valTL = grid[r]![c]!;
@@ -68,13 +73,14 @@ function TerrainMesh({
         const tr = tl + 1;
         const bl = tl + cols;
         const br = bl + 1;
-        ind.push(tl, tr, bl, tr, br, bl);
+        indices.push(tl, tr, bl, tr, br, bl);
       }
     }
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(ind), 1));
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
     geo.computeVertexNormals();
     return geo;
   }, [grid, resolution, minElev]);
@@ -84,13 +90,13 @@ function TerrainMesh({
       <mesh
         ref={meshRef}
         geometry={geometry}
+        castShadow
+        receiveShadow
         onPointerDown={(e) => {
-          pointerDownPos.current = {
-            x: e.nativeEvent.clientX,
-            y: e.nativeEvent.clientY,
-          };
+          e.stopPropagation();
+          pointerDownPos.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
         }}
-        onClick={(e) => {
+        onPointerUp={(e) => {
           e.stopPropagation();
           if (!pointerDownPos.current) return;
           const dx = e.nativeEvent.clientX - pointerDownPos.current.x;
@@ -102,39 +108,6 @@ function TerrainMesh({
 
           if (activeTool === "ADD_RADAR") {
             if (onTerrainClick) onTerrainClick(e.point);
-          } else if (activeTool === "SELECT_CELL") {
-            const vectorStore = useVectorStore.getState();
-            const terrainStore = useTerrainStore.getState();
-            const grid = terrainStore.grid;
-            const bounds = terrainStore.metadata?.bounds;
-            const resolution = terrainStore.metadata?.resolution ?? 2.0;
-
-            if (grid && bounds) {
-              vectorStore.selectCell(
-                { x: e.point.x, y: e.point.y, z: e.point.z },
-                grid,
-                bounds,
-                resolution
-              );
-            }
-          }
-        }}
-        onDoubleClick={(e) => {
-          // Double click works as a fallback shortcut to select slide cells regardless of tool mode
-          e.stopPropagation();
-          const vectorStore = useVectorStore.getState();
-          const terrainStore = useTerrainStore.getState();
-          const grid = terrainStore.grid;
-          const bounds = terrainStore.metadata?.bounds;
-          const resolution = terrainStore.metadata?.resolution ?? 2.0;
-
-          if (grid && bounds) {
-            vectorStore.selectCell(
-              { x: e.point.x, y: e.point.y, z: e.point.z },
-              grid,
-              bounds,
-              resolution
-            );
           }
         }}
       >
@@ -201,100 +174,6 @@ function RadarMarkers() {
         );
       })}
     </>
-  );
-}
-
-/** Render three 3D Arrow Helpers representing True, Apparent, and Reconstructed vectors */
-function VectorArrows() {
-  const selectedCellLocal = useVectorStore((s) => s.selectedCellLocal);
-  const reconstructionResult = useVectorStore((s) => s.reconstructionResult);
-  const grid = useTerrainStore((s) => s.grid);
-  
-  if (!selectedCellLocal || !grid) return null;
-  const minElev = getMinElevation(grid);
-
-  // Offset origin slightly above terrain mesh to prevent clipping
-  const pos: [number, number, number] = [
-    selectedCellLocal.x,
-    selectedCellLocal.y - minElev + 1.5,
-    selectedCellLocal.z,
-  ];
-
-  if (!reconstructionResult) return null;
-
-  const { trueVector, reconstructedVector, apparentSingleVector } = reconstructionResult;
-
-  // Convert API Vector [Easting (X), Northing (Y), Elevation (Z)]
-  // to Three.js Local Vector [X, Elevation (Y), -Northing (Z)]
-  const mapApiVectorToThree = (v: [number, number, number]): THREE.Vector3 => {
-    return new THREE.Vector3(v[0], v[2], -v[1]);
-  };
-
-  const trueDir = mapApiVectorToThree(trueVector);
-  const trueLength = trueDir.length();
-  trueDir.normalize();
-
-  let reconDir = null;
-  let reconLength = 0;
-  if (reconstructedVector) {
-    reconDir = mapApiVectorToThree(reconstructedVector);
-    reconLength = reconDir.length();
-    reconDir.normalize();
-  }
-
-  const appDir = mapApiVectorToThree(apparentSingleVector);
-  const appLength = appDir.length();
-  appDir.normalize();
-
-  // Vector magnitude scaling factor for optimal visibility relative to DTM grid scale
-  const scale = 0.5;
-
-  return (
-    <group position={pos}>
-      {/* Blue Arrow: True Slide Displacement Vector */}
-      <primitive
-        object={new THREE.ArrowHelper(
-          trueDir,
-          new THREE.Vector3(0, 0, 0),
-          Math.max(2, trueLength * scale),
-          "#2c8fdf",
-          Math.max(1, trueLength * scale * 0.2),
-          Math.max(0.4, trueLength * scale * 0.1)
-        )}
-      />
-
-      {/* Green Arrow: Reconstructed Displacement Vector (Multi-Radar Pseudoinverse) */}
-      {reconDir && (
-        <primitive
-          object={new THREE.ArrowHelper(
-            reconDir,
-            new THREE.Vector3(0, 0, 0),
-            Math.max(2, reconLength * scale),
-            "#0adb21",
-            Math.max(1, reconLength * scale * 0.2),
-            Math.max(0.4, reconLength * scale * 0.1)
-          )}
-        />
-      )}
-
-      {/* Red Arrow: Apparent Single-Radar 1D Vector */}
-      <primitive
-        object={new THREE.ArrowHelper(
-          appDir,
-          new THREE.Vector3(0, 0, 0),
-          Math.max(2, appLength * scale),
-          "#ff3653",
-          Math.max(1, appLength * scale * 0.2),
-          Math.max(0.4, appLength * scale * 0.1)
-        )}
-      />
-
-      {/* Point origin sphere */}
-      <mesh>
-        <sphereGeometry args={[1, 16, 16]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.8} />
-      </mesh>
-    </group>
   );
 }
 
@@ -424,7 +303,6 @@ function Scene({
         activeTool={activeTool}
       />
       <RadarMarkers />
-      <VectorArrows />
       <OrbitControls ref={controlsRef} makeDefault />
       
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
@@ -452,9 +330,8 @@ export function TerrainViewer({
   const resolution = useTerrainStore((s) => s.metadata?.resolution ?? 2.0);
 
   // Tools state (PAN is safe, ADD_RADAR places radars, SELECT_CELL simulates vector landslides)
-  const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR" | "SELECT_CELL">("PAN");
+  const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR">("PAN");
   const [cameraView, setCameraView] = useState<"HOME" | "TOP" | "FRONT" | "SIDE" | null>(null);
-  const visualizationMode = useVectorStore((s) => s.visualizationMode);
 
   // Tool explanations mapping
   const toolExplanations = {
@@ -465,10 +342,6 @@ export function TerrainViewer({
     ADD_RADAR: {
       title: "Radar Placement Mode",
       desc: "Haz clic izquierdo sobre cualquier celda del terreno 3D para desplegar un radar y proyectar su raycasting inmediatamente."
-    },
-    SELECT_CELL: {
-      title: "Vector Landslide Simulation",
-      desc: "Haz clic sobre cualquier celda del talud para simular un vector de falla (máxima pendiente) y resolver la reconstrucción 3D."
     }
   };
 
@@ -540,19 +413,6 @@ export function TerrainViewer({
             </svg>
             <span className="tooltip">Place Radar (Click terrain)</span>
           </button>
-          <button
-            className={`toolbar-btn ${activeTool === "SELECT_CELL" ? "active" : ""}`}
-            onClick={() => setActiveTool("SELECT_CELL")}
-            aria-label="Landslide Simulation Mode"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 20h20V12l-10-6L2 20z" fill="rgba(255,255,255,0.05)" />
-              <path d="M2 20l10-14 10 6" />
-              <line x1="8" y1="8" x2="14" y2="13" stroke="var(--danger)" strokeWidth="2.5" />
-              <polyline points="11 13 14 13 14 10" stroke="var(--danger)" strokeWidth="2.5" />
-            </svg>
-            <span className="tooltip">Simulate Slide (Click cell)</span>
-          </button>
         </div>
 
         <div className="toolbar-divider" />
@@ -620,74 +480,37 @@ export function TerrainViewer({
       {showShadowOverlay && (
         <div className="geotechnical-hud-legend">
           <div className="hud-legend-title">
-            {visualizationMode === "SENSITIVITY"
-              ? "Geometric Sensitivity Legend"
-              : "LOS Quality Legend"}
+            LOS Quality Legend
           </div>
 
-          {visualizationMode === "SENSITIVITY" ? (
-            <>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
-                <div>
-                  <span className="hud-legend-label">Obstructed Zone (Shadow)</span>
-                  <div className="hud-legend-desc">Obstructed by topography or out of range. Rendered transparent.</div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(300, 100%, 25%)" }} />
-                <div>
-                  <span className="hud-legend-label">Critical Blind Zone (0.0 - 0.2)</span>
-                  <div className="hud-legend-desc">Displacement is perpendicular to radar LOS. Complete detection failure.</div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(220, 80%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">Low/Medium Sensitivity (0.2 - 0.6)</span>
-                  <div className="hud-legend-desc">Oblique angle. Signal detects partial motion vector components.</div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">Optimal Sensitivity (0.6 - 1.0)</span>
-                  <div className="hud-legend-desc">Aligned direction. Radar visual is parallel to slope movement direction.</div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
-                <div>
-                  <span className="hud-legend-label">Shadowed Zone (Obstructed)</span>
-                  <div className="hud-legend-desc">No line of sight (LOS) to any active radar. Obstructed or out of range.</div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(351, 80%, 50%)" }} />
-                <div>
-                  <span className="hud-legend-label">Poor Quality (0.0 - 0.3)</span>
-                  <div className="hud-legend-desc">Suboptimal signal angle or long distance. Hard to monitor.</div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(38, 90%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">Medium Quality (0.3 - 0.7)</span>
-                  <div className="hud-legend-desc">Adequate signal. Reliable geotechnical data collection.</div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">Excellent Quality (0.7 - 1.0)</span>
-                  <div className="hud-legend-desc">Perfect angle of incidence and short distance. Ideal SNR.</div>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="hud-legend-row">
+            <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
+            <div>
+              <span className="hud-legend-label">Shadowed Zone (Obstructed)</span>
+              <div className="hud-legend-desc">No line of sight (LOS) to any active radar. Obstructed or out of range.</div>
+            </div>
+          </div>
+          <div className="hud-legend-row">
+            <div className="hud-legend-color" style={{ background: "hsl(351, 80%, 50%)" }} />
+            <div>
+              <span className="hud-legend-label">Poor Quality (0.0 - 0.3)</span>
+              <div className="hud-legend-desc">Suboptimal signal angle or long distance. Hard to monitor.</div>
+            </div>
+          </div>
+          <div className="hud-legend-row">
+            <div className="hud-legend-color" style={{ background: "hsl(38, 90%, 45%)" }} />
+            <div>
+              <span className="hud-legend-label">Medium Quality (0.3 - 0.7)</span>
+              <div className="hud-legend-desc">Adequate signal. Reliable geotechnical data collection.</div>
+            </div>
+          </div>
+          <div className="hud-legend-row">
+            <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
+            <div>
+              <span className="hud-legend-label">Excellent Quality (0.7 - 1.0)</span>
+              <div className="hud-legend-desc">Perfect angle of incidence and short distance. Ideal SNR.</div>
+            </div>
+          </div>
 
           {/* Active Tool Help Box */}
           <div className="hud-tool-info">

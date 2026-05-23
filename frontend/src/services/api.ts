@@ -14,8 +14,6 @@ import type {
   LOSRequest,
   JobResponse,
   JobStatusResponse,
-  VectorReconstructionRequest,
-  SensitivityMapRequest,
 } from "../types/api";
 
 import { generateSyntheticTerrain } from "./terrainEngine";
@@ -276,86 +274,6 @@ export function resetLastLOSResult(): void {
   lastLOSResult = null;
 }
 
-export async function runVectorAnalysis(req: VectorReconstructionRequest): Promise<JobResponse> {
-  const jobId = `job-${Math.random().toString(16).substring(2, 10)}`;
-  jobStore.set(jobId, { job_id: jobId, status: "PENDING", created_at: new Date().toISOString() });
-
-  const worker = new Worker(new URL('../workers/vectorWorker.ts', import.meta.url), { type: 'module' });
-  
-  worker.onmessage = (e: MessageEvent<any>) => {
-    if (e.data.error) {
-      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
-    } else {
-      jobStore.set(jobId, {
-        job_id: jobId,
-        status: "COMPLETED",
-        result: e.data,
-        created_at: new Date().toISOString()
-      });
-    }
-    worker.terminate();
-  };
-
-  worker.onerror = (e) => {
-    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message, created_at: new Date().toISOString() });
-    worker.terminate();
-  };
-
-  worker.postMessage({ type: "RECONSTRUCT", ...req });
-  return { job_id: jobId, status: "PENDING" };
-}
-
-export async function runSensitivityAnalysis(req: SensitivityMapRequest): Promise<JobResponse> {
-  const terrain = getLocalTerrain(req.terrainId);
-  if (!terrain) throw new Error("Terrain not loaded");
-
-  const jobId = `job-${Math.random().toString(16).substring(2, 10)}`;
-  jobStore.set(jobId, { job_id: jobId, status: "PENDING", created_at: new Date().toISOString() });
-
-  const worker = new Worker(new URL('../workers/vectorWorker.ts', import.meta.url), { type: 'module' });
-
-  worker.onmessage = (e: MessageEvent<any>) => {
-    if (e.data.error) {
-      jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.data.error, created_at: new Date().toISOString() });
-    } else {
-      const resultData = { ...e.data };
-      if (resultData.flat_sensitivity_grid && !resultData.sensitivityGrid) {
-        resultData.sensitivityGrid = inflateSensitivityResult(
-          resultData.flat_sensitivity_grid,
-          terrain.metadata.grid_rows,
-          terrain.metadata.grid_cols
-        );
-      }
-      jobStore.set(jobId, {
-        job_id: jobId,
-        status: "COMPLETED",
-        result: resultData,
-        created_at: new Date().toISOString()
-      });
-    }
-    worker.terminate();
-  };
-
-  worker.onerror = (e) => {
-    jobStore.set(jobId, { job_id: jobId, status: "FAILED", error: e.message, created_at: new Date().toISOString() });
-    worker.terminate();
-  };
-
-  worker.postMessage({
-    type: "SENSITIVITY",
-    grid: terrain.grid,
-    resolution: terrain.metadata.resolution,
-    bounds: terrain.metadata.bounds,
-    radarPositions: req.radarPositions
-  });
-
-  return { job_id: jobId, status: "PENDING" };
-}
-
-// ────────────────────────────────────────────
-// Helper decoders to inflate 1D flat arrays to 2D
-// ────────────────────────────────────────────
-
 function inflateLOSResult(
   flatQuality: Float32Array,
   rows: number,
@@ -383,21 +301,4 @@ function inflateLOSResult(
   }
   
   return { shadow_grid, quality_grid };
-}
-
-function inflateSensitivityResult(
-  flatSensitivity: Float32Array,
-  rows: number,
-  cols: number
-): number[][] {
-  const sensitivityGrid: number[][] = [];
-  for (let r = 0; r < rows; r++) {
-    const row = new Array<number>(cols);
-    const rowOffset = r * cols;
-    for (let c = 0; c < cols; c++) {
-      row[c] = flatSensitivity[rowOffset + c] ?? 0;
-    }
-    sensitivityGrid.push(row);
-  }
-  return sensitivityGrid;
 }

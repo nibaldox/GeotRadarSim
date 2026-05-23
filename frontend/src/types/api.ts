@@ -90,30 +90,6 @@ export interface JobStatusResponse {
   error?: string;
 }
 
-export interface VectorReconstructionRequest {
-  radarPositions: Point3D[];
-  radarObservations: number[]; // d_LOS de cada radar en la celda
-  cellPosition: Point3D;
-  trueVector: [number, number, number]; // vector real de deslizamiento inducido
-  selectedRadarIndex: number; // radar activo seleccionado para visualización aparente
-}
 
-export interface VectorReconstructionResponse {
-  trueVector: [number, number, number]; // [dx, dy, dz]
-  reconstructedVector: [number, number, number] | null; // [dx, dy, dz] o null si singular
-  apparentSingleVector: [number, number, number]; // lo que ve el radar seleccionado activo
-  determinant: number;
-  sensitivity: number;
-}
-
-export interface SensitivityMapRequest {
-  terrainId: string;
-  radarPositions: Point3D[];
-}
-
-export interface SensitivityMapResponse {
-  sensitivityGrid?: number[][]; // Grid de la misma dimension que el terreno
-  flat_sensitivity_grid?: Float32Array; // Performance optimization: flat 1D array representing sensitivity
-}
 
 
