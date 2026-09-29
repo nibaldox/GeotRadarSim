@@ -99,7 +99,6 @@ function App() {
   }, [isResizing]);
 
   const generateSynthetic = useTerrainStore((s) => s.generateSynthetic);
-  const loadGrid = useTerrainStore((s) => s.loadGrid);
   const uploadDXF = useTerrainStore((s) => s.uploadDXF);
   const uploadSTL = useTerrainStore((s) => s.uploadSTL);
   const terrainLoading = useTerrainStore((s) => s.loading);
@@ -111,6 +110,7 @@ function App() {
   const runAnalysis = useAnalysisStore((s) => s.runAnalysis);
   const losResult = useAnalysisStore((s) => s.losResult);
   const analysisLoading = useAnalysisStore((s) => s.loading);
+  const analysisError = useAnalysisStore((s) => s.error);
 
   // Auto-show the overlay as soon as any analysis result arrives
   useEffect(() => {
@@ -119,11 +119,7 @@ function App() {
 
   const handleGenerateTerrain = useCallback(async () => {
     await generateSynthetic({ size_x: 200, size_y: 200, depth: 30, resolution: 2.0 });
-    const metadata = useTerrainStore.getState().metadata;
-    if (metadata) {
-      await loadGrid(metadata.terrain_id);
-    }
-  }, [generateSynthetic, loadGrid]);
+  }, [generateSynthetic]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -139,11 +135,7 @@ function App() {
     } else {
       await uploadDXF(file);
     }
-    const metadata = useTerrainStore.getState().metadata;
-    if (metadata) {
-      await loadGrid(metadata.terrain_id);
-    }
-  }, [uploadDXF, uploadSTL, loadGrid]);
+  }, [uploadDXF, uploadSTL]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -151,7 +143,8 @@ function App() {
 
   const handleTerrainClick = useCallback(
     async (point: { x: number; y: number; z: number }) => {
-      if (useAnalysisStore.getState().loading) return;
+      const analysisState = useAnalysisStore.getState();
+      if (analysisState.loading || analysisState.terrainTransitioning || useTerrainStore.getState().loading) return;
       if (!terrainMetadata) return;
       
       const bounds = terrainMetadata.bounds;
@@ -305,7 +298,7 @@ function App() {
               )}
 
               {terrainError && (
-                <div className="error-text">
+                <div className="error-text" role="alert">
                   Error: {terrainError}
                 </div>
               )}
@@ -333,6 +326,12 @@ function App() {
         {analysisLoading && (
           <div className="loading-banner">
             Running analysis...
+          </div>
+        )}
+
+        {analysisError && (
+          <div className="error-text" role="alert">
+            Analysis error: {analysisError}
           </div>
         )}
 

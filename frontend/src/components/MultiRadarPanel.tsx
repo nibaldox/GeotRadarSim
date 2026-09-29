@@ -11,6 +11,10 @@
 import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 
+function formatPercent(value: number | null): string {
+  return value !== null && Number.isFinite(value) ? `${value.toFixed(1)}%` : "Sin datos";
+}
+
 export function MultiRadarPanel() {
   const deployedRadars = useAnalysisStore((s) => s.deployedRadars);
   const multiLoading = useAnalysisStore((s) => s.multiLoading);
@@ -96,15 +100,13 @@ export function MultiRadarPanel() {
                   X:{dr.position.x.toFixed(0)} Y:{dr.position.y.toFixed(0)} Z:{dr.position.z.toFixed(0)}
                 </div>
                 {dr.result && (
-                  <div
-                    style={{
-                      color: dr.result.coverage_pct > 50 ? "var(--success)" : "var(--warning)",
-                      fontSize: "10px",
-                      fontWeight: "bold",
-                      marginTop: "3px"
-                    }}
-                  >
-                    ✓ Cobertura: {dr.result.coverage_pct.toFixed(1)}%
+                  <div style={{ fontSize: "10px", fontWeight: "bold", marginTop: "3px" }}>
+                    <div style={{ color: dr.result.coverage_pct === null ? "var(--text-secondary)" : dr.result.coverage_pct > 50 ? "var(--success)" : "var(--warning)" }}>
+                      ✓ Cobertura: {formatPercent(dr.result.coverage_pct)}
+                    </div>
+                    <div style={{ color: "var(--text-secondary)", marginTop: "2px" }}>
+                      Completitud: {formatPercent(dr.result.completeness_pct)}
+                    </div>
                   </div>
                 )}
               </div>
@@ -160,11 +162,15 @@ export function MultiRadarPanel() {
           </div>
           <div className="hud-metric-row">
             <span className="hud-metric-label">Cobertura Global</span>
-            <span className="hud-metric-value highlight-green">{unifiedLos.coverage_pct.toFixed(1)}%</span>
+            <span className="hud-metric-value highlight-green">{formatPercent(unifiedLos.coverage_pct)}</span>
+          </div>
+          <div className="hud-metric-row">
+            <span className="hud-metric-label">Completitud Global</span>
+            <span className="hud-metric-value">{formatPercent(unifiedLos.completeness_pct)}</span>
           </div>
           <div className="hud-metric-row">
             <span className="hud-metric-label">Área Visible</span>
-            <span className="hud-metric-value">{unifiedLos.visible_area_m2.toFixed(0)} m²</span>
+            <span className="hud-metric-value">{Number.isFinite(unifiedLos.visible_area_m2) ? `${unifiedLos.visible_area_m2.toFixed(0)} m²` : "Sin datos"}</span>
           </div>
           <div className="hud-metric-row">
             <span className="hud-metric-label">Zonas de Sombra</span>

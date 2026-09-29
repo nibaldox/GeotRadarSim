@@ -12,6 +12,7 @@ import {
   buildVertexData,
   getMinElevation,
   getMaxElevation,
+  getTerrainExtent,
 } from "../utils/terrain";
 
 describe("elevationToColor", () => {
@@ -123,5 +124,49 @@ describe("getMaxElevation", () => {
   it("returns maximum z from grid", () => {
     const grid = [[10, 20], [5, 30]];
     expect(getMaxElevation(grid)).toBe(30);
+  });
+});
+
+describe("non-finite elevations", () => {
+  const grid = [[Number.NEGATIVE_INFINITY, 5], [10, Number.POSITIVE_INFINITY]];
+
+  it("ignores both infinities when computing elevation bounds", () => {
+    expect(getMinElevation(grid)).toBe(5);
+    expect(getMaxElevation(grid)).toBe(10);
+  });
+
+  it("keeps generated positions finite when the grid contains infinities", () => {
+    const normalized = normalizeGrid(grid, 0, 0, 2);
+    const { positions } = buildVertexData(grid, 0, 0, 2);
+
+    expect(Array.from(normalized).every(Number.isFinite)).toBe(true);
+    expect(Array.from(positions).every(Number.isFinite)).toBe(true);
+  });
+
+  it("keeps the terrain extent finite when the grid contains infinities", () => {
+    const extent = getTerrainExtent(grid, 2);
+
+    expect(extent).toEqual({ width: 2, depth: 2, height: 5, centerX: 1, centerZ: -1 });
+    expect(Object.values(extent).every(Number.isFinite)).toBe(true);
+  });
+
+  it("measures node-to-node extents rather than adding a cell beyond the mesh", () => {
+    expect(getTerrainExtent([[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]], 2)).toEqual({
+      width: 6,
+      depth: 4,
+      height: 11,
+      centerX: 3,
+      centerZ: -2,
+    });
+  });
+
+  it("gives singleton grids zero horizontal extent and a finite center", () => {
+    expect(getTerrainExtent([[5]], 2)).toEqual({
+      width: 0,
+      depth: 0,
+      height: 0,
+      centerX: 0,
+      centerZ: 0,
+    });
   });
 });

@@ -15,7 +15,8 @@ export function elevationToColor(
   maxElevation: number,
 ): [number, number, number] {
   // Terreno plano o datos inválidos → gris neutro, sin crashear
-  if (minElevation >= maxElevation || isNaN(elevation)) {
+  if (!Number.isFinite(elevation) || !Number.isFinite(minElevation) ||
+      !Number.isFinite(maxElevation) || minElevation >= maxElevation) {
     return [0.7, 0.7, 0.7];
   }
 
@@ -39,7 +40,7 @@ export function getMinElevation(grid: number[][]): number {
   let min = Infinity;
   for (const row of grid) {
     for (const val of row) {
-      if (val !== null && !isNaN(val) && val < min) min = val;
+      if (Number.isFinite(val) && val < min) min = val;
     }
   }
   return min === Infinity ? 0 : min;
@@ -52,7 +53,7 @@ export function getMaxElevation(grid: number[][]): number {
   let max = -Infinity;
   for (const row of grid) {
     for (const val of row) {
-      if (val !== null && !isNaN(val) && val > max) max = val;
+      if (Number.isFinite(val) && val > max) max = val;
     }
   }
   return max === -Infinity ? 100 : max;
@@ -76,7 +77,8 @@ export function normalizeGrid(
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       positions[idx++] = offsetX + c * resolution;
-      positions[idx++] = grid[r]![c]!;
+      const elevation = grid[r]![c]!;
+      positions[idx++] = Number.isFinite(elevation) ? elevation : 0;
       positions[idx++] = offsetZ - r * resolution;
     }
   }
@@ -114,7 +116,7 @@ export function buildVertexData(
     for (let c = 0; c < cols; c++) {
       const val = grid[r]![c]!;
       positions[posIdx++] = offsetX + c * resolution;
-      positions[posIdx++] = (isNaN(val) ? 0 : val) - minElev; // normalized Y
+      positions[posIdx++] = (Number.isFinite(val) ? val : 0) - minElev; // normalized Y
       positions[posIdx++] = offsetZ - r * resolution;
     }
   }
@@ -170,11 +172,14 @@ export function getTerrainExtent(
   const minElev = getMinElevation(grid);
   const maxElev = getMaxElevation(grid);
 
+  const width = Math.max(0, cols - 1) * resolution;
+  const depth = Math.max(0, rows - 1) * resolution;
+
   return {
-    width: cols * resolution,
-    depth: rows * resolution,
+    width,
+    depth,
     height: maxElev - minElev,
-    centerX: (cols * resolution) / 2,
-    centerZ: -(rows * resolution) / 2,
+    centerX: width / 2,
+    centerZ: depth === 0 ? 0 : -depth / 2,
   };
 }

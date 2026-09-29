@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import App from "../App";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
@@ -31,6 +31,14 @@ vi.mock("@react-three/drei", () => ({
   GizmoViewport: () => null,
 }));
 
+vi.mock("../components/TerrainViewer", () => ({
+  TerrainViewer: ({ onTerrainClick }: { onTerrainClick?: (point: { x: number; y: number; z: number }) => void }) => (
+    <button data-testid="terrain-placement" onClick={() => onTerrainClick?.({ x: 1, y: 2, z: 3 })}>
+      Place radar
+    </button>
+  ),
+}));
+
 // Mock the API client
 vi.mock("../services/api", () => ({
   generateSynthetic: vi.fn(),
@@ -38,6 +46,7 @@ vi.mock("../services/api", () => ({
   uploadDXF: vi.fn(),
   uploadSTL: vi.fn(),
   runLOSAnalysis: vi.fn(),
+  getLOSJob: vi.fn(),
   listRadars: vi.fn(),
   getRadar: vi.fn(),
   exportPDF: vi.fn(),
@@ -50,6 +59,8 @@ import {
   uploadDXF,
   uploadSTL,
   listRadars,
+  runLOSAnalysis,
+  getLOSJob,
 } from "../services/api";
 import type { DTMMetadata, TerrainGridResponse } from "../types/api";
 
@@ -74,6 +85,8 @@ beforeEach(() => {
     grid: null,
     loading: false,
     error: null,
+    terrainKey: null,
+    terrainEpoch: 0,
   });
   useAnalysisStore.setState({
     radars: [],
@@ -82,6 +95,8 @@ beforeEach(() => {
     losResult: null,
     loading: false,
     error: null,
+    terrainKey: null,
+    terrainTransitioning: false,
   });
   vi.mocked(listRadars).mockResolvedValue([]);
 });
@@ -149,6 +164,78 @@ describe("App — Auto loadGrid after DXF upload", () => {
       expect(getTerrainGrid).toHaveBeenCalledWith("terrain-syn-1");
     });
   });
+});
+
+it("shows a FAILED polling response as a visible analysis alert", async () => {
+  vi.useFakeTimers();
+  vi.mocked(runLOSAnalysis).mockResolvedValueOnce({ job_id: "job-poll-failed", status: "PENDING" });
+  vi.mocked(getLOSJob).mockResolvedValueOnce({
+    job_id: "job-poll-failed",
+    status: "FAILED",
+    error: "polling reported a worker failure",
+    created_at: "2026-09-28T00:00:00.000Z",
+  });
+  useAnalysisStore.setState({
+    selectedRadarId: "ibis-arcsar360",
+    radarPosition: { x: 1, y: 2, z: 3 },
+  });
+
+  render(<App />);
+  await act(async () => {
+    await useAnalysisStore.getState().runAnalysis(sampleMetadata.terrain_id);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+
+  expect(getLOSJob).toHaveBeenCalledWith("job-poll-failed");
+  expect(screen.getByRole("alert")).toHaveTextContent("polling reported a worker failure");
+  vi.useRealTimers();
+});
+
+it("keeps terrain A visible and does not reload its grid when importing terrain B fails", async () => {
+  const terrainA: DTMMetadata = { ...sampleMetadata, terrain_id: "terrain-A" };
+  const gridA = [[11, 12]];
+  useTerrainStore.setState({
+    metadata: terrainA,
+    grid: gridA,
+    terrainKey: { terrain_id: "terrain-A", epoch: 1 },
+    terrainEpoch: 1,
+  });
+  useAnalysisStore.getState().activateTerrain({ terrain_id: "terrain-A", epoch: 1 });
+  vi.mocked(uploadDXF).mockRejectedValueOnce(new Error("terrain B import failed"));
+
+  render(<App />);
+  const fileInput = screen.getByLabelText(/upload terrain/i);
+  await act(async () => {
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["bad"], "terrain-B.dxf", { type: "application/dxf" })] },
+    });
+  });
+
+  await waitFor(() => expect(screen.getByText("terrain-A")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/terrain B import failed/)).toBeInTheDocument());
+
+  expect(getTerrainGrid).not.toHaveBeenCalled();
+  expect(useTerrainStore.getState()).toMatchObject({ metadata: terrainA, grid: gridA, error: "terrain B import failed" });
+});
+
+it("ignores terrain placement clicks while terrain B is transitioning", () => {
+  act(() => {
+    useTerrainStore.setState({ metadata: { ...sampleMetadata, terrain_id: "terrain-A" }, grid: [[11, 12]] });
+    useAnalysisStore.setState({
+      radars: [{ model_id: "ibis-arcsar360", display_name: "IBIS" } as any],
+      selectedRadarId: "ibis-arcsar360",
+      radarPosition: null,
+      terrainTransitioning: true,
+    });
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByTestId("terrain-placement"));
+
+  expect(useAnalysisStore.getState().radarPosition).toBeNull();
+  expect(runLOSAnalysis).not.toHaveBeenCalled();
 });
 
 // ────────────────────────────────────────────
