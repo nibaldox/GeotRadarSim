@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LOSCellState, type AnalysisSnapshot, type SensitivityMapResponse } from "../types/api";
-import { classifyOverlayCellState, sensitivityMapMatchesSnapshot, sensitivityValueForCell } from "./ShadowOverlay";
+import * as THREE from "three";
+import { classifyOverlayCellState, createObserverCountTexture, sensitivityMapMatchesSnapshot, sensitivityValueForCell } from "./ShadowOverlay";
 
 describe("ShadowOverlay cell-state classification", () => {
   it("renders only true shadows and visible cells, never NODATA as shadow", () => {
@@ -34,6 +35,28 @@ const sensitivityMap: SensitivityMapResponse = {
 };
 
 describe("ShadowOverlay per-cell sensitivity mask", () => {
+  it("uploads observer counts in a float texture compatible with the sampler2D shader", () => {
+    const counts = new Uint16Array([0, 1, 2, 65_535]);
+    const texture = createObserverCountTexture(counts, 2, 2);
+    try {
+      // RedFormat + UnsignedShortType has no sized internal format in Three.js
+      // and fails gl.texStorage2D. RedFormat + FloatType maps to WebGL2 R32F.
+      expect(texture.format).toBe(THREE.RedFormat);
+      expect(texture.type).toBe(THREE.FloatType);
+      expect(texture.image.width).toBe(2);
+      expect(texture.image.height).toBe(2);
+      expect(texture.image.data).toBeInstanceOf(Float32Array);
+      expect(Array.from(texture.image.data as Float32Array)).toEqual([0, 1, 2, 65_535]);
+      expect(Array.from(counts)).toEqual([0, 1, 2, 65_535]);
+      expect(texture.minFilter).toBe(THREE.NearestFilter);
+      expect(texture.magFilter).toBe(THREE.NearestFilter);
+      expect(texture.generateMipmaps).toBe(false);
+      expect(texture.version).toBeGreaterThan(0);
+    } finally {
+      texture.dispose();
+    }
+  });
+
   it("discards cells with zero observers and preserves a measured zero", () => {
     expect(sensitivityValueForCell(sensitivityMap, 0)).toBeNull();
     expect(sensitivityValueForCell(sensitivityMap, 1)).toBe(0);

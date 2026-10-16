@@ -49,6 +49,20 @@ export function sensitivityValueForCell(map: SensitivityMapResponse, index: numb
   return value !== undefined && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
 }
 
+/** Keep exact CPU counts, but upload as R32F for the shader's floating-point sampler2D. */
+export function createObserverCountTexture(counts: Uint16Array, rows: number, cols: number): THREE.DataTexture {
+  // RedFormat + UnsignedShortType is not a valid sized WebGL2 texture format.
+  // Float32 represents every Uint16 count exactly, including zero (no observation).
+  const texture = new THREE.DataTexture(
+    Float32Array.from(counts), cols, rows, THREE.RedFormat, THREE.FloatType,
+  );
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 const vertexShader = `
   varying vec2 vUv;
   void main() {
@@ -187,18 +201,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
 
   const observerCountTexture = useMemo(() => {
     if (!sensitivityMapIsCurrent || !sensitivityMap) return null;
-    const texture = new THREE.DataTexture(
-      sensitivityMap.observer_count,
-      cols,
-      rows,
-      THREE.RedFormat,
-      THREE.UnsignedShortType,
-    );
-    texture.minFilter = THREE.NearestFilter;
-    texture.magFilter = THREE.NearestFilter;
-    texture.generateMipmaps = false;
-    texture.needsUpdate = true;
-    return texture;
+    return createObserverCountTexture(sensitivityMap.observer_count, rows, cols);
   }, [sensitivityMapIsCurrent, sensitivityMap, rows, cols]);
 
   const qualityTexture = useMemo(() => {

@@ -248,7 +248,7 @@ export const useVectorStore = create<VectorState>((set) => {
             if (status.status === "COMPLETED") {
               if (!status.result) throw new Error("Sensitivity job completed without a result");
               const sensitivityMap = validateSensitivityResult(status.result, request);
-              set({ sensitivityMap, loading: false, error: null });
+              set({ sensitivityMap, visualizationMode: "SENSITIVITY", loading: false, error: null });
             } else {
               set({ error: status.error || "Failed to calculate geometric sensitivity map", loading: false });
             }

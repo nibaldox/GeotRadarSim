@@ -139,6 +139,7 @@ describe("useVectorStore — geometric sensitivity", () => {
     vi.useFakeTimers();
 
     await useVectorStore.getState().computeSensitivityMap(terrainKey.terrain_id);
+    expect(useVectorStore.getState().visualizationMode).toBe("QUALITY");
     await vi.advanceTimersByTimeAsync(250);
 
     const request = vi.mocked(runSensitivityAnalysis).mock.calls[0]![0];
@@ -154,6 +155,7 @@ describe("useVectorStore — geometric sensitivity", () => {
     expect(useVectorStore.getState().sensitivityMap?.flat_sensitivity_grid[3]).toBe(0);
     expect(Number.isNaN(useVectorStore.getState().sensitivityMap?.flat_sensitivity_grid[2])).toBe(true);
     expect(useVectorStore.getState().loading).toBe(false);
+    expect(useVectorStore.getState().visualizationMode).toBe("SENSITIVITY");
     expect(releaseSensitivityJob).toHaveBeenCalledWith("job-vector");
     expect(mapPublishedBeforeRelease).toBe(true);
   });
