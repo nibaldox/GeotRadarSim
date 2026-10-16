@@ -203,4 +203,42 @@ describe("UploadTerrainDialog", () => {
     render(<UploadTerrainDialog />);
     expect(screen.getByText(new RegExp(MAX_TERRAIN_GRID_CELLS.toLocaleString('es-CL')))).toBeInTheDocument();
   });
+
+  describe("bounding box with non-positive or non-finite X/Y span", () => {
+    const degenerateCases: Array<[string, { x: number; y: number; z: number }]> = [
+      ["span X/Y cero", { x: 0, y: 0, z: 0 }],
+      ["span X negativo", { x: -5, y: 100, z: 0 }],
+      ["span Y NaN", { x: 100, y: NaN, z: 0 }],
+    ];
+
+    for (const [label, span] of degenerateCases) {
+      it(`shows an alert and disables confirm for ${label}`, () => {
+        overrides.previewState = {
+          file: new File(["x"], "degenerado.dxf"),
+          filename: "degenerado.dxf",
+          source: "DXF",
+          pointCount: 3,
+          bbox: { minX: 0, maxX: span.x, minY: 0, maxY: span.y, minZ: 0, maxZ: span.z },
+          span,
+        };
+        render(<UploadTerrainDialog />);
+
+        // Dialog stays mounted, with a clear Spanish alert.
+        expect(screen.getByText(/degenerado\.dxf/)).toBeInTheDocument();
+        expect(screen.getByRole("alert")).toHaveTextContent(/extensi[oó]n/i);
+        expect(screen.getByRole("alert")).toHaveTextContent(/x.*y/i);
+
+        // No suggested-resolution row / grid projection can meaningfully exist.
+        expect(screen.queryByText(/Resoluci[oó]n sugerida/i)).toBeNull();
+        expect(screen.queryByText(/Grilla resultante/i)).toBeNull();
+
+        // Confirm must be inert: without usable bounds the confirmation
+        // section (including "Cargar con") is not rendered at all.
+        expect(screen.queryByRole("button", { name: /Cargar con/i })).toBeNull();
+
+        fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
+        expect(cancelUploadPreview).toHaveBeenCalledTimes(1);
+      });
+    }
+  });
 });

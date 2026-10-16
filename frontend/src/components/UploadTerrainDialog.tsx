@@ -21,6 +21,21 @@ interface Projection {
   exceeds: boolean;
 }
 
+/**
+ * A parsed envelope is only usable when it carries a source and a strictly
+ * positive, finite X/Y span. This mirrors suggestResolutionForSpan's guard
+ * (RangeError on non-finite or <=0 X/Y) so degenerate files are surfaced as a
+ * user-facing alert instead of crashing the dialog.
+ */
+function hasUsableBounds(preview: {
+  source?: string;
+  span?: { x: number; y: number; z: number };
+}): boolean {
+  if (!preview?.source || !preview?.span) return false;
+  const { x, y } = preview.span;
+  return Number.isFinite(x) && Number.isFinite(y) && x > 0 && y > 0;
+}
+
 export function UploadTerrainDialog() {
   const preview = useTerrainStore((s) => s.uploadPreview);
   const loading = useTerrainStore((s) => s.uploadPreviewLoading);
@@ -30,7 +45,7 @@ export function UploadTerrainDialog() {
 
   const [resolutionInput, setResolutionInput] = useState<string>('');
 
-  const hasBounds = !!preview?.source;
+  const hasBounds = hasUsableBounds(preview ?? {});
 
   // Suggest a resolution each time a fresh bounds envelope arrives.
   useEffect(() => {
@@ -94,6 +109,24 @@ export function UploadTerrainDialog() {
           <div className="error-text" role="alert">
             Error al parsear: {error}
           </div>
+        )}
+
+        {preview?.source && !hasBounds && (
+          <>
+            <div className="error-text" role="alert">
+              El archivo no tiene una extensión X/Y válida: necesita dimensiones X e Y finitas y mayores a 0 para calcular una grilla.
+            </div>
+            <div className="upload-dialog-actions">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={cancelUploadPreview}
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+            </div>
+          </>
         )}
 
         {hasBounds && preview && (
