@@ -12,6 +12,7 @@ import { RadarControls } from "./components/RadarControls";
 import { VectorSynthesisPanel } from "./components/VectorSynthesisPanel";
 import { AnalysisHistory } from "./components/AnalysisHistory";
 import { ExportPanel } from "./components/ExportPanel";
+import { UploadTerrainDialog } from "./components/UploadTerrainDialog";
 import { useTerrainStore } from "./store/terrainStore";
 import { useAnalysisStore } from "./store/analysisStore";
 
@@ -99,8 +100,7 @@ function App() {
   }, [isResizing]);
 
   const generateSynthetic = useTerrainStore((s) => s.generateSynthetic);
-  const uploadDXF = useTerrainStore((s) => s.uploadDXF);
-  const uploadSTL = useTerrainStore((s) => s.uploadSTL);
+  const startUploadPreview = useTerrainStore((s) => s.startUploadPreview);
   const terrainLoading = useTerrainStore((s) => s.loading);
   const terrainMetadata = useTerrainStore((s) => s.metadata);
   const terrainError = useTerrainStore((s) => s.error);
@@ -124,18 +124,14 @@ function App() {
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     // Clear input so same file can be selected again if needed
     e.target.value = '';
-    
-    const ext = file.name.split('.').pop()?.toLowerCase();
 
-    if (ext === 'stl') {
-      await uploadSTL(file);
-    } else {
-      await uploadDXF(file);
-    }
-  }, [uploadDXF, uploadSTL]);
+    // Hand off to the upload preview flow — the actual uploadDXF/uploadSTL
+    // happens after the user confirms a resolution in UploadTerrainDialog.
+    await startUploadPreview(file);
+  }, [startUploadPreview]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -362,6 +358,8 @@ function App() {
           onTerrainClick={handleTerrainClick}
         />
       </main>
+
+      <UploadTerrainDialog />
     </div>
   );
 }

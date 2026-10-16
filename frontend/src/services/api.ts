@@ -29,7 +29,7 @@ import {
   releaseLocalTerrain as releaseProvisionalTerrain,
   acquireLocalTerrainLease,
 } from "./localDataStore";
-import type { TerrainWorkerInput, TerrainWorkerOutput } from "../workers/terrainWorker";
+import type { TerrainWorkerInput, TerrainWorkerMessage, TerrainWorkerOutput, TerrainBoundsWorkerOutput } from "../workers/terrainWorker";
 import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
 import type { SensitivityWorkerInput, SensitivityWorkerOutput } from "../workers/vectorWorker";
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
@@ -138,8 +138,9 @@ function validateRadarLimits(radar: RadarConfig): void {
   }
 }
 
-// Helper to run Terrain Worker
-async function runTerrainWorker(input: TerrainWorkerInput): Promise<DTMMetadata> {
+// Helper to run the terrain worker in full (DTM-build) mode. Returns the
+// stored metadata; persists the provisional grid in the local store as well.
+async function runTerrainWorkerFull(input: TerrainWorkerInput): Promise<DTMMetadata> {
   return new Promise((resolve, reject) => {
     let worker: Worker | undefined;
     let settled = false;
@@ -186,20 +187,104 @@ async function runTerrainWorker(input: TerrainWorkerInput): Promise<DTMMetadata>
   });
 }
 
+// Helper to run the terrain worker in bounds (preview) mode. Returns the
+// X/Y/Z envelope of the parsed file without building a grid or persisting
+// any state — used by the upload UI to suggest a safe resolution.
+async function runTerrainWorkerBounds(input: TerrainWorkerInput): Promise<TerrainBoundsWorkerOutput> {
+  return new Promise((resolve, reject) => {
+    let worker: Worker | undefined;
+    let settled = false;
+
+    const claimTerminal = (): boolean => {
+      if (settled) return false;
+      settled = true;
+      if (worker) {
+        worker.onmessage = null;
+        worker.onerror = null;
+        try {
+          worker.terminate();
+        } catch {
+          // Preserve the first worker result or failure.
+        }
+      }
+      return true;
+    };
+
+    try {
+      worker = new Worker(new URL('../workers/terrainWorker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (e: MessageEvent<TerrainWorkerMessage>) => {
+        if (!claimTerminal()) return;
+        try {
+          if ('error' in e.data && e.data.error) {
+            reject(new Error(e.data.error));
+            return;
+          }
+          if (e.data.mode !== 'bounds') {
+            reject(new Error('Terrain worker returned non-bounds output for a preview request'));
+            return;
+          }
+          resolve(e.data);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      worker.onerror = (e) => {
+        if (!claimTerminal()) return;
+        reject(new Error("Worker error: " + e.message));
+      };
+      worker.postMessage(input);
+    } catch (error) {
+      if (claimTerminal()) reject(error);
+    }
+  });
+}
+
 // ────────────────────────────────────────────
 // Terrain endpoints
 // ────────────────────────────────────────────
 
+/** Result of a bounds preview; the upload dialog uses it to suggest a resolution that fits the cell cap. */
+export interface TerrainBoundsPreview {
+  source: 'STL' | 'DXF';
+  pointCount: number;
+  bbox: {
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+    minZ: number; maxZ: number;
+  };
+  span: { x: number; y: number; z: number };
+}
+
 /** Imports a DXF grid provisionally; service callers must activate or release its terrain ID. */
 export async function uploadDXF(file: File, resolution?: number): Promise<DTMMetadata> {
   const fileData = await file.arrayBuffer();
-  return runTerrainWorker({ fileData, filename: file.name, resolution: resolution || 1.0 });
+  return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 });
 }
 
 /** Imports an STL grid provisionally; service callers must activate or release its terrain ID. */
 export async function uploadSTL(file: File, resolution?: number): Promise<DTMMetadata> {
   const fileData = await file.arrayBuffer();
-  return runTerrainWorker({ fileData, filename: file.name, resolution: resolution || 1.0 });
+  return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 });
+}
+
+/**
+ * Read the file's X/Y/Z envelope without allocating a DTM. The upload UI uses this
+ * to compute a per-file resolution that stays under the 1M-cell cap.
+ */
+export async function previewTerrainBounds(file: File): Promise<TerrainBoundsPreview> {
+  const fileData = await file.arrayBuffer();
+  const result = await runTerrainWorkerBounds({
+    fileData,
+    filename: file.name,
+    resolution: 1.0,
+    mode: 'bounds',
+  });
+  return {
+    source: result.source,
+    pointCount: result.pointCount,
+    bbox: result.bbox,
+    span: result.span,
+  };
 }
 
 /** Generates a synthetic grid provisionally; service callers must activate or release its terrain ID. */

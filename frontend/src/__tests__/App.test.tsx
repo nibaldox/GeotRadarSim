@@ -45,6 +45,9 @@ vi.mock("../services/api", () => ({
   getTerrainGrid: vi.fn(),
   uploadDXF: vi.fn(),
   uploadSTL: vi.fn(),
+  previewTerrainBounds: vi.fn(),
+  activateTerrain: vi.fn(),
+  releaseTerrain: vi.fn(),
   runLOSAnalysis: vi.fn(),
   getLOSJob: vi.fn(),
   listRadars: vi.fn(),
@@ -58,11 +61,20 @@ import {
   getTerrainGrid,
   uploadDXF,
   uploadSTL,
+  previewTerrainBounds,
   listRadars,
   runLOSAnalysis,
   getLOSJob,
 } from "../services/api";
+import type { TerrainBoundsPreview } from "../services/api";
 import type { DTMMetadata, TerrainGridResponse } from "../types/api";
+
+const sampleBoundsPreview: TerrainBoundsPreview = {
+  source: "DXF",
+  pointCount: 42,
+  bbox: { minX: 0, maxX: 200, minY: 0, maxY: 200, minZ: -30, maxZ: 0 },
+  span: { x: 200, y: 200, z: 30 },
+};
 
 const sampleMetadata: DTMMetadata = {
   terrain_id: "terrain-syn-1",
@@ -87,6 +99,9 @@ beforeEach(() => {
     error: null,
     terrainKey: null,
     terrainEpoch: 0,
+    uploadPreview: null,
+    uploadPreviewLoading: false,
+    uploadPreviewError: null,
   });
   useAnalysisStore.setState({
     radars: [],
@@ -147,6 +162,10 @@ describe("App — Auto loadGrid after generateSynthetic", () => {
 
 describe("App — Auto loadGrid after DXF upload", () => {
   it("calls loadGrid after DXF upload succeeds (auto-detected)", async () => {
+    vi.mocked(previewTerrainBounds).mockResolvedValueOnce({
+      ...sampleBoundsPreview,
+      source: "DXF",
+    });
     vi.mocked(uploadDXF).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
@@ -156,8 +175,25 @@ describe("App — Auto loadGrid after DXF upload", () => {
     const file = new File(["dxf-content"], "test.dxf", { type: "application/dxf" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
+    // File selection triggers the bounds preview, not a direct upload.
     await waitFor(() => {
-      expect(uploadDXF).toHaveBeenCalledWith(file, 1.0);
+      expect(previewTerrainBounds).toHaveBeenCalledWith(file);
+    });
+
+    // Wait for the dialog to render and click the confirm button to commit.
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    const confirmButton = await screen.findByRole("button", { name: /Cargar con/i });
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+
+    await waitFor(() => {
+      expect(uploadDXF).toHaveBeenCalled();
+      const callArgs = vi.mocked(uploadDXF).mock.calls[0]!;
+      expect(callArgs[0]).toBe(file);
+      expect(typeof callArgs[1]).toBe("number");
     });
 
     await waitFor(() => {
@@ -203,6 +239,9 @@ it("keeps terrain A visible and does not reload its grid when importing terrain 
     terrainEpoch: 1,
   });
   useAnalysisStore.getState().activateTerrain({ terrain_id: "terrain-A", epoch: 1 });
+  // The dialog drives the new preview flow: bounds arrive first, then the user
+  // confirms and the upload itself fails.
+  vi.mocked(previewTerrainBounds).mockResolvedValueOnce({ ...sampleBoundsPreview, source: "DXF" });
   vi.mocked(uploadDXF).mockRejectedValueOnce(new Error("terrain B import failed"));
 
   render(<App />);
@@ -211,6 +250,15 @@ it("keeps terrain A visible and does not reload its grid when importing terrain 
     fireEvent.change(fileInput, {
       target: { files: [new File(["bad"], "terrain-B.dxf", { type: "application/dxf" })] },
     });
+  });
+
+  // Wait for the dialog and confirm the upload to drive the failure path.
+  await waitFor(() => {
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+  const confirmButton = await screen.findByRole("button", { name: /Cargar con/i });
+  await act(async () => {
+    fireEvent.click(confirmButton);
   });
 
   await waitFor(() => expect(screen.getByText("terrain-A")).toBeInTheDocument());
@@ -243,6 +291,10 @@ it("ignores terrain placement clicks while terrain B is transitioning", () => {
 // ────────────────────────────────────────────
 describe("App — Auto loadGrid after STL upload", () => {
   it("calls uploadSTL and loadGrid when .stl file is uploaded (auto-detected)", async () => {
+    vi.mocked(previewTerrainBounds).mockResolvedValueOnce({
+      ...sampleBoundsPreview,
+      source: "STL",
+    });
     vi.mocked(uploadSTL).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
@@ -253,7 +305,21 @@ describe("App — Auto loadGrid after STL upload", () => {
     fireEvent.change(fileInput, { target: { files: [stlFile] } });
 
     await waitFor(() => {
-      expect(uploadSTL).toHaveBeenCalledWith(stlFile, 1.0);
+      expect(previewTerrainBounds).toHaveBeenCalledWith(stlFile);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    const confirmButton = await screen.findByRole("button", { name: /Cargar con/i });
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+
+    await waitFor(() => {
+      expect(uploadSTL).toHaveBeenCalled();
+      const callArgs = vi.mocked(uploadSTL).mock.calls[0]!;
+      expect(callArgs[0]).toBe(stlFile);
+      expect(typeof callArgs[1]).toBe("number");
     });
 
     await waitFor(() => {

@@ -16,6 +16,7 @@ vi.mock("../services/api", () => ({
   uploadSTL: vi.fn(),
   activateTerrain: vi.fn(),
   releaseTerrain: vi.fn(),
+  previewTerrainBounds: vi.fn(),
 }));
 
 import {
@@ -25,8 +26,10 @@ import {
   uploadSTL,
   activateTerrain,
   releaseTerrain,
+  previewTerrainBounds,
 } from "../services/api";
 import type { DTMMetadata, TerrainGridResponse } from "../types/api";
+import type { TerrainBoundsPreview } from "../services/api";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -38,6 +41,9 @@ beforeEach(() => {
     error: null,
     terrainKey: null,
     terrainEpoch: 0,
+    uploadPreview: null,
+    uploadPreviewLoading: false,
+    uploadPreviewError: null,
   });
   useAnalysisStore.setState({
     terrainKey: null,
@@ -428,5 +434,156 @@ describe("useTerrainStore — atomic terrain activation", () => {
       terrainTransitioning: false,
       radarPosition: null,
     });
+  });
+});
+
+// ────────────────────────────────────────────
+// upload preview flow (startUploadPreview / cancel / confirm)
+// ────────────────────────────────────────────
+const sampleBoundsPreview: TerrainBoundsPreview = {
+  source: "STL",
+  pointCount: 42,
+  bbox: { minX: 0, maxX: 200, minY: 0, maxY: 200, minZ: -30, maxZ: 0 },
+  span: { x: 200, y: 200, z: 30 },
+};
+
+describe("useTerrainStore — upload preview flow", () => {
+  it("startUploadPreview populates uploadPreview after the worker returns bounds", async () => {
+    vi.mocked(previewTerrainBounds).mockResolvedValueOnce(sampleBoundsPreview);
+
+    await useTerrainStore.getState().startUploadPreview(new File(["x"], "surface.stl"));
+
+    expect(previewTerrainBounds).toHaveBeenCalledWith(expect.any(File));
+    const state = useTerrainStore.getState();
+    expect(state.uploadPreviewLoading).toBe(false);
+    expect(state.uploadPreviewError).toBeNull();
+    expect(state.uploadPreview).not.toBeNull();
+    expect(state.uploadPreview?.filename).toBe("surface.stl");
+    expect(state.uploadPreview?.source).toBe("STL");
+    expect(state.uploadPreview?.pointCount).toBe(42);
+    expect(state.uploadPreview?.span).toEqual(sampleBoundsPreview.span);
+  });
+
+  it("startUploadPreview raises the loading flag while the worker is parsing", () => {
+    vi.mocked(previewTerrainBounds).mockReturnValueOnce(new Promise(() => { /* never resolves */ }));
+    void useTerrainStore.getState().startUploadPreview(new File(["x"], "slow.stl"));
+    expect(useTerrainStore.getState().uploadPreviewLoading).toBe(true);
+  });
+
+  it("startUploadPreview surfaces the worker error but keeps the file for retry", async () => {
+    vi.mocked(previewTerrainBounds).mockRejectedValueOnce(
+      new Error("Invalid binary STL: vertex coordinates must be finite"),
+    );
+
+    await useTerrainStore.getState().startUploadPreview(new File(["x"], "bad.stl"));
+
+    const state = useTerrainStore.getState();
+    expect(state.uploadPreviewLoading).toBe(false);
+    expect(state.uploadPreviewError).toMatch(/invalid binary stl/i);
+    expect(state.uploadPreview?.filename).toBe("bad.stl");
+    expect(state.uploadPreview?.source).toBeUndefined();
+  });
+
+  it("cancelUploadPreview clears preview state and any pending error", async () => {
+    // Start a preview whose promise never resolves; cancel mid-flight.
+    vi.mocked(previewTerrainBounds).mockReturnValueOnce(new Promise(() => { /* never resolves */ }));
+    void useTerrainStore.getState().startUploadPreview(new File(["x"], "x.stl"));
+    // Yield to let the action's first setState flush before cancel races it.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    useTerrainStore.setState({ uploadPreviewError: "stale error" });
+
+    useTerrainStore.getState().cancelUploadPreview();
+
+    const state = useTerrainStore.getState();
+    expect(state.uploadPreview).toBeNull();
+    expect(state.uploadPreviewError).toBeNull();
+    expect(state.uploadPreviewLoading).toBe(false);
+  });
+
+  it("confirmUploadPreview calls uploadSTL with the chosen resolution for an STL preview", async () => {
+    vi.mocked(uploadSTL).mockResolvedValueOnce(sampleMetadata);
+    vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
+
+    useTerrainStore.setState({
+      uploadPreview: {
+        file: new File(["x"], "surface.stl"),
+        filename: "surface.stl",
+        source: "STL",
+        pointCount: 1,
+        bbox: { minX: 0, maxX: 1, minY: 0, maxY: 1, minZ: 0, maxZ: 1 },
+        span: { x: 1, y: 1, z: 1 },
+      },
+    });
+
+    await useTerrainStore.getState().confirmUploadPreview(2);
+
+    expect(uploadSTL).toHaveBeenCalledTimes(1);
+    const callArgs = vi.mocked(uploadSTL).mock.calls[0]!;
+    expect(callArgs[0]).toBeInstanceOf(File);
+    expect(callArgs[1]).toBe(2);
+    expect(uploadDXF).not.toHaveBeenCalled();
+    expect(useTerrainStore.getState().uploadPreview).toBeNull();
+  });
+
+  it("confirmUploadPreview calls uploadDXF with the chosen resolution for a DXF preview", async () => {
+    vi.mocked(uploadDXF).mockResolvedValueOnce(sampleMetadata);
+    vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
+
+    useTerrainStore.setState({
+      uploadPreview: {
+        file: new File(["x"], "surface.dxf"),
+        filename: "surface.dxf",
+        source: "DXF",
+        pointCount: 1,
+        bbox: { minX: 0, maxX: 1, minY: 0, maxY: 1, minZ: 0, maxZ: 1 },
+        span: { x: 1, y: 1, z: 1 },
+      },
+    });
+
+    await useTerrainStore.getState().confirmUploadPreview(0.5);
+
+    expect(uploadDXF).toHaveBeenCalledTimes(1);
+    const callArgs = vi.mocked(uploadDXF).mock.calls[0]!;
+    expect(callArgs[1]).toBe(0.5);
+    expect(uploadSTL).not.toHaveBeenCalled();
+  });
+
+  it("confirmUploadPreview is a no-op when bounds have not arrived yet", async () => {
+    // Source intentionally empty so the action's `!preview.source` guard rejects it.
+    useTerrainStore.setState({
+      uploadPreview: {
+        file: new File(["x"], "pending.stl"),
+        filename: "pending.stl",
+        source: "" as 'STL',
+        pointCount: 0,
+        bbox: { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 },
+        span: { x: 0, y: 0, z: 0 },
+      },
+    });
+
+    await useTerrainStore.getState().confirmUploadPreview(2);
+
+    expect(uploadSTL).not.toHaveBeenCalled();
+    expect(uploadDXF).not.toHaveBeenCalled();
+  });
+
+  it("a fresh startUploadPreview invalidates the previous pending parse", async () => {
+    // First preview never resolves on its own.
+    vi.mocked(previewTerrainBounds).mockReturnValueOnce(
+      new Promise(() => { /* never resolves */ }),
+    );
+    void useTerrainStore.getState().startUploadPreview(new File(["a"], "a.stl"));
+
+    // Second preview lands before the first.
+    vi.mocked(previewTerrainBounds).mockResolvedValueOnce({
+      ...sampleBoundsPreview,
+      source: "DXF",
+    });
+    await useTerrainStore.getState().startUploadPreview(new File(["b"], "b.dxf"));
+
+    const state = useTerrainStore.getState();
+    expect(state.uploadPreview?.filename).toBe("b.dxf");
+    expect(state.uploadPreview?.source).toBe("DXF");
+    expect(state.uploadPreviewLoading).toBe(false);
   });
 });
