@@ -12,20 +12,39 @@ import { RadarControls } from "./components/RadarControls";
 import { VectorSynthesisPanel } from "./components/VectorSynthesisPanel";
 import { AnalysisHistory } from "./components/AnalysisHistory";
 import { ExportPanel } from "./components/ExportPanel";
+import { UploadTerrainDialog } from "./components/UploadTerrainDialog";
 import { useTerrainStore } from "./store/terrainStore";
 import { useAnalysisStore } from "./store/analysisStore";
 
 function App() {
   const [showShadowOverlay, setShowShadowOverlay] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Collapsible Terrain Panel State
+  const [isTerrainCollapsed, setIsTerrainCollapsed] = useState<boolean>(() => {
+    if (typeof localStorage !== "undefined" && localStorage.getItem) {
+      return localStorage.getItem("geotradar-collapse-terrain") === "true";
+    }
+    return false;
+  });
+
+  const toggleTerrainCollapse = useCallback(() => {
+    setIsTerrainCollapsed((prev) => {
+      const next = !prev;
+      if (typeof localStorage !== "undefined" && localStorage.setItem) {
+        localStorage.setItem("geotradar-collapse-terrain", String(next));
+      }
+      return next;
+    });
+  }, []);
   
   // Minimalist Theme, Sidebar Resize & Collapse States
-  const [theme, setTheme] = useState<"slate" | "charcoal" | "amber">(
+  const [theme, setTheme] = useState<"dark" | "light">(
     () => {
       if (typeof localStorage !== "undefined" && localStorage.getItem) {
-        return (localStorage.getItem("geotradar-theme") as "slate" | "charcoal" | "amber") || "slate";
+        return (localStorage.getItem("geotradar-theme") as "dark" | "light") || "dark";
       }
-      return "slate";
+      return "dark";
     }
   );
   const [sidebarWidth, setSidebarWidth] = useState<number>(
@@ -42,7 +61,7 @@ function App() {
   // Sync theme with Document Body
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("theme-slate", "theme-charcoal", "theme-amber");
+    root.classList.remove("theme-dark", "theme-light", "theme-slate", "theme-charcoal", "theme-amber");
     root.classList.add(`theme-${theme}`);
     if (typeof localStorage !== "undefined" && localStorage.setItem) {
       localStorage.setItem("geotradar-theme", theme);
@@ -81,9 +100,7 @@ function App() {
   }, [isResizing]);
 
   const generateSynthetic = useTerrainStore((s) => s.generateSynthetic);
-  const loadGrid = useTerrainStore((s) => s.loadGrid);
-  const uploadDXF = useTerrainStore((s) => s.uploadDXF);
-  const uploadSTL = useTerrainStore((s) => s.uploadSTL);
+  const startUploadPreview = useTerrainStore((s) => s.startUploadPreview);
   const terrainLoading = useTerrainStore((s) => s.loading);
   const terrainMetadata = useTerrainStore((s) => s.metadata);
   const terrainError = useTerrainStore((s) => s.error);
@@ -93,6 +110,10 @@ function App() {
   const runAnalysis = useAnalysisStore((s) => s.runAnalysis);
   const losResult = useAnalysisStore((s) => s.losResult);
   const analysisLoading = useAnalysisStore((s) => s.loading);
+  const multiLoading = useAnalysisStore((s) => s.multiLoading);
+  const radarCatalogReady = useAnalysisStore((s) => s.radars.length > 0);
+  const cancelAnalysis = useAnalysisStore((s) => s.cancelAnalysis);
+  const analysisError = useAnalysisStore((s) => s.error);
 
   // Auto-show the overlay as soon as any analysis result arrives
   useEffect(() => {
@@ -101,31 +122,19 @@ function App() {
 
   const handleGenerateTerrain = useCallback(async () => {
     await generateSynthetic({ size_x: 200, size_y: 200, depth: 30, resolution: 2.0 });
-    const metadata = useTerrainStore.getState().metadata;
-    if (metadata) {
-      await loadGrid(metadata.terrain_id);
-    }
-  }, [generateSynthetic, loadGrid]);
+  }, [generateSynthetic]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     // Clear input so same file can be selected again if needed
     e.target.value = '';
-    
-    const ext = file.name.split('.').pop()?.toLowerCase();
 
-    if (ext === 'stl') {
-      await uploadSTL(file);
-    } else {
-      await uploadDXF(file);
-    }
-    const metadata = useTerrainStore.getState().metadata;
-    if (metadata) {
-      await loadGrid(metadata.terrain_id);
-    }
-  }, [uploadDXF, uploadSTL, loadGrid]);
+    // Hand off to the upload preview flow — the actual uploadDXF/uploadSTL
+    // happens after the user confirms a resolution in UploadTerrainDialog.
+    await startUploadPreview(file);
+  }, [startUploadPreview]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -133,7 +142,8 @@ function App() {
 
   const handleTerrainClick = useCallback(
     async (point: { x: number; y: number; z: number }) => {
-      if (useAnalysisStore.getState().loading) return;
+      const analysisState = useAnalysisStore.getState();
+      if (analysisState.loading || analysisState.terrainTransitioning || useTerrainStore.getState().loading) return;
       if (!terrainMetadata) return;
       
       const bounds = terrainMetadata.bounds;
@@ -170,24 +180,28 @@ function App() {
       >
         {/* Console Header: Selector de temas y cierres */}
         <div className="sidebar-header">
-          <div className="theme-switcher">
-            <span style={{ fontSize: "9px", textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "0.06em", fontWeight: 600 }}>Theme</span>
-            <button 
-              className={`theme-dot slate ${theme === 'slate' ? 'active' : ''}`} 
-              onClick={() => setTheme('slate')}
-              title="Slate Theme"
-            />
-            <button 
-              className={`theme-dot charcoal ${theme === 'charcoal' ? 'active' : ''}`} 
-              onClick={() => setTheme('charcoal')}
-              title="Charcoal Theme"
-            />
-            <button 
-              className={`theme-dot amber ${theme === 'amber' ? 'active' : ''}`} 
-              onClick={() => setTheme('amber')}
-              title="Amber Theme"
-            />
-          </div>
+          <button 
+            className="theme-toggle-btn"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? "Cambiar a Tema Claro" : "Cambiar a Tema Oscuro"}
+          >
+            {theme === 'dark' ? (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="var(--accent-color)" />
+                </svg>
+                <span className="theme-toggle-text" style={{ color: "var(--text-primary)" }}>Oscuro</span>
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="4" fill="var(--accent-color)" />
+                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+                </svg>
+                <span className="theme-toggle-text" style={{ color: "var(--text-primary)" }}>Claro</span>
+              </>
+            )}
+          </button>
           
           <button 
             className="close-sidebar-btn" 
@@ -201,68 +215,92 @@ function App() {
           </button>
         </div>
 
-        <div className="glass-panel">
-          <h2>Terrain</h2>
-          <div className="flex-col">
-            <button
-              className="btn-primary"
-              onClick={() => void handleGenerateTerrain()}
-              disabled={terrainLoading}
+        <div className="glass-panel" style={{ display: "flex", flexDirection: "column" }}>
+          <div 
+            onClick={toggleTerrainCollapse}
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+          >
+            <h2 style={{ margin: 0 }}>Terrain</h2>
+            <svg 
+              viewBox="0 0 24 24" 
+              width="18" 
+              height="18" 
+              fill="none" 
+              stroke="var(--text-secondary)" 
+              strokeWidth="2.5" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              style={{ 
+                transform: isTerrainCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
+                transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
+              }}
             >
-              {terrainLoading ? "Generating..." : "Generate Synthetic Terrain"}
-            </button>
-
-            {/* Resolution Selector */}
-            <div className="hud-card flex-col" style={{ gap: "6px" }}>
-              <label className="text-sm" style={{ fontWeight: 500, fontSize: "11px", opacity: 0.8 }}>
-                Grid Resolution: <span className="text-value" style={{ color: "var(--accent-hover)" }}>{preferredResolution}m</span>
-              </label>
-              <input 
-                type="range" 
-                min="0.5" 
-                max="5.0" 
-                step="0.5" 
-                value={preferredResolution}
-                onChange={(e) => setPreferredResolution(Number(e.target.value))}
-                style={{ cursor: "pointer", accentColor: "var(--accent-color)" }}
-              />
-              <div className="flex-row" style={{ justifyContent: "space-between", fontSize: "9px", opacity: 0.5, fontFamily: "var(--font-mono)" }}>
-                <span>High Detail (0.5m)</span>
-                <span>Performance (5m)</span>
-              </div>
-            </div>
-
-            {/* Terrain Upload */}
-            <div className="flex-col mt-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".dxf,.stl"
-                style={{ display: "none" }}
-                onChange={(e) => void handleFileChange(e)}
-                aria-label="Upload Terrain"
-              />
-              <button
-                className="btn-primary"
-                onClick={handleUploadClick}
-                disabled={terrainLoading}
-              >
-                {terrainLoading ? "Uploading..." : "Upload DXF / STL"}
-              </button>
-            </div>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
           </div>
 
-          {terrainMetadata && (
-            <div className="text-sm mt-4">
-              <div><span className="text-value">ID:</span> {terrainMetadata.terrain_id}</div>
-              <div><span className="text-value">Grid:</span> {terrainMetadata.grid_rows}×{terrainMetadata.grid_cols}</div>
-              <div><span className="text-value">Resolution:</span> {terrainMetadata.resolution}m</div>
-            </div>
-          )}
+          {!isTerrainCollapsed && (
+            <div className="flex-col" style={{ marginTop: "12px" }}>
+              <button
+                className="btn-primary"
+                onClick={() => void handleGenerateTerrain()}
+                disabled={terrainLoading}
+              >
+                {terrainLoading ? "Generating..." : "Generate Synthetic Terrain"}
+              </button>
 
-          {terrainError && (
-            <div className="error-text">
-              Error: {terrainError}
+              {/* Resolution Selector */}
+              <div className="hud-card flex-col" style={{ gap: "6px" }}>
+                <label className="text-sm" style={{ fontWeight: 500, fontSize: "11px", opacity: 0.8 }}>
+                  Grid Resolution: <span className="text-value" style={{ color: "var(--accent-hover)" }}>{preferredResolution}m</span>
+                </label>
+                <input 
+                  type="range" 
+                  min="0.5" 
+                  max="5.0" 
+                  step="0.5" 
+                  value={preferredResolution}
+                  onChange={(e) => setPreferredResolution(Number(e.target.value))}
+                  style={{ cursor: "pointer", accentColor: "var(--accent-color)" }}
+                />
+                <div className="flex-row" style={{ justifyContent: "space-between", fontSize: "9px", opacity: 0.5, fontFamily: "var(--font-mono)" }}>
+                  <span>High Detail (0.5m)</span>
+                  <span>Performance (5m)</span>
+                </div>
+              </div>
+
+              {/* Terrain Upload */}
+              <div className="flex-col mt-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".dxf,.stl"
+                  style={{ display: "none" }}
+                  onChange={(e) => void handleFileChange(e)}
+                  aria-label="Upload Terrain"
+                />
+                <button
+                  className="btn-primary"
+                  onClick={handleUploadClick}
+                  disabled={terrainLoading}
+                >
+                  {terrainLoading ? "Uploading..." : "Upload DXF / STL"}
+                </button>
+              </div>
+
+              {terrainMetadata && (
+                <div className="text-sm mt-4">
+                  <div><span className="text-value">ID:</span> {terrainMetadata.terrain_id}</div>
+                  <div><span className="text-value">Grid:</span> {terrainMetadata.grid_rows}×{terrainMetadata.grid_cols}</div>
+                  <div><span className="text-value">Resolution:</span> {terrainMetadata.resolution}m</div>
+                </div>
+              )}
+
+              {terrainError && (
+                <div className="error-text" role="alert">
+                  Error: {terrainError}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -284,9 +322,36 @@ function App() {
 
         <ExportPanel />
 
-        {analysisLoading && (
+        {(analysisLoading || multiLoading) && (
           <div className="loading-banner">
             Running analysis...
+            {radarCatalogReady && (
+              <button
+                type="button"
+                onClick={cancelAnalysis}
+                style={{
+                  display: "block",
+                  margin: "8px auto 0",
+                  padding: "4px 14px",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  color: "var(--accent-hover)",
+                  background: "transparent",
+                  border: "1px solid hsla(250, 85%, 65%, 0.35)",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancelar análisis
+              </button>
+            )}
+          </div>
+        )}
+
+        {analysisError && (
+          <div className="error-text" role="alert">
+            Analysis error: {analysisError}
           </div>
         )}
 
@@ -317,6 +382,8 @@ function App() {
           onTerrainClick={handleTerrainClick}
         />
       </main>
+
+      <UploadTerrainDialog />
     </div>
   );
 }

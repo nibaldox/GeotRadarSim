@@ -42,14 +42,34 @@ export interface ShadowZone {
   cell_count: number;
 }
 
+/** Stable row-major cell-state codes transported as Uint8Array. */
+export const LOSCellState = {
+  NODATA: 0,
+  OUT_OF_RANGE: 1,
+  OUTSIDE_FOV: 2,
+  UNKNOWN_RAY: 3,
+  SHADOW: 4,
+  VISIBLE: 5,
+} as const;
+export type LOSCellState = (typeof LOSCellState)[keyof typeof LOSCellState];
+
 export interface LOSResponse {
   shadow_grid: boolean[][];
+  /** Row-major state code per terrain cell; the source of LOS semantics. */
+  cell_states: Uint8Array;
+  grid_rows: number;
+  grid_cols: number;
+  resolution: number;
   coverage_polygon: [number, number][];
-  coverage_pct: number;
+  /** Visible / (visible + shadow + unknown ray), or null when there are no candidates. */
+  coverage_pct: number | null;
+  /** (visible + shadow) / (visible + shadow + unknown ray), or null without candidates. */
+  completeness_pct: number | null;
   visible_area_m2: number;
   shadow_zones: ShadowZone[];
   quality_grid?: number[][];
-  flat_quality_grid?: Float32Array; // Performance optimization: flat 1D array representing SNR quality / shadow (-1.0)
+  /** Flat quality values; -1 is non-visible, while cell_states identifies its reason. */
+  flat_quality_grid?: Float32Array;
 }
 
 export interface TerrainGridResponse {
@@ -77,6 +97,32 @@ export interface LOSRequest {
   az_width_deg?: number;
 }
 
+export interface AnalysisRadarOverrides {
+  readonly rangeMin: number | null;
+  readonly rangeMax: number | null;
+  readonly elMin: number | null;
+  readonly elMax: number | null;
+  readonly azCenter: number | null;
+  readonly azWidth: number | null;
+}
+
+export interface AnalysisRadarSnapshot {
+  readonly radarId: string;
+  readonly radarModelId: string;
+  readonly position: Readonly<Point3D>;
+  readonly overrides: AnalysisRadarOverrides;
+}
+
+/** Immutable provenance for an LOS result (or an explicitly merged set). */
+export interface AnalysisSnapshot {
+  readonly terrainKey: Readonly<{ terrain_id: string; epoch: number }>;
+  /** Backend job id for a single analysis; null when the result is a merge. */
+  readonly analysisId: string | null;
+  readonly sourceAnalysisIds: readonly string[];
+  readonly generation: number;
+  readonly radars: readonly AnalysisRadarSnapshot[];
+}
+
 export interface JobResponse {
   job_id: string;
   status: "PENDING" | "COMPLETED" | "FAILED";
@@ -90,30 +136,35 @@ export interface JobStatusResponse {
   error?: string;
 }
 
-export interface VectorReconstructionRequest {
-  radarPositions: Point3D[];
-  radarObservations: number[]; // d_LOS de cada radar en la celda
-  cellPosition: Point3D;
-  trueVector: [number, number, number]; // vector real de deslizamiento inducido
-  selectedRadarIndex: number; // radar activo seleccionado para visualización aparente
-}
-
-export interface VectorReconstructionResponse {
-  trueVector: [number, number, number]; // [dx, dy, dz]
-  reconstructedVector: [number, number, number] | null; // [dx, dy, dz] o null si singular
-  apparentSingleVector: [number, number, number]; // lo que ve el radar seleccionado activo
-  determinant: number;
-  sensitivity: number;
+export interface SensitivityObservation {
+  /** Stable source analysis identity; must equal snapshot.analysisId. */
+  analysisId: string;
+  /** Full immutable radar/terrain provenance for this individual LOS result. */
+  snapshot: AnalysisSnapshot;
+  grid_rows: number;
+  grid_cols: number;
+  resolution: number;
+  /** The individual analysis mask, never a merged LOS mask. */
+  cell_states: Uint8Array;
 }
 
 export interface SensitivityMapRequest {
-  terrainId: string;
-  radarPositions: Point3D[];
+  terrainKey: AnalysisSnapshot["terrainKey"];
+  observations: readonly SensitivityObservation[];
 }
 
 export interface SensitivityMapResponse {
-  sensitivityGrid?: number[][]; // Grid de la misma dimension que el terreno
-  flat_sensitivity_grid?: Float32Array; // Performance optimization: flat 1D array representing sensitivity
+  terrainKey: AnalysisSnapshot["terrainKey"];
+  sourceAnalysisIds: readonly string[];
+  grid_rows: number;
+  grid_cols: number;
+  resolution: number;
+  /** Row-major geometric sensitivity; NaN with observer_count=0 means no data, while finite 0 is measured. */
+  flat_sensitivity_grid: Float32Array;
+  /** Contributing individual observations per cell: LOS is VISIBLE and both gradient axes are finite from central or one-sided neighbors. */
+  observer_count: Uint16Array;
 }
+
+
 
 

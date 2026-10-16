@@ -7,30 +7,86 @@
  * - Image: captures the WebGL canvas as PNG.
  */
 
+import { useState, useCallback } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { exportPDF, exportCSV } from "../services/api";
+import type { AnalysisSnapshot, LOSResponse } from "../types/api";
+
+const sameTerrainKey = (
+  left: Readonly<{ terrain_id: string; epoch: number }> | null,
+  right: Readonly<{ terrain_id: string; epoch: number }> | null,
+): boolean => !!left && !!right && left.terrain_id === right.terrain_id && left.epoch === right.epoch;
+
+function cloneAnalysisSnapshot(snapshot: AnalysisSnapshot): AnalysisSnapshot {
+  return {
+    terrainKey: { ...snapshot.terrainKey },
+    analysisId: snapshot.analysisId,
+    sourceAnalysisIds: [...snapshot.sourceAnalysisIds],
+    generation: snapshot.generation,
+    radars: snapshot.radars.map((radar) => ({
+      radarId: radar.radarId,
+      radarModelId: radar.radarModelId,
+      position: { ...radar.position },
+      overrides: { ...radar.overrides },
+    })),
+  };
+}
+
+function isCurrentExport(snapshot: AnalysisSnapshot, result: LOSResponse): boolean {
+  const analysis = useAnalysisStore.getState();
+  const terrain = useTerrainStore.getState();
+  return analysis.activeSnapshot === snapshot && analysis.losResult === result &&
+    !analysis.terrainTransitioning &&
+    sameTerrainKey(snapshot.terrainKey, analysis.terrainKey) &&
+    sameTerrainKey(snapshot.terrainKey, terrain.terrainKey) &&
+    terrain.metadata?.terrain_id === snapshot.terrainKey.terrain_id;
+}
 
 export function ExportPanel() {
   const losResult = useAnalysisStore((s) => s.losResult);
-  const selectedRadarId = useAnalysisStore((s) => s.selectedRadarId);
-  const radarPosition = useAnalysisStore((s) => s.radarPosition);
+  const activeSnapshot = useAnalysisStore((s) => s.activeSnapshot);
+  const analysisTerrainKey = useAnalysisStore((s) => s.terrainKey);
+  const terrainTransitioning = useAnalysisStore((s) => s.terrainTransitioning);
+  const terrainKey = useTerrainStore((s) => s.terrainKey);
   const terrainId = useTerrainStore((s) => s.metadata?.terrain_id);
-  const hasAnalysis = losResult !== null;
+  const hasAnalysis = !!losResult && !!activeSnapshot && !terrainTransitioning &&
+    sameTerrainKey(activeSnapshot.terrainKey, analysisTerrainKey) &&
+    sameTerrainKey(activeSnapshot.terrainKey, terrainKey) &&
+    terrainId === activeSnapshot.terrainKey.terrain_id;
+
+  // Collapsible state
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof localStorage !== "undefined" && localStorage.getItem) {
+      return localStorage.getItem("geotradar-collapse-export") === "true";
+    }
+    return false;
+  });
+
+  const toggleCollapse = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      if (typeof localStorage !== "undefined" && localStorage.setItem) {
+        localStorage.setItem("geotradar-collapse-export", String(next));
+      }
+      return next;
+    });
+  }, []);
 
   // ─── PDF Export ───────────────────────────────────────────────────────────
 
   const handleExportPDF = async () => {
-    if (!losResult || !selectedRadarId || !radarPosition) return;
+    const snapshot = useAnalysisStore.getState().activeSnapshot;
+    const result = useAnalysisStore.getState().losResult;
+    if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
 
     try {
-      const blob = await exportPDF({
-        terrain_id: terrainId ?? "terrain",
-        radar_position: radarPosition,
-        radar_model_id: selectedRadarId,
-      }, losResult);
-      downloadBlob(blob, `coverage-report-${terrainId ?? "terrain"}.pdf`);
+      const exportableSnapshot = cloneAnalysisSnapshot(snapshot);
+      const blob = await exportPDF(exportableSnapshot, result);
+      if (!isCurrentExport(snapshot, result)) return;
+      downloadBlob(blob, `coverage-report-${snapshot.terrainKey.terrain_id}.pdf`);
     } catch (err) {
+      if (!isCurrentExport(snapshot, result)) return;
       console.error("PDF export failed:", err);
       alert("Failed to export PDF report");
     }
@@ -39,16 +95,17 @@ export function ExportPanel() {
   // ─── CSV Export ───────────────────────────────────────────────────────────
 
   const handleExportCSV = async () => {
-    if (!losResult || !selectedRadarId || !radarPosition) return;
+    const snapshot = useAnalysisStore.getState().activeSnapshot;
+    const result = useAnalysisStore.getState().losResult;
+    if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
 
     try {
-      const blob = await exportCSV({
-        terrain_id: terrainId ?? "terrain",
-        radar_position: radarPosition,
-        radar_model_id: selectedRadarId,
-      }, losResult);
-      downloadBlob(blob, `coverage-data-${terrainId ?? "terrain"}.csv`);
+      const exportableSnapshot = cloneAnalysisSnapshot(snapshot);
+      const blob = await exportCSV(exportableSnapshot, result);
+      if (!isCurrentExport(snapshot, result)) return;
+      downloadBlob(blob, `coverage-data-${snapshot.terrainKey.terrain_id}.csv`);
     } catch (err) {
+      if (!isCurrentExport(snapshot, result)) return;
       console.error("CSV export failed:", err);
       alert("Failed to export CSV data");
     }
@@ -57,14 +114,17 @@ export function ExportPanel() {
   // ─── Image Export ─────────────────────────────────────────────────────────
 
   const handleExportImage = () => {
+    const snapshot = useAnalysisStore.getState().activeSnapshot;
+    const result = useAnalysisStore.getState().losResult;
+    if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
     const canvas = document.querySelector("canvas");
     if (!canvas) {
       alert("Canvas not found. Make sure the terrain is visible.");
       return;
     }
     canvas.toBlob((blob) => {
-      if (!blob) return;
-      downloadBlob(blob, `terrain-snapshot-${terrainId ?? "terrain"}.png`);
+      if (!blob || !isCurrentExport(snapshot, result)) return;
+      downloadBlob(blob, `terrain-snapshot-${snapshot.terrainKey.terrain_id}.png`);
     }, "image/png");
   };
 
@@ -72,45 +132,75 @@ export function ExportPanel() {
 
   return (
     <div className="glass-panel">
-      <h3>Export</h3>
-
-      {hasAnalysis ? (
-        <div className="text-sm" style={{ marginBottom: "12px" }}>
-          <div><span className="text-value">Coverage:</span> {losResult!.coverage_pct.toFixed(1)}%</div>
-          <div><span className="text-value">Visible area:</span> {losResult!.visible_area_m2.toFixed(0)} m²</div>
-          <div><span className="text-value">Shadow zones:</span> {losResult!.shadow_zones.length}</div>
-        </div>
-      ) : (
-        <p className="text-sm" style={{ marginBottom: "12px", margin: "0 0 12px 0" }}>
-          No analysis data. Run LOS analysis first.
-        </p>
-      )}
-
-      <div className="flex-col">
-        <button
-          disabled={!hasAnalysis}
-          onClick={handleExportPDF}
-          className="btn-secondary"
+      <div 
+        onClick={toggleCollapse}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+      >
+        <h3 style={{ margin: 0 }}>Export</h3>
+        <svg 
+          viewBox="0 0 24 24" 
+          width="16" 
+          height="16" 
+          fill="none" 
+          stroke="var(--text-secondary)" 
+          strokeWidth="2.5" 
+          strokeLinecap="round" 
+          strokeLinejoin="round"
+          style={{ 
+            transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
+            transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
+          }}
         >
-          📄 PDF Report
-        </button>
-        <button
-          disabled={!hasAnalysis}
-          onClick={handleExportCSV}
-          className="btn-secondary"
-        >
-          📊 CSV Data
-        </button>
-        <button
-          disabled={!hasAnalysis}
-          onClick={handleExportImage}
-          className="btn-secondary"
-        >
-          🖼 Image (PNG)
-        </button>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </div>
+
+      {!isCollapsed && (
+        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+          {hasAnalysis ? (
+            <div className="text-sm" style={{ marginBottom: "2px" }}>
+              <div><span className="text-value">Coverage:</span> {formatPercent(losResult!.coverage_pct)}</div>
+              <div><span className="text-value">Completeness:</span> {formatPercent(losResult!.completeness_pct)}</div>
+              <div><span className="text-value">Visible area:</span> {Number.isFinite(losResult!.visible_area_m2) ? `${losResult!.visible_area_m2.toFixed(0)} m²` : "Sin datos"}</div>
+              <div><span className="text-value">Shadow zones:</span> {losResult!.shadow_zones.length}</div>
+            </div>
+          ) : (
+            <p className="text-sm" style={{ marginBottom: "2px", margin: "0 0 4px 0" }}>
+              No analysis data. Run LOS analysis first.
+            </p>
+          )}
+
+          <div className="flex-col">
+            <button
+              disabled={!hasAnalysis}
+              onClick={handleExportPDF}
+              className="btn-secondary"
+            >
+              📄 PDF Report
+            </button>
+            <button
+              disabled={!hasAnalysis}
+              onClick={handleExportCSV}
+              className="btn-secondary"
+            >
+              📊 CSV Data
+            </button>
+            <button
+              disabled={!hasAnalysis}
+              onClick={handleExportImage}
+              className="btn-secondary"
+            >
+              🖼 Image (PNG)
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function formatPercent(value: number | null): string {
+  return value !== null && Number.isFinite(value) ? `${value.toFixed(1)}%` : "Sin datos";
 }
 
 function downloadBlob(blob: Blob, filename: string): void {

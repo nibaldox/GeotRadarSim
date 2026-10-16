@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import App from "../App";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
@@ -31,13 +31,25 @@ vi.mock("@react-three/drei", () => ({
   GizmoViewport: () => null,
 }));
 
+vi.mock("../components/TerrainViewer", () => ({
+  TerrainViewer: ({ onTerrainClick }: { onTerrainClick?: (point: { x: number; y: number; z: number }) => void }) => (
+    <button data-testid="terrain-placement" onClick={() => onTerrainClick?.({ x: 1, y: 2, z: 3 })}>
+      Place radar
+    </button>
+  ),
+}));
+
 // Mock the API client
 vi.mock("../services/api", () => ({
   generateSynthetic: vi.fn(),
   getTerrainGrid: vi.fn(),
   uploadDXF: vi.fn(),
   uploadSTL: vi.fn(),
+  previewTerrainBounds: vi.fn(),
+  activateTerrain: vi.fn(),
+  releaseTerrain: vi.fn(),
   runLOSAnalysis: vi.fn(),
+  getLOSJob: vi.fn(),
   listRadars: vi.fn(),
   getRadar: vi.fn(),
   exportPDF: vi.fn(),
@@ -49,9 +61,20 @@ import {
   getTerrainGrid,
   uploadDXF,
   uploadSTL,
+  previewTerrainBounds,
   listRadars,
+  runLOSAnalysis,
+  getLOSJob,
 } from "../services/api";
+import type { TerrainBoundsPreview } from "../services/api";
 import type { DTMMetadata, TerrainGridResponse } from "../types/api";
+
+const sampleBoundsPreview: TerrainBoundsPreview = {
+  source: "DXF",
+  pointCount: 42,
+  bbox: { minX: 0, maxX: 200, minY: 0, maxY: 200, minZ: -30, maxZ: 0 },
+  span: { x: 200, y: 200, z: 30 },
+};
 
 const sampleMetadata: DTMMetadata = {
   terrain_id: "terrain-syn-1",
@@ -74,6 +97,11 @@ beforeEach(() => {
     grid: null,
     loading: false,
     error: null,
+    terrainKey: null,
+    terrainEpoch: 0,
+    uploadPreview: null,
+    uploadPreviewLoading: false,
+    uploadPreviewError: null,
   });
   useAnalysisStore.setState({
     radars: [],
@@ -82,6 +110,8 @@ beforeEach(() => {
     losResult: null,
     loading: false,
     error: null,
+    terrainKey: null,
+    terrainTransitioning: false,
   });
   vi.mocked(listRadars).mockResolvedValue([]);
 });
@@ -132,6 +162,10 @@ describe("App — Auto loadGrid after generateSynthetic", () => {
 
 describe("App — Auto loadGrid after DXF upload", () => {
   it("calls loadGrid after DXF upload succeeds (auto-detected)", async () => {
+    vi.mocked(previewTerrainBounds).mockResolvedValueOnce({
+      ...sampleBoundsPreview,
+      source: "DXF",
+    });
     vi.mocked(uploadDXF).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
@@ -141,8 +175,25 @@ describe("App — Auto loadGrid after DXF upload", () => {
     const file = new File(["dxf-content"], "test.dxf", { type: "application/dxf" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
+    // File selection triggers the bounds preview, not a direct upload.
     await waitFor(() => {
-      expect(uploadDXF).toHaveBeenCalledWith(file, 1.0);
+      expect(previewTerrainBounds).toHaveBeenCalledWith(file);
+    });
+
+    // Wait for the dialog to render and click the confirm button to commit.
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    const confirmButton = await screen.findByRole("button", { name: /Cargar con/i });
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+
+    await waitFor(() => {
+      expect(uploadDXF).toHaveBeenCalled();
+      const callArgs = vi.mocked(uploadDXF).mock.calls[0]!;
+      expect(callArgs[0]).toBe(file);
+      expect(typeof callArgs[1]).toBe("number");
     });
 
     await waitFor(() => {
@@ -151,11 +202,99 @@ describe("App — Auto loadGrid after DXF upload", () => {
   });
 });
 
+it("shows a FAILED polling response as a visible analysis alert", async () => {
+  vi.useFakeTimers();
+  vi.mocked(runLOSAnalysis).mockResolvedValueOnce({ job_id: "job-poll-failed", status: "PENDING" });
+  vi.mocked(getLOSJob).mockResolvedValueOnce({
+    job_id: "job-poll-failed",
+    status: "FAILED",
+    error: "polling reported a worker failure",
+    created_at: "2026-09-28T00:00:00.000Z",
+  });
+  useAnalysisStore.setState({
+    selectedRadarId: "ibis-arcsar360",
+    radarPosition: { x: 1, y: 2, z: 3 },
+  });
+
+  render(<App />);
+  await act(async () => {
+    await useAnalysisStore.getState().runAnalysis(sampleMetadata.terrain_id);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+
+  expect(getLOSJob).toHaveBeenCalledWith("job-poll-failed");
+  expect(screen.getByRole("alert")).toHaveTextContent("polling reported a worker failure");
+  vi.useRealTimers();
+});
+
+it("keeps terrain A visible and does not reload its grid when importing terrain B fails", async () => {
+  const terrainA: DTMMetadata = { ...sampleMetadata, terrain_id: "terrain-A" };
+  const gridA = [[11, 12]];
+  useTerrainStore.setState({
+    metadata: terrainA,
+    grid: gridA,
+    terrainKey: { terrain_id: "terrain-A", epoch: 1 },
+    terrainEpoch: 1,
+  });
+  useAnalysisStore.getState().activateTerrain({ terrain_id: "terrain-A", epoch: 1 });
+  // The dialog drives the new preview flow: bounds arrive first, then the user
+  // confirms and the upload itself fails.
+  vi.mocked(previewTerrainBounds).mockResolvedValueOnce({ ...sampleBoundsPreview, source: "DXF" });
+  vi.mocked(uploadDXF).mockRejectedValueOnce(new Error("terrain B import failed"));
+
+  render(<App />);
+  const fileInput = screen.getByLabelText(/upload terrain/i);
+  await act(async () => {
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["bad"], "terrain-B.dxf", { type: "application/dxf" })] },
+    });
+  });
+
+  // Wait for the dialog and confirm the upload to drive the failure path.
+  await waitFor(() => {
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+  const confirmButton = await screen.findByRole("button", { name: /Cargar con/i });
+  await act(async () => {
+    fireEvent.click(confirmButton);
+  });
+
+  await waitFor(() => expect(screen.getByText("terrain-A")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/terrain B import failed/)).toBeInTheDocument());
+
+  expect(getTerrainGrid).not.toHaveBeenCalled();
+  expect(useTerrainStore.getState()).toMatchObject({ metadata: terrainA, grid: gridA, error: "terrain B import failed" });
+});
+
+it("ignores terrain placement clicks while terrain B is transitioning", () => {
+  act(() => {
+    useTerrainStore.setState({ metadata: { ...sampleMetadata, terrain_id: "terrain-A" }, grid: [[11, 12]] });
+    useAnalysisStore.setState({
+      radars: [{ model_id: "ibis-arcsar360", display_name: "IBIS" } as any],
+      selectedRadarId: "ibis-arcsar360",
+      radarPosition: null,
+      terrainTransitioning: true,
+    });
+  });
+
+  render(<App />);
+  fireEvent.click(screen.getByTestId("terrain-placement"));
+
+  expect(useAnalysisStore.getState().radarPosition).toBeNull();
+  expect(runLOSAnalysis).not.toHaveBeenCalled();
+});
+
 // ────────────────────────────────────────────
 // STL Upload (auto-detected via single button)
 // ────────────────────────────────────────────
 describe("App — Auto loadGrid after STL upload", () => {
   it("calls uploadSTL and loadGrid when .stl file is uploaded (auto-detected)", async () => {
+    vi.mocked(previewTerrainBounds).mockResolvedValueOnce({
+      ...sampleBoundsPreview,
+      source: "STL",
+    });
     vi.mocked(uploadSTL).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
@@ -166,11 +305,87 @@ describe("App — Auto loadGrid after STL upload", () => {
     fireEvent.change(fileInput, { target: { files: [stlFile] } });
 
     await waitFor(() => {
-      expect(uploadSTL).toHaveBeenCalledWith(stlFile, 1.0);
+      expect(previewTerrainBounds).toHaveBeenCalledWith(stlFile);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    const confirmButton = await screen.findByRole("button", { name: /Cargar con/i });
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
+
+    await waitFor(() => {
+      expect(uploadSTL).toHaveBeenCalled();
+      const callArgs = vi.mocked(uploadSTL).mock.calls[0]!;
+      expect(callArgs[0]).toBe(stlFile);
+      expect(typeof callArgs[1]).toBe("number");
     });
 
     await waitFor(() => {
       expect(getTerrainGrid).toHaveBeenCalledWith("terrain-syn-1");
     });
+  });
+});
+
+// ────────────────────────────────────────────
+// Cancelar análisis (loading-banner cancel control)
+// ────────────────────────────────────────────
+describe("App — Cancelar análisis", () => {
+  const catalogRadar = { model_id: "groundprobe-ssr-fx", display_name: "GroundProbe SSR-FX" } as any;
+
+  it("shows the cancel button while a single analysis is loading and cancels on click", () => {
+    act(() => {
+      useAnalysisStore.setState({
+        radars: [catalogRadar],
+        selectedRadarId: "groundprobe-ssr-fx",
+        radarPosition: { x: 1, y: 2, z: 3 },
+        loading: true,
+      });
+    });
+    render(<App />);
+
+    const cancelBtn = screen.getByRole("button", { name: /cancelar análisis/i });
+    expect(cancelBtn).toBeInTheDocument();
+
+    // Spy AFTER the initial render, then flush a re-render so the component
+    // subscribes to the spied (pass-through) action reference.
+    const cancelSpy = vi.spyOn(useAnalysisStore.getState(), "cancelAnalysis");
+    act(() => {
+      useAnalysisStore.setState({});
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /cancelar análisis/i }));
+
+    expect(cancelSpy).toHaveBeenCalledOnce();
+    expect(useAnalysisStore.getState().loading).toBe(false);
+    expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/running analysis/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the cancel button while a multi analysis is loading and hides it after cancel", () => {
+    act(() => {
+      useAnalysisStore.setState({ radars: [catalogRadar], multiLoading: true });
+    });
+    render(<App />);
+
+    expect(screen.getByText(/running analysis/i)).toBeInTheDocument();
+    const cancelBtn = screen.getByRole("button", { name: /cancelar análisis/i });
+    expect(cancelBtn).toBeInTheDocument();
+
+    fireEvent.click(cancelBtn);
+
+    expect(useAnalysisStore.getState().multiLoading).toBe(false);
+    expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/running analysis/i)).not.toBeInTheDocument();
+  });
+
+  it("does not offer cancel while only the radar catalog is loading", () => {
+    act(() => {
+      useAnalysisStore.setState({ radars: [], loading: true });
+    });
+    render(<App />);
+
+    expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
   });
 });

@@ -123,4 +123,18 @@ describe("RadarControls", () => {
 
     expect(spy).toHaveBeenCalledWith({ x: 100.5, y: 200.2, z: 15.0 });
   });
+
+  it("disables radar configuration and manual placement controls during terrain transitions", () => {
+    useAnalysisStore.setState({
+      radars: radarConfigs,
+      selectedRadarId: "groundprobe-ssr-fx",
+      terrainTransitioning: true,
+    });
+
+    render(<RadarControls />);
+
+    expect(screen.getByLabelText(/radar model/i)).toBeDisabled();
+    expect(screen.getAllByRole("spinbutton").every((input) => (input as HTMLInputElement).disabled)).toBe(true);
+    expect(screen.getByRole("button", { name: /Apply Coordinates/i })).toBeDisabled();
+  });
 });

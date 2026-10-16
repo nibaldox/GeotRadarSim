@@ -1,294 +1,277 @@
 import { create } from "zustand";
-import { runVectorAnalysis, runSensitivityAnalysis, getLOSJob } from "../services/api";
-import type { Point3D, VectorReconstructionResponse } from "../types/api";
+import { cancelSensitivityAnalysis, releaseSensitivityJob, runSensitivityAnalysis, getLOSJob } from "../services/api";
 import { useAnalysisStore } from "./analysisStore";
+import type { HistoryEntry } from "./analysisStore";
+import type { AnalysisSnapshot, SensitivityMapRequest, SensitivityMapResponse, SensitivityObservation } from "../types/api";
+import { LOSCellState } from "../types/api";
 
 export interface VectorState {
-  selectedCell: Point3D | null; // API coordinates
-  selectedCellLocal: Point3D | null; // Three.js local coordinates
-  trueSlideMagnitude: number; // mm
-  noiseLevel: number; // mm
-  reconstructionResult: VectorReconstructionResponse | null;
-  sensitivityGrid: number[][] | null;
-  flat_sensitivity_grid: Float32Array | null;
+  sensitivityMap: SensitivityMapResponse | null;
   visualizationMode: "QUALITY" | "SENSITIVITY";
   loading: boolean;
   error: string | null;
 
-  selectCell: (point: Point3D, grid: number[][], bounds: any, resolution: number) => Promise<void>;
-  updateMagnitude: (magnitude: number, grid: number[][], bounds: any, resolution: number) => Promise<void>;
-  updateNoise: (noise: number, grid: number[][], bounds: any, resolution: number) => Promise<void>;
   computeSensitivityMap: (terrainId: string) => Promise<void>;
   setVisualizationMode: (mode: "QUALITY" | "SENSITIVITY") => void;
   reset: () => void;
 }
 
-// Internal helper for running the least-squares worker job
-async function triggerReconstruction(
-  point: Point3D, // Local Three.js coordinates
-  grid: number[][],
-  bounds: any,
-  resolution: number,
-  magnitude: number,
-  noiseLevel: number,
-  set: any
-) {
-  const selectedHistory = useAnalysisStore.getState().history.filter(h => h.selected);
-  const deployedRadars = selectedHistory.map(h => ({
-    position: h.position,
-    modelId: h.radarId
-  }));
-  
-  if (deployedRadars.length === 0) {
-    set({
-      error: "Selecciona al menos un análisis en el historial para realizar la síntesis vectorial.",
-      loading: false,
-      reconstructionResult: null
-    });
-    return;
-  }
-
-  // 1. Map row & column to find expected slope failure direction
-  const rows = grid.length;
-  const cols = grid[0]!.length;
-  const r = Math.max(0, Math.min(rows - 1, Math.round(-point.z / resolution)));
-  const c = Math.max(0, Math.min(cols - 1, Math.round(point.x / resolution)));
-
-  let gradX = 0;
-  let gradY = 0;
-  if (c > 0 && c < cols - 1) {
-    gradX = (grid[r]![c + 1]! - grid[r]![c - 1]!) / (2 * resolution);
-  }
-  if (r > 0 && r < rows - 1) {
-    gradY = (grid[r + 1]![c]! - grid[r - 1]![c]!) / (2 * resolution);
-  }
-
-  // failure expected direction: steepest gravitational descent (API space)
-  let ux_f = -gradX;
-  let uy_f = -gradY;
-  let uz_f = -(gradX * gradX + gradY * gradY);
-  
-  const fNorm = Math.sqrt(ux_f * ux_f + uy_f * uy_f + uz_f * uz_f);
-  if (fNorm > 1e-4) {
-    ux_f /= fNorm;
-    uy_f /= fNorm;
-    uz_f /= fNorm;
-  } else {
-    ux_f = 0;
-    uy_f = 0;
-    uz_f = -1.0;
-  }
-
-  // True displacement vector [dx, dy, dz] in mm
-  const trueVector: [number, number, number] = [
-    ux_f * magnitude,
-    uy_f * magnitude,
-    uz_f * magnitude
-  ];
-
-  // 2. Cell georeferenced coordinates (API space)
-  const cellPosition: Point3D = {
-    x: point.x + bounds.min_x,
-    y: bounds.min_y - point.z,
-    z: point.y + bounds.min_z
-  };
-
-  // 3. Simulate observations for each deployed radar
-  const radarPositions = deployedRadars.map(dr => dr.position);
-  const radarObservations: number[] = [];
-
-  for (let i = 0; i < deployedRadars.length; i++) {
-    const radPos = deployedRadars[i]!.position;
-    const dx = cellPosition.x - radPos.x;
-    const dy = cellPosition.y - radPos.y;
-    const dz = cellPosition.z - radPos.z;
-    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
-    
-    // Line-of-sight unit vector from radar to cell
-    const ux_los = dx / dist;
-    const uy_los = dy / dist;
-    const uz_los = dz / dist;
-
-    // Projected displacement: d_LOS = d_real . u_LOS + noise
-    const projected = trueVector[0] * ux_los + trueVector[1] * uy_los + trueVector[2] * uz_los;
-    
-    // Simulate Gaussian/Random noise
-    const simulatedNoise = (Math.random() - 0.5) * 2.0 * noiseLevel;
-    
-    radarObservations.push(projected + simulatedNoise);
-  }
-
-  // Find index of selected/first active radar for 1D single rendering comparisons
-  const activeRadarModel = useAnalysisStore.getState().selectedRadarId;
-  let selectedRadarIndex = 0;
-  if (activeRadarModel) {
-    const idx = deployedRadars.findIndex(dr => dr.modelId === activeRadarModel);
-    if (idx !== -1) selectedRadarIndex = idx;
-  }
-
-  set({ loading: true, error: null });
-
-  try {
-    const jobResp = await runVectorAnalysis({
-      radarPositions,
-      radarObservations,
-      cellPosition,
-      trueVector,
-      selectedRadarIndex
-    });
-
-    const poll = async () => {
-      try {
-        const s = await getLOSJob(jobResp.job_id);
-        if (s.status === "COMPLETED" && s.result) {
-          set({ reconstructionResult: s.result, loading: false });
-        } else if (s.status === "FAILED") {
-          set({ error: s.error || "Failed to reconstruct vector", loading: false });
-        } else {
-          setTimeout(poll, 250);
-        }
-      } catch (err) {
-        set({
-          error: err instanceof Error ? err.message : "Error polling job status",
-          loading: false
-        });
-      }
-    };
-
-    setTimeout(poll, 250);
-  } catch (err) {
-    set({
-      error: err instanceof Error ? err.message : "Failed to run vector reconstruction",
-      loading: false
-    });
-  }
+interface SensitivityContext {
+  terrainKey: AnalysisSnapshot["terrainKey"] | null;
+  transitioning: boolean;
+  selectedEntries: HistoryEntry[];
 }
 
-export const useVectorStore = create<VectorState>((set, get) => ({
-  selectedCell: null,
-  selectedCellLocal: null,
-  trueSlideMagnitude: 50.0, // 50mm default
-  noiseLevel: 1.0, // 1mm noise default
-  reconstructionResult: null,
-  sensitivityGrid: null,
-  flat_sensitivity_grid: null,
-  visualizationMode: "QUALITY",
-  loading: false,
-  error: null,
+const sameTerrainKey = (
+  left: AnalysisSnapshot["terrainKey"] | null,
+  right: AnalysisSnapshot["terrainKey"] | null,
+): boolean => left === right || (!!left && !!right && left.terrain_id === right.terrain_id && left.epoch === right.epoch);
 
-  selectCell: async (point, grid, bounds, resolution) => {
-    const { trueSlideMagnitude, noiseLevel } = get();
-    
-    const cellGeoreferenced: Point3D = {
-      x: point.x + bounds.min_x,
-      y: bounds.min_y - point.z,
-      z: point.y + bounds.min_z
-    };
+function sensitivityContext(state: ReturnType<typeof useAnalysisStore.getState>): SensitivityContext {
+  return {
+    terrainKey: state.terrainKey ? { ...state.terrainKey } : null,
+    transitioning: state.terrainTransitioning,
+    selectedEntries: state.history.filter((entry) => entry.selected),
+  };
+}
 
-    set({ selectedCell: cellGeoreferenced, selectedCellLocal: point });
-    
-    await triggerReconstruction(
-      point,
-      grid,
-      bounds,
+function sameContext(left: SensitivityContext, right: SensitivityContext): boolean {
+  if (left.transitioning !== right.transitioning || !sameTerrainKey(left.terrainKey, right.terrainKey) ||
+      left.selectedEntries.length !== right.selectedEntries.length) return false;
+  return left.selectedEntries.every((entry, index) => entry === right.selectedEntries[index]);
+}
+
+function buildObservations(
+  entries: HistoryEntry[],
+  terrainKey: AnalysisSnapshot["terrainKey"],
+): SensitivityObservation[] {
+  const ids = new Set<string>();
+  let expectedRows: number | null = null;
+  let expectedCols: number | null = null;
+  let expectedResolution: number | null = null;
+
+  return entries.map((entry) => {
+    const snapshot = entry.snapshot;
+    if (!snapshot || !snapshot.analysisId || snapshot.sourceAnalysisIds.length !== 1 ||
+        snapshot.sourceAnalysisIds[0] !== snapshot.analysisId || snapshot.radars.length !== 1 ||
+        !sameTerrainKey(snapshot.terrainKey, terrainKey)) {
+      throw new RangeError("Selected history entry requires current immutable analysis provenance and radar snapshot");
+    }
+    if (ids.has(snapshot.analysisId)) throw new RangeError("Selected analysis IDs must be unique");
+    ids.add(snapshot.analysisId);
+    const radar = snapshot.radars[0]!;
+    if (!radar.radarId || radar.radarModelId !== entry.radarId ||
+        radar.position.x !== entry.position.x || radar.position.y !== entry.position.y || radar.position.z !== entry.position.z) {
+      throw new RangeError("Selected history radar does not match its analysis snapshot");
+    }
+
+    const { grid_rows: rows, grid_cols: cols, resolution, cell_states } = entry.result;
+    if (!Number.isInteger(rows) || rows <= 0 || !Number.isInteger(cols) || cols <= 0 ||
+        !Number.isFinite(resolution) || resolution <= 0 || !(cell_states instanceof Uint8Array) ||
+        cell_states.length !== rows * cols) {
+      throw new RangeError("Selected LOS result has invalid grid dimensions or cell-state length");
+    }
+    if (expectedRows === null) {
+      expectedRows = rows;
+      expectedCols = cols;
+      expectedResolution = resolution;
+    } else if (rows !== expectedRows || cols !== expectedCols || resolution !== expectedResolution) {
+      throw new RangeError("Selected LOS results do not share the same grid dimensions and resolution");
+    }
+    return {
+      analysisId: snapshot.analysisId,
+      snapshot,
+      grid_rows: rows,
+      grid_cols: cols,
       resolution,
-      trueSlideMagnitude,
-      noiseLevel,
-      set
+      cell_states,
+    };
+  });
+}
+
+function validateSensitivityResult(
+  value: unknown,
+  request: SensitivityMapRequest,
+): SensitivityMapResponse {
+  const result = value as SensitivityMapResponse | null;
+  const firstObservation = request.observations[0];
+  const ids = request.observations.map((observation) => observation.analysisId);
+  if (!result || !firstObservation || !sameTerrainKey(result.terrainKey, request.terrainKey) ||
+      result.grid_rows !== firstObservation.grid_rows || result.grid_cols !== firstObservation.grid_cols ||
+      result.resolution !== firstObservation.resolution ||
+      !Array.isArray(result.sourceAnalysisIds) || result.sourceAnalysisIds.length !== ids.length ||
+      result.sourceAnalysisIds.some((id, index) => id !== ids[index]) ||
+      !(result.flat_sensitivity_grid instanceof Float32Array) ||
+      !(result.observer_count instanceof Uint16Array) ||
+      result.flat_sensitivity_grid.length !== firstObservation.grid_rows * firstObservation.grid_cols ||
+      result.observer_count.length !== firstObservation.grid_rows * firstObservation.grid_cols) {
+    throw new RangeError("Sensitivity result provenance or grid dimensions do not match the selected analyses");
+  }
+
+  for (let index = 0; index < result.observer_count.length; index++) {
+    // All observations share one validated terrain key/grid, so gradient availability is cell-wide:
+    // either every VISIBLE mask contributes at this cell or none can.
+    const visibleMaskCount = request.observations.reduce(
+      (count, observation) => count + Number(observation.cell_states[index] === LOSCellState.VISIBLE),
+      0,
     );
-  },
-
-  updateMagnitude: async (magnitude, grid, bounds, resolution) => {
-    set({ trueSlideMagnitude: magnitude });
-    const { selectedCellLocal, noiseLevel } = get();
-    if (selectedCellLocal) {
-      await triggerReconstruction(
-        selectedCellLocal,
-        grid,
-        bounds,
-        resolution,
-        magnitude,
-        noiseLevel,
-        set
-      );
+    const count = result.observer_count[index]!;
+    const sensitivity = result.flat_sensitivity_grid[index]!;
+    if (!Number.isInteger(count) || count < 0 || count > visibleMaskCount ||
+        (count !== 0 && count !== visibleMaskCount) ||
+        (count === 0 ? !Number.isNaN(sensitivity) : !Number.isFinite(sensitivity) || sensitivity < 0 || sensitivity > 1.00001)) {
+      throw new RangeError("Sensitivity observer count or value is inconsistent with individual LOS cell states");
     }
-  },
+  }
+  return result;
+}
 
-  updateNoise: async (noise, grid, bounds, resolution) => {
-    set({ noiseLevel: noise });
-    const { selectedCellLocal, trueSlideMagnitude } = get();
-    if (selectedCellLocal) {
-      await triggerReconstruction(
-        selectedCellLocal,
-        grid,
-        bounds,
-        resolution,
-        trueSlideMagnitude,
-        noise,
-        set
-      );
+export const useVectorStore = create<VectorState>((set) => {
+  let requestToken = 0;
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeJobId: string | null = null;
+
+  const cancelActiveWork = () => {
+    requestToken++;
+    if (pollTimer !== null) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
     }
-  },
-
-  computeSensitivityMap: async (terrainId) => {
-    const selectedHistory = useAnalysisStore.getState().history.filter(h => h.selected);
-    const deployedRadars = selectedHistory.map(h => ({
-      position: h.position,
-      modelId: h.radarId
-    }));
-
-    if (deployedRadars.length === 0) {
-      set({ sensitivityGrid: null, flat_sensitivity_grid: null });
-      return;
+    if (activeJobId) {
+      cancelSensitivityAnalysis(activeJobId);
+      releaseSensitivityJob(activeJobId);
     }
+    activeJobId = null;
+  };
 
-    set({ loading: true, error: null });
-    
-    try {
-      const radarPositions = deployedRadars.map(dr => dr.position);
-      const jobResp = await runSensitivityAnalysis({
-        terrainId,
-        radarPositions
-      });
+  const discardJob = (jobId: string) => {
+    cancelSensitivityAnalysis(jobId);
+    releaseSensitivityJob(jobId);
+    if (activeJobId === jobId) activeJobId = null;
+  };
 
-      const poll = async () => {
-        try {
-          const s = await getLOSJob(jobResp.job_id);
-          if (s.status === "COMPLETED" && s.result) {
-            set({
-              sensitivityGrid: s.result.sensitivityGrid,
-              flat_sensitivity_grid: s.result.flat_sensitivity_grid || null,
-              loading: false
-            });
-          } else if (s.status === "FAILED") {
-            set({ error: s.error || "Failed to calculate sensitivity map", loading: false });
-          } else {
-            setTimeout(poll, 250);
-          }
-        } catch (err) {
-          set({
-            error: err instanceof Error ? err.message : "Error polling job status",
-            loading: false
-          });
+  const clearMap = () => {
+    cancelActiveWork();
+    set({ sensitivityMap: null, loading: false, error: null });
+  };
+
+  let lastAnalysisContext = sensitivityContext(useAnalysisStore.getState());
+  useAnalysisStore.subscribe((state) => {
+    const next = sensitivityContext(state);
+    if (sameContext(lastAnalysisContext, next)) return;
+    lastAnalysisContext = next;
+    clearMap();
+  });
+
+  const isCurrentRequest = (
+    token: number,
+    expectedKey: AnalysisSnapshot["terrainKey"],
+    selectedEntries: HistoryEntry[],
+  ): boolean => {
+    if (requestToken !== token) return false;
+    const current = useAnalysisStore.getState();
+    if (current.terrainTransitioning || !sameTerrainKey(current.terrainKey, expectedKey)) return false;
+    const selected = current.history.filter((entry) => entry.selected);
+    return selected.length === selectedEntries.length && selected.every((entry, index) => entry === selectedEntries[index]);
+  };
+
+  return {
+    sensitivityMap: null,
+    visualizationMode: "QUALITY",
+    loading: false,
+    error: null,
+
+    computeSensitivityMap: async (terrainId) => {
+      cancelActiveWork();
+      const token = requestToken;
+      set({ sensitivityMap: null, loading: false, error: null });
+      const analysisState = useAnalysisStore.getState();
+      const selectedEntries = analysisState.history.filter((entry) => entry.selected);
+      const terrainKey = analysisState.terrainKey;
+
+      if (selectedEntries.length === 0) return;
+      if (!terrainKey || analysisState.terrainTransitioning || terrainKey.terrain_id !== terrainId) {
+        set({ error: "Selected analyses do not match the active terrain", loading: false });
+        return;
+      }
+
+      let observations: SensitivityObservation[];
+      try {
+        observations = buildObservations(selectedEntries, terrainKey);
+      } catch (error) {
+        set({ error: error instanceof Error ? error.message : "Invalid selected analysis provenance", loading: false });
+        return;
+      }
+      const request: SensitivityMapRequest = { terrainKey: { ...terrainKey }, observations };
+      set({ loading: true, error: null });
+
+      const requestIsCurrent = () => isCurrentRequest(token, request.terrainKey, selectedEntries);
+      try {
+        const job = await runSensitivityAnalysis(request);
+        if (!requestIsCurrent()) {
+          discardJob(job.job_id);
+          return;
         }
-      };
+        activeJobId = job.job_id;
 
-      setTimeout(poll, 250);
-    } catch (err) {
-      set({
-        error: err instanceof Error ? err.message : "Failed to compute sensitivity map",
-        loading: false
-      });
-    }
-  },
+        const poll = async () => {
+          pollTimer = null;
+          if (!requestIsCurrent()) {
+            discardJob(job.job_id);
+            return;
+          }
+          let status: Awaited<ReturnType<typeof getLOSJob>>;
+          try {
+            status = await getLOSJob(job.job_id);
+          } catch (error) {
+            if (!requestIsCurrent()) {
+              discardJob(job.job_id);
+              return;
+            }
+            set({ error: error instanceof Error ? error.message : "Error polling sensitivity job", loading: false });
+            discardJob(job.job_id);
+            return;
+          }
 
-  setVisualizationMode: (mode) => set({ visualizationMode: mode }),
+          if (!requestIsCurrent()) {
+            discardJob(job.job_id);
+            return;
+          }
+          if (status.status === "PENDING") {
+            if (activeJobId === job.job_id) {
+              pollTimer = setTimeout(() => void poll(), 250);
+            }
+            return;
+          }
 
-  reset: () => set({
-    selectedCell: null,
-    selectedCellLocal: null,
-    reconstructionResult: null,
-    flat_sensitivity_grid: null,
-    error: null
-  })
-}));
+          try {
+            if (status.status === "COMPLETED") {
+              if (!status.result) throw new Error("Sensitivity job completed without a result");
+              const sensitivityMap = validateSensitivityResult(status.result, request);
+              set({ sensitivityMap, visualizationMode: "SENSITIVITY", loading: false, error: null });
+            } else {
+              set({ error: status.error || "Failed to calculate geometric sensitivity map", loading: false });
+            }
+          } catch (error) {
+            set({ error: error instanceof Error ? error.message : "Invalid sensitivity map result", loading: false });
+          } finally {
+            if (activeJobId === job.job_id) activeJobId = null;
+            releaseSensitivityJob(job.job_id);
+          }
+        };
+
+        pollTimer = setTimeout(() => void poll(), 250);
+      } catch (error) {
+        if (!requestIsCurrent()) return;
+        set({ error: error instanceof Error ? error.message : "Failed to compute geometric sensitivity map", loading: false });
+      }
+    },
+
+    setVisualizationMode: (mode) => set({ visualizationMode: mode }),
+
+    reset: () => {
+      cancelActiveWork();
+      set({ sensitivityMap: null, error: null, visualizationMode: "QUALITY", loading: false });
+    },
+  };
+});

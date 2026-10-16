@@ -2,8 +2,8 @@
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700&display=swap');
 
-:root, .theme-slate {
-  /* 💻 Industrial Slate (Defecto) - Gris acero y cian técnico frío */
+:root, .theme-dark {
+  /* 💻 Industrial Slate Dark Theme (Defecto) - Gris acero y cian técnico frío */
   --bg-color: hsl(220, 20%, 8%);
   --bg-gradient: radial-gradient(circle at top right, hsl(220, 20%, 15%) 0%, hsl(220, 20%, 8%) 60%, hsl(220, 20%, 4%) 100%);
   --sidebar-bg: hsla(220, 20%, 9%, 0.9);
@@ -26,6 +26,26 @@
   --disabled-bg: hsla(0, 0%, 100%, 0.03);
   --disabled-text: hsla(0, 0%, 100%, 0.2);
 
+  /* Premium HUD & Form variables */
+  --hud-bg: hsla(0, 0%, 0%, 0.25);
+  --hud-border: hsla(0, 0%, 100%, 0.04);
+  --input-bg: hsla(0, 0%, 0%, 0.35);
+
+  /* Glow effects */
+  --glow-blue: 0 0 10px hsla(207, 73%, 57%, 0.4);
+  --glow-red: 0 0 10px hsla(351, 100%, 60%, 0.4);
+  --glow-green: 0 0 10px hsla(125, 85%, 45%, 0.4);
+  --glow-warning: 0 0 10px hsla(40, 100%, 55%, 0.4);
+
+  /* Metric Highlights (Strategic contrasts) */
+  --highlight-blue: hsl(207, 73%, 60%);
+  --highlight-red: hsl(351, 80%, 55%);
+  --highlight-green: hsl(140, 50%, 45%);
+  --highlight-warning: hsl(38, 80%, 50%);
+
+  /* Scrollbar Theme Token */
+  --scrollbar-thumb: hsla(0, 0%, 100%, 0.08);
+
   /* Typography Design Tokens */
   --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
@@ -35,54 +55,57 @@
   --glass-blur: blur(20px);
 }
 
-.theme-charcoal {
-  /* ⚙️ Tactical Charcoal - Ultra Minimalista escandinavo en escala de grises */
-  --bg-color: hsl(0, 0%, 8%);
-  --bg-gradient: radial-gradient(circle at top right, hsl(0, 0%, 14%) 0%, hsl(0, 0%, 8%) 60%, hsl(0, 0%, 4%) 100%);
-  --sidebar-bg: hsla(0, 0%, 9%, 0.92);
-  --panel-bg: hsla(0, 0%, 15%, 0.55);
-  --panel-border: hsla(0, 0%, 100%, 0.05);
-  --panel-border-hover: hsla(0, 0%, 100%, 0.22);
+:root.theme-light, .theme-light {
+  /* ☀️ Premium Light Theme - Claro, limpio y con excelente contraste */
+  --bg-color: hsl(210, 20%, 93%);
+  --bg-gradient: radial-gradient(circle at top right, hsl(210, 20%, 98%) 0%, hsl(210, 20%, 93%) 60%, hsl(210, 20%, 88%) 100%);
+  --sidebar-bg: hsla(210, 20%, 96%, 0.95);
+  --panel-bg: hsl(0, 0%, 100%);
+  --panel-border: hsla(210, 16%, 10%, 0.08);
+  --panel-border-hover: hsla(210, 50%, 40%, 0.25);
   
-  --text-primary: hsl(0, 0%, 94%);
-  --text-secondary: hsl(0, 0%, 65%);
+  --text-primary: hsl(210, 30%, 15%);
+  --text-secondary: hsl(210, 15%, 45%);
   
-  --accent-color: hsl(0, 0%, 82%); /* Blanco tiza / gris mate de alta precisión */
-  --accent-hover: hsl(0, 0%, 100%);
-  --accent-active: hsl(0, 0%, 68%);
-  --accent-glow: hsla(0, 0%, 100%, 0.12);
+  --accent-color: hsl(210, 50%, 40%); /* Cian oscuro técnico y elegante */
+  --accent-hover: hsl(210, 50%, 48%);
+  --accent-active: hsl(210, 50%, 32%);
+  --accent-glow: hsla(210, 50%, 40%, 0.12);
   
-  --danger: hsl(0, 0%, 55%);
-  --success: hsl(0, 0%, 75%);
-  --warning: hsl(0, 0%, 68%);
+  --danger: hsl(351, 80%, 45%);
+  --success: hsl(140, 50%, 35%);
+  --warning: hsl(38, 80%, 40%);
   
-  --disabled-bg: hsla(0, 0%, 100%, 0.02);
-  --disabled-text: hsla(0, 0%, 100%, 0.18);
-}
+  --disabled-bg: hsla(210, 16%, 10%, 0.06);
+  --disabled-text: hsla(210, 16%, 10%, 0.4);
 
-.theme-amber {
-  /* 📟 Classic Amber - Fósforo radar retro-futurista táctico */
-  --bg-color: hsl(24, 20%, 6%);
-  --bg-gradient: radial-gradient(circle at top right, hsl(24, 25%, 12%) 0%, hsl(24, 20%, 6%) 60%, hsl(24, 25%, 3%) 100%);
-  --sidebar-bg: hsla(24, 20%, 7%, 0.9);
-  --panel-bg: hsla(24, 16%, 13%, 0.5);
-  --panel-border: hsla(28, 40%, 40%, 0.12);
-  --panel-border-hover: hsla(28, 80%, 55%, 0.35);
-  
-  --text-primary: hsl(28, 70%, 88%);
-  --text-secondary: hsl(28, 35%, 60%);
-  
-  --accent-color: hsl(28, 85%, 52%); /* Ámbar fósforo de radar clásico */
-  --accent-hover: hsl(28, 90%, 60%);
-  --accent-active: hsl(28, 85%, 44%);
-  --accent-glow: hsla(28, 85%, 52%, 0.22);
-  
-  --danger: hsl(12, 80%, 52%);
-  --success: hsl(45, 90%, 48%);
-  --warning: hsl(28, 90%, 50%);
-  
-  --disabled-bg: hsla(28, 20%, 100%, 0.02);
-  --disabled-text: hsla(28, 20%, 100%, 0.18);
+  /* Premium HUD & Form variables */
+  --hud-bg: hsla(210, 20%, 93%, 0.6);
+  --hud-border: hsla(210, 16%, 10%, 0.08);
+  --input-bg: hsl(210, 20%, 98%);
+
+  /* Glow effects (disabled in light mode to prevent text blur) */
+  --glow-blue: none;
+  --glow-red: none;
+  --glow-green: none;
+  --glow-warning: none;
+
+  /* Metric Highlights (Premium dark technical colors) */
+  --highlight-blue: hsl(210, 80%, 45%);
+  --highlight-red: hsl(351, 80%, 45%);
+  --highlight-green: hsl(140, 50%, 35%);
+  --highlight-warning: hsl(38, 80%, 40%);
+
+  /* Scrollbar Theme Token */
+  --scrollbar-thumb: hsla(210, 16%, 10%, 0.15);
+
+  /* Typography Design Tokens */
+  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Shadows & Light Glassmorphic Blur */
+  --glass-shadow: 0 12px 32px 0 hsla(210, 20%, 10%, 0.08);
+  --glass-blur: blur(20px);
 }
 
 body {
@@ -104,7 +127,7 @@ body {
   background: transparent;
 }
 .sidebar::-webkit-scrollbar-thumb {
-  background: hsla(0, 0%, 100%, 0.06);
+  background: var(--scrollbar-thumb);
   border-radius: 10px;
 }
 .sidebar::-webkit-scrollbar-thumb:hover {
@@ -237,8 +260,8 @@ h2, h3, h4 {
   letter-spacing: -0.01em;
 }
 
-h2 { font-size: 20px; color: #fff; border-left: 3px solid var(--accent-color); padding-left: 10px; }
-h3 { font-size: 16px; color: #fff; }
+h2 { font-size: 20px; color: var(--text-primary); border-left: 3px solid var(--accent-color); padding-left: 10px; }
+h3 { font-size: 16px; color: var(--text-primary); }
 h4 { 
   font-size: 12px; 
   color: var(--text-secondary); 
@@ -257,18 +280,19 @@ h4 {
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
-  background: hsla(0, 0%, 0%, 0.25);
-  border: 1px solid hsla(0, 0%, 100%, 0.04);
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
   border-radius: 8px;
   padding: 12px;
-  box-shadow: inset 0 1px 2px hsla(0, 0%, 0%, 0.4);
+  box-shadow: inset 0 1px 2px hsla(0, 0%, 0%, 0.15);
+  transition: background 0.3s ease, border-color 0.3s ease;
 }
 
 .hud-metric-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px dashed hsla(0, 0%, 100%, 0.05);
+  border-bottom: 1px dashed var(--panel-border);
   padding: 6px 0;
 }
 
@@ -288,10 +312,10 @@ h4 {
   font-weight: 500;
 }
 
-.hud-metric-value.highlight-blue { color: hsl(207, 73%, 57%); text-shadow: 0 0 10px hsla(207, 73%, 57%, 0.4); }
-.hud-metric-value.highlight-red { color: var(--danger); text-shadow: 0 0 10px hsla(351, 100%, 60%, 0.4); }
-.hud-metric-value.highlight-green { color: var(--success); text-shadow: 0 0 10px hsla(125, 85%, 45%, 0.4); }
-.hud-metric-value.highlight-warning { color: var(--warning); text-shadow: 0 0 10px hsla(40, 100%, 55%, 0.4); }
+.hud-metric-value.highlight-blue { color: var(--highlight-blue); text-shadow: var(--glow-blue); }
+.hud-metric-value.highlight-red { color: var(--highlight-red); text-shadow: var(--glow-red); }
+.hud-metric-value.highlight-green { color: var(--highlight-green); text-shadow: var(--glow-green); }
+.hud-metric-value.highlight-warning { color: var(--highlight-warning); text-shadow: var(--glow-warning); }
 
 
 /* Holographic Cyber Loader with GPU-accelerated Scanlines */
@@ -451,14 +475,15 @@ h4 {
   width: 100%;
   padding: 10px;
   border-radius: 8px;
-  background-color: hsla(0, 0%, 0%, 0.35);
+  background-color: var(--input-bg);
   color: var(--text-primary);
   border: 1px solid var(--panel-border);
   font-family: var(--font-family);
   font-size: 13px;
   outline: none;
   transition: border-color 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
-              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+              box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              background-color 0.3s ease;
 }
 
 .select-box:focus {
@@ -519,13 +544,13 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background: hsla(228, 24%, 6%, 0.85);
-  border: 1px solid hsla(0, 0%, 100%, 0.06);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 16px;
   padding: 16px 8px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 20px 45px hsla(0, 0%, 0%, 0.65), inset 0 1px 1px hsla(0, 0%, 100%, 0.05);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
   z-index: 100;
 }
 
@@ -621,45 +646,54 @@ h4 {
   margin-bottom: 5px;
 }
 
-.theme-switcher {
+.theme-toggle-btn {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  cursor: pointer;
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  user-select: none;
 }
 
-.theme-dot {
+.theme-toggle-btn:hover {
+  border-color: var(--panel-border-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+}
+
+.theme-toggle-btn svg {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), fill 0.3s ease, stroke 0.3s ease;
 }
 
-.theme-dot:hover {
-  transform: scale(1.25);
-  border-color: rgba(255, 255, 255, 0.8);
+.theme-toggle-btn:hover svg {
+  transform: rotate(20deg) scale(1.1);
 }
 
-.theme-dot.active {
-  border-color: #ffffff;
-  transform: scale(1.25);
-  box-shadow: 0 0 10px currentColor;
+.theme-toggle-text {
+  font-size: 10px;
+  font-family: var(--font-family);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color 0.3s ease;
 }
 
-.theme-dot.slate {
-  background: hsl(210, 35%, 60%);
-  color: hsla(210, 35%, 60%, 0.4);
-}
-
-.theme-dot.charcoal {
-  background: hsl(0, 0%, 82%);
-  color: hsla(0, 0%, 82%, 0.4);
-}
-
-.theme-dot.amber {
-  background: hsl(28, 85%, 52%);
-  color: hsla(28, 85%, 52%, 0.4);
+/* Smooth targeted theme transitions for primary layout elements */
+body, .sidebar, .glass-panel, .btn-primary, .btn-secondary, .hud-card, .hud-metric-row, h1, h2, h3, h4, span, label, input, select, textarea {
+  transition: background-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              background 0.4s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), 
+              color 0.3s ease, 
+              box-shadow 0.4s ease;
 }
 
 /* Botón de Cierre Responsivo */
@@ -672,8 +706,7 @@ h4 {
   padding: 4px;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  border-radius: 6px;  transition: all 0.2s ease;
 }
 
 .close-sidebar-btn:hover {
@@ -729,13 +762,13 @@ h4 {
   left: 24px;
   bottom: 24px;
   width: 320px;
-  background: hsla(228, 24%, 6%, 0.88);
-  border: 1px solid hsla(0, 0%, 100%, 0.08);
+  background: var(--sidebar-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 12px;
   padding: 14px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 16px 36px hsla(0, 0%, 0%, 0.65), inset 0 1px 1px hsla(0, 0%, 100%, 0.05);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
   z-index: 90;
   display: flex;
   flex-direction: column;
@@ -750,7 +783,7 @@ h4 {
   text-transform: uppercase;
   color: var(--text-secondary);
   letter-spacing: 0.1em;
-  border-bottom: 1px solid hsla(0, 0%, 100%, 0.06);
+  border-bottom: 1px solid var(--panel-border);
   padding-bottom: 6px;
   margin-bottom: 2px;
 }
@@ -784,8 +817,8 @@ h4 {
 
 /* Tool explanation box inside HUD */
 .hud-tool-info {
-  background: hsla(0, 0%, 0%, 0.3);
-  border: 1px solid hsla(0, 0%, 100%, 0.03);
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
   border-radius: 8px;
   padding: 8px 10px;
   display: flex;
@@ -818,3 +851,148 @@ h4 {
 
 
 
+
+/* Upload terrain dialog — shown when an STL/DXF is being previewed for upload */
+
+.upload-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: upload-dialog-fade 0.18s ease-out;
+}
+
+.upload-dialog {
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: upload-dialog-slide 0.22s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.upload-dialog-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary, var(--foreground));
+}
+
+.upload-dialog-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: hsla(0, 0%, 100%, 0.04);
+  border: 1px solid var(--border, hsla(0, 0%, 100%, 0.08));
+}
+
+.upload-dialog-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.upload-dialog-stat-row dt {
+  color: var(--text-secondary, var(--muted-foreground));
+  font-weight: 500;
+  margin: 0;
+}
+
+.upload-dialog-stat-row dd {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary, var(--foreground));
+  margin: 0;
+  text-align: right;
+}
+
+.upload-dialog-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-dialog-field > span {
+  font-size: 13px;
+  color: var(--text-secondary, var(--muted-foreground));
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+.upload-dialog-field input[type="number"] {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, hsla(0, 0%, 100%, 0.12));
+  background: var(--input-bg, hsla(0, 0%, 100%, 0.04));
+  color: var(--text-primary, var(--foreground));
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.upload-dialog-field input[type="number"]:focus {
+  border-color: var(--accent, var(--accent-hover));
+}
+
+.upload-dialog-field input[type="number"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload-dialog-preview,
+.upload-dialog-warning {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+.upload-dialog-preview {
+  border: 1px solid hsla(125, 70%, 45%, 0.4);
+  background: hsla(125, 70%, 45%, 0.06);
+  color: var(--text-primary, var(--foreground));
+}
+
+.upload-dialog-warning {
+  border: 1px solid hsla(0, 75%, 55%, 0.5);
+  background: hsla(0, 75%, 55%, 0.08);
+  color: hsl(0, 70%, 70%);
+}
+
+.upload-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.upload-dialog-actions .btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@keyframes upload-dialog-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes upload-dialog-slide {
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)     scale(1);    }
+}

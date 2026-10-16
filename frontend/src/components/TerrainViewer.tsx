@@ -15,13 +15,129 @@ import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
 import { useVectorStore } from "../store/vectorStore";
 import { ShadowOverlay } from "./ShadowOverlay";
+import type { Point3D } from "../types/api";
+import type { TerrainKey } from "../store/analysisStore";
 
 interface TerrainMeshProps {
   grid: number[][];
   resolution: number;
   showShadowOverlay: boolean;
   onTerrainClick?: (point: { x: number; y: number; z: number }) => void;
-  activeTool: "PAN" | "ADD_RADAR" | "SELECT_CELL";
+  activeTool: "PAN" | "ADD_RADAR";
+}
+
+/** Local X/Z of a DEM node: (col * resolution, -row * resolution). */
+export function buildTerrainMeshGeometry(
+  grid: number[][],
+  resolution: number,
+  minElev = getMinElevation(grid),
+): THREE.BufferGeometry {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  const vertexCount = rows * cols;
+  const positions = new Float32Array(vertexCount * 3);
+  const uvs = new Float32Array(vertexCount * 2);
+
+  let posIdx = 0;
+  let uvIdx = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const val = grid[r]![c]!;
+      positions[posIdx++] = c * resolution;
+      positions[posIdx++] = (Number.isFinite(val) ? val : 0) - minElev;
+      positions[posIdx++] = -(r * resolution);
+
+      uvs[uvIdx++] = c / (cols - 1);
+      uvs[uvIdx++] = r / (rows - 1);
+    }
+  }
+
+  const indices: number[] = [];
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const valTL = grid[r]![c]!;
+      const valTR = grid[r]![c + 1]!;
+      const valBL = grid[r + 1]![c]!;
+      const valBR = grid[r + 1]![c + 1]!;
+
+      // Skip the whole quad whenever one of its DEM nodes is missing.
+      if (!Number.isFinite(valTL) || !Number.isFinite(valTR) ||
+          !Number.isFinite(valBL) || !Number.isFinite(valBR)) {
+        continue;
+      }
+
+      const tl = r * cols + c;
+      const tr = tl + 1;
+      const bl = tl + cols;
+      const br = bl + 1;
+      indices.push(tl, tr, bl, tr, br, bl);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** Center of the rendered DEM sample vertices, not the outer half-cell margin. */
+export function getTerrainMeshCenter(
+  grid: number[][],
+  resolution: number,
+): { centerX: number; centerZ: number } {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  return {
+    centerX: Math.max(0, cols - 1) * resolution / 2,
+    centerZ: -Math.max(0, rows - 1) * resolution / 2,
+  };
+}
+
+export type TerrainCameraView = "HOME" | "TOP" | "FRONT" | "SIDE";
+
+export interface TerrainCameraPose {
+  extent: ReturnType<typeof getTerrainExtent>;
+  target: { x: number; y: number; z: number };
+  position: { x: number; y: number; z: number };
+}
+
+/** Compute a finite camera target and position for auto-fit or a preset view. */
+export function buildTerrainCameraPose(
+  grid: number[][],
+  resolution: number,
+  view: TerrainCameraView | null = null,
+): TerrainCameraPose | null {
+  const extent = getTerrainExtent(grid, resolution);
+  const maxDim = Math.max(extent.width, extent.depth);
+  if (!Number.isFinite(maxDim) || maxDim <= 0 || !Number.isFinite(extent.height)) return null;
+
+  const center = getTerrainMeshCenter(grid, resolution);
+  const target = { x: center.centerX, y: extent.height / 2, z: center.centerZ };
+  let position: TerrainCameraPose["position"];
+
+  switch (view) {
+    case "HOME":
+      position = { x: target.x + maxDim * 1.2, y: target.y + maxDim, z: target.z + maxDim * 1.2 };
+      break;
+    case "TOP":
+      position = { x: target.x, y: target.y + maxDim * 1.8, z: target.z - 0.01 };
+      break;
+    case "FRONT":
+      position = { x: target.x, y: target.y, z: target.z + maxDim * 1.8 };
+      break;
+    case "SIDE":
+      position = { x: target.x + maxDim * 1.8, y: target.y, z: target.z };
+      break;
+    default:
+      position = { x: target.x + maxDim * 1.2, y: maxDim, z: target.z + maxDim * 1.2 };
+  }
+
+  if (![target.x, target.y, target.z, position.x, position.y, position.z].every(Number.isFinite)) {
+    return null;
+  }
+  return { extent, target, position };
 }
 
 function TerrainMesh({
@@ -35,62 +151,23 @@ function TerrainMesh({
   const minElev = useMemo(() => getMinElevation(grid), [grid]);
   const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
 
-  const geometry = useMemo(() => {
-    const rows = grid.length;
-    const cols = grid[0]?.length ?? 0;
-    const vertexCount = rows * cols;
-
-    const pos = new Float32Array(vertexCount * 3);
-    let pIdx = 0;
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const val = grid[r]![c]!;
-        pos[pIdx++] = c * resolution;
-        pos[pIdx++] = (isNaN(val) ? 0 : val) - minElev;
-        pos[pIdx++] = -(r * resolution);
-      }
-    }
-
-    const ind: number[] = [];
-    for (let r = 0; r < rows - 1; r++) {
-      for (let c = 0; c < cols - 1; c++) {
-        const valTL = grid[r]![c]!;
-        const valTR = grid[r]![c + 1]!;
-        const valBL = grid[r + 1]![c]!;
-        const valBR = grid[r + 1]![c + 1]!;
-
-        // Skip triangles if any vertex is NaN (empty data)
-        if (isNaN(valTL) || isNaN(valTR) || isNaN(valBL) || isNaN(valBR)) {
-          continue;
-        }
-
-        const tl = r * cols + c;
-        const tr = tl + 1;
-        const bl = tl + cols;
-        const br = bl + 1;
-        ind.push(tl, tr, bl, tr, br, bl);
-      }
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(ind), 1));
-    geo.computeVertexNormals();
-    return geo;
-  }, [grid, resolution, minElev]);
+  const geometry = useMemo(
+    () => buildTerrainMeshGeometry(grid, resolution, minElev),
+    [grid, resolution, minElev],
+  );
 
   return (
     <group>
       <mesh
         ref={meshRef}
         geometry={geometry}
+        castShadow
+        receiveShadow
         onPointerDown={(e) => {
-          pointerDownPos.current = {
-            x: e.nativeEvent.clientX,
-            y: e.nativeEvent.clientY,
-          };
+          e.stopPropagation();
+          pointerDownPos.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
         }}
-        onClick={(e) => {
+        onPointerUp={(e) => {
           e.stopPropagation();
           if (!pointerDownPos.current) return;
           const dx = e.nativeEvent.clientX - pointerDownPos.current.x;
@@ -102,39 +179,6 @@ function TerrainMesh({
 
           if (activeTool === "ADD_RADAR") {
             if (onTerrainClick) onTerrainClick(e.point);
-          } else if (activeTool === "SELECT_CELL") {
-            const vectorStore = useVectorStore.getState();
-            const terrainStore = useTerrainStore.getState();
-            const grid = terrainStore.grid;
-            const bounds = terrainStore.metadata?.bounds;
-            const resolution = terrainStore.metadata?.resolution ?? 2.0;
-
-            if (grid && bounds) {
-              vectorStore.selectCell(
-                { x: e.point.x, y: e.point.y, z: e.point.z },
-                grid,
-                bounds,
-                resolution
-              );
-            }
-          }
-        }}
-        onDoubleClick={(e) => {
-          // Double click works as a fallback shortcut to select slide cells regardless of tool mode
-          e.stopPropagation();
-          const vectorStore = useVectorStore.getState();
-          const terrainStore = useTerrainStore.getState();
-          const grid = terrainStore.grid;
-          const bounds = terrainStore.metadata?.bounds;
-          const resolution = terrainStore.metadata?.resolution ?? 2.0;
-
-          if (grid && bounds) {
-            vectorStore.selectCell(
-              { x: e.point.x, y: e.point.y, z: e.point.z },
-              grid,
-              bounds,
-              resolution
-            );
           }
         }}
       >
@@ -145,156 +189,136 @@ function TerrainMesh({
   );
 }
 
-/** All radar markers: current single + all deployed radars */
+interface RadarMarker {
+  key: string;
+  name: string;
+  position: Point3D;
+  color: string;
+  kind: "placed" | "analysis";
+}
+
+const sameTerrainKey = (left: TerrainKey | null, right: TerrainKey | null): boolean =>
+  !!left && !!right && left.terrain_id === right.terrain_id && left.epoch === right.epoch;
+
+const positionKey = (position: Point3D): string =>
+  `${position.x}:${position.y}:${position.z}`;
+
+const isFinitePosition = (position: Point3D): boolean =>
+  Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z);
+
+/** The visible analysis snapshot is authoritative; fallback markers are placement/history only. */
 function RadarMarkers() {
   const radarPosition = useAnalysisStore((s) => s.radarPosition);
   const history = useAnalysisStore((s) => s.history);
+  const activeSnapshot = useAnalysisStore((s) => s.activeSnapshot);
+  const losResult = useAnalysisStore((s) => s.losResult);
+  const analysisTerrainKey = useAnalysisStore((s) => s.terrainKey);
+  const terrainTransitioning = useAnalysisStore((s) => s.terrainTransitioning);
   const metadata = useTerrainStore((s) => s.metadata);
+  const terrainKey = useTerrainStore((s) => s.terrainKey);
+  const terrainEpoch = useTerrainStore((s) => s.terrainEpoch);
 
-  const deployedRadars = useMemo(() => {
-    const selected = history.filter(h => h.selected);
-    return selected.map((h, idx) => ({
-      id: h.timestamp + '-' + idx,
-      position: h.position,
-      color: RADAR_COLORS[idx % RADAR_COLORS.length] || "#ff4444"
-    }));
-  }, [history]);
+  const currentTerrainKey = useMemo<TerrainKey | null>(() => {
+    if (!metadata) return null;
+    return terrainKey ?? { terrain_id: metadata.terrain_id, epoch: terrainEpoch };
+  }, [metadata, terrainKey, terrainEpoch]);
+  const terrainMatches = !!metadata && !!currentTerrainKey &&
+    currentTerrainKey.terrain_id === metadata.terrain_id &&
+    !terrainTransitioning &&
+    (analysisTerrainKey
+      ? sameTerrainKey(analysisTerrainKey, currentTerrainKey)
+      : currentTerrainKey.epoch === 0);
+  const snapshotIsVisible = !!activeSnapshot && !!losResult && terrainMatches &&
+    sameTerrainKey(activeSnapshot.terrainKey, currentTerrainKey) &&
+    sameTerrainKey(activeSnapshot.terrainKey, analysisTerrainKey ?? (currentTerrainKey?.epoch === 0 ? currentTerrainKey : null));
 
-  if (!metadata) return null;
+  const markers = useMemo<RadarMarker[]>(() => {
+    if (!metadata || !terrainMatches || !currentTerrainKey) return [];
+    const seenPositions = new Set<string>();
+    const resolved: RadarMarker[] = [];
+    const addMarker = (marker: RadarMarker) => {
+      if (!isFinitePosition(marker.position)) return;
+      const positionId = positionKey(marker.position);
+      if (seenPositions.has(positionId)) return;
+      seenPositions.add(positionId);
+      resolved.push(marker);
+    };
+
+    if (activeSnapshot) {
+      if (!snapshotIsVisible) return [];
+      activeSnapshot.radars.forEach((radar, index) => {
+        addMarker({
+          key: `${radar.radarId}-${index}`,
+          name: `radar-snapshot-${radar.radarId}`,
+          position: radar.position,
+          color: RADAR_COLORS[index % RADAR_COLORS.length] || "#ff4444",
+          kind: "analysis",
+        });
+      });
+      return resolved;
+    }
+
+    if (radarPosition) {
+      addMarker({
+        key: "placed-radar",
+        name: "radar-current-marker",
+        position: radarPosition,
+        color: "white",
+        kind: "placed",
+      });
+    }
+    history.forEach((entry, index) => {
+      if (!entry.selected || !isFinitePosition(entry.position)) return;
+      const entryMatchesTerrain = entry.terrain_id === currentTerrainKey.terrain_id &&
+        entry.terrain_epoch === currentTerrainKey.epoch;
+      const legacyEpochZero = entry.terrain_id === undefined && entry.terrain_epoch === undefined &&
+        currentTerrainKey.epoch === 0;
+      if (!entryMatchesTerrain && !legacyEpochZero) return;
+      addMarker({
+        key: `history-${entry.timestamp}-${index}`,
+        name: `radar-history-${entry.timestamp}-${index}`,
+        position: entry.position,
+        color: RADAR_COLORS[index % RADAR_COLORS.length] || "#ff4444",
+        kind: "analysis",
+      });
+    });
+    return resolved;
+  }, [activeSnapshot, currentTerrainKey, history, metadata, radarPosition, snapshotIsVisible, terrainMatches]);
+
+  if (!metadata || markers.length === 0) return null;
   const bounds = metadata.bounds;
-
-  const toLocal = (pos: { x: number; y: number; z: number }) => ({
-    lx: pos.x - bounds.min_x,
-    ly: pos.z - bounds.min_z,
-    lz: bounds.min_y - pos.y,
-  });
+  const toLocal = (position: Point3D): [number, number, number] => [
+    position.x - bounds.min_x,
+    position.z - bounds.min_z,
+    bounds.min_y - position.y,
+  ];
 
   return (
     <>
-      {/* Current placement marker (white) */}
-      {radarPosition && (() => {
-        const { lx, ly, lz } = toLocal(radarPosition);
+      {markers.map((marker) => {
+        const position = toLocal(marker.position);
+        if (marker.kind === "placed") {
+          return (
+            <mesh key={marker.key} name={marker.name} position={position}>
+              <sphereGeometry args={[3, 16, 16]} />
+              <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+            </mesh>
+          );
+        }
         return (
-          <mesh position={[lx, ly, lz]}>
-            <sphereGeometry args={[3, 16, 16]} />
-            <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
-          </mesh>
-        );
-      })()}
-
-      {/* Deployed radar markers (colored) */}
-      {deployedRadars.map((dr) => {
-        const { lx, ly, lz } = toLocal(dr.position);
-        return (
-          <group key={dr.id} position={[lx, ly, lz]}>
-            {/* Body sphere */}
+          <group key={marker.key} name={marker.name} position={position}>
             <mesh>
               <sphereGeometry args={[4, 16, 16]} />
-              <meshStandardMaterial color={dr.color} emissive={dr.color} emissiveIntensity={0.4} />
+              <meshStandardMaterial color={marker.color} emissive={marker.color} emissiveIntensity={0.4} />
             </mesh>
-            {/* Vertical antenna pole */}
             <mesh position={[0, 6, 0]}>
               <cylinderGeometry args={[0.5, 0.5, 12, 8]} />
-              <meshStandardMaterial color={dr.color} />
+              <meshStandardMaterial color={marker.color} />
             </mesh>
           </group>
         );
       })}
     </>
-  );
-}
-
-/** Render three 3D Arrow Helpers representing True, Apparent, and Reconstructed vectors */
-function VectorArrows() {
-  const selectedCellLocal = useVectorStore((s) => s.selectedCellLocal);
-  const reconstructionResult = useVectorStore((s) => s.reconstructionResult);
-  const grid = useTerrainStore((s) => s.grid);
-  
-  if (!selectedCellLocal || !grid) return null;
-  const minElev = getMinElevation(grid);
-
-  // Offset origin slightly above terrain mesh to prevent clipping
-  const pos: [number, number, number] = [
-    selectedCellLocal.x,
-    selectedCellLocal.y - minElev + 1.5,
-    selectedCellLocal.z,
-  ];
-
-  if (!reconstructionResult) return null;
-
-  const { trueVector, reconstructedVector, apparentSingleVector } = reconstructionResult;
-
-  // Convert API Vector [Easting (X), Northing (Y), Elevation (Z)]
-  // to Three.js Local Vector [X, Elevation (Y), -Northing (Z)]
-  const mapApiVectorToThree = (v: [number, number, number]): THREE.Vector3 => {
-    return new THREE.Vector3(v[0], v[2], -v[1]);
-  };
-
-  const trueDir = mapApiVectorToThree(trueVector);
-  const trueLength = trueDir.length();
-  trueDir.normalize();
-
-  let reconDir = null;
-  let reconLength = 0;
-  if (reconstructedVector) {
-    reconDir = mapApiVectorToThree(reconstructedVector);
-    reconLength = reconDir.length();
-    reconDir.normalize();
-  }
-
-  const appDir = mapApiVectorToThree(apparentSingleVector);
-  const appLength = appDir.length();
-  appDir.normalize();
-
-  // Vector magnitude scaling factor for optimal visibility relative to DTM grid scale
-  const scale = 0.5;
-
-  return (
-    <group position={pos}>
-      {/* Blue Arrow: True Slide Displacement Vector */}
-      <primitive
-        object={new THREE.ArrowHelper(
-          trueDir,
-          new THREE.Vector3(0, 0, 0),
-          Math.max(2, trueLength * scale),
-          "#2c8fdf",
-          Math.max(1, trueLength * scale * 0.2),
-          Math.max(0.4, trueLength * scale * 0.1)
-        )}
-      />
-
-      {/* Green Arrow: Reconstructed Displacement Vector (Multi-Radar Pseudoinverse) */}
-      {reconDir && (
-        <primitive
-          object={new THREE.ArrowHelper(
-            reconDir,
-            new THREE.Vector3(0, 0, 0),
-            Math.max(2, reconLength * scale),
-            "#0adb21",
-            Math.max(1, reconLength * scale * 0.2),
-            Math.max(0.4, reconLength * scale * 0.1)
-          )}
-        />
-      )}
-
-      {/* Red Arrow: Apparent Single-Radar 1D Vector */}
-      <primitive
-        object={new THREE.ArrowHelper(
-          appDir,
-          new THREE.Vector3(0, 0, 0),
-          Math.max(2, appLength * scale),
-          "#ff3653",
-          Math.max(1, appLength * scale * 0.2),
-          Math.max(0.4, appLength * scale * 0.1)
-        )}
-      />
-
-      {/* Point origin sphere */}
-      <mesh>
-        <sphereGeometry args={[1, 16, 16]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.8} />
-      </mesh>
-    </group>
   );
 }
 
@@ -319,32 +343,20 @@ function Scene({
   // Auto-fit camera to terrain extent on first load
   useEffect(() => {
     if (!grid || grid.length === 0 || !grid[0]) return;
-    
-    const extent = getTerrainExtent(grid, resolution);
-    const maxDim = Math.max(extent.width, extent.depth);
-    
-    // Si los datos son inválidos, no movemos la cámara
-    if (isNaN(maxDim) || maxDim <= 0) return;
 
-    const targetX = extent.centerX;
-    const targetY = extent.height / 2;
-    const targetZ = extent.centerZ;
+    const pose = buildTerrainCameraPose(grid, resolution);
+    if (!pose) return;
+    const { extent, target, position } = pose;
 
-    // Posición de la cámara: 
-    // Elevada y a una distancia proporcional al tamaño del terreno
-    camera.position.set(
-      targetX + maxDim * 1.2,
-      maxDim * 1.0,
-      targetZ + maxDim * 1.2
-    );
-    
+    camera.position.set(position.x, position.y, position.z);
+
     if (controlsRef.current) {
-      controlsRef.current.target.set(targetX, targetY, targetZ);
+      controlsRef.current.target.set(target.x, target.y, target.z);
       controlsRef.current.update();
     }
-    
-    camera.lookAt(targetX, targetY, targetZ);
-    camera.far = Math.max(10000, maxDim * 10);
+
+    camera.lookAt(target.x, target.y, target.z);
+    camera.far = Math.max(10000, Math.max(extent.width, extent.depth) * 10);
     camera.updateProjectionMatrix();
   }, [grid, resolution]);
 
@@ -352,53 +364,18 @@ function Scene({
   useEffect(() => {
     if (!cameraView || !grid || grid.length === 0 || !grid[0]) return;
 
-    const extent = getTerrainExtent(grid, resolution);
-    const maxDim = Math.max(extent.width, extent.depth);
-    if (isNaN(maxDim) || maxDim <= 0) return;
+    const pose = buildTerrainCameraPose(grid, resolution, cameraView);
+    if (!pose) return;
+    const { target, position } = pose;
 
-    const targetX = extent.centerX;
-    const targetY = extent.height / 2;
-    const targetZ = extent.centerZ;
+    camera.position.set(position.x, position.y, position.z);
 
-    let posX = targetX;
-    let posY = targetY;
-    let posZ = targetZ;
-
-    switch (cameraView) {
-      case "HOME":
-        // Isometric angle view
-        posX = targetX + maxDim * 1.2;
-        posY = targetY + maxDim * 1.0;
-        posZ = targetZ + maxDim * 1.2;
-        break;
-      case "TOP":
-        // Orthogonal 2D plan view from top (slight Z offset to prevent OrbitControls gimbal lock)
-        posX = targetX;
-        posY = targetY + maxDim * 1.8;
-        posZ = targetZ - 0.01;
-        break;
-      case "FRONT":
-        // Front elevation view
-        posX = targetX;
-        posY = targetY;
-        posZ = targetZ + maxDim * 1.8;
-        break;
-      case "SIDE":
-        // Side profile view
-        posX = targetX + maxDim * 1.8;
-        posY = targetY;
-        posZ = targetZ;
-        break;
-    }
-
-    camera.position.set(posX, posY, posZ);
-    
     if (controlsRef.current) {
-      controlsRef.current.target.set(targetX, targetY, targetZ);
+      controlsRef.current.target.set(target.x, target.y, target.z);
       controlsRef.current.update();
     }
-    
-    camera.lookAt(targetX, targetY, targetZ);
+
+    camera.lookAt(target.x, target.y, target.z);
     camera.updateProjectionMatrix();
 
     // Reset parent cameraView selection once applied
@@ -424,7 +401,6 @@ function Scene({
         activeTool={activeTool}
       />
       <RadarMarkers />
-      <VectorArrows />
       <OrbitControls ref={controlsRef} makeDefault />
       
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
@@ -452,7 +428,7 @@ export function TerrainViewer({
   const resolution = useTerrainStore((s) => s.metadata?.resolution ?? 2.0);
 
   // Tools state (PAN is safe, ADD_RADAR places radars, SELECT_CELL simulates vector landslides)
-  const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR" | "SELECT_CELL">("PAN");
+  const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR">("PAN");
   const [cameraView, setCameraView] = useState<"HOME" | "TOP" | "FRONT" | "SIDE" | null>(null);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
 
@@ -465,10 +441,6 @@ export function TerrainViewer({
     ADD_RADAR: {
       title: "Radar Placement Mode",
       desc: "Haz clic izquierdo sobre cualquier celda del terreno 3D para desplegar un radar y proyectar su raycasting inmediatamente."
-    },
-    SELECT_CELL: {
-      title: "Vector Landslide Simulation",
-      desc: "Haz clic sobre cualquier celda del talud para simular un vector de falla (máxima pendiente) y resolver la reconstrucción 3D."
     }
   };
 
@@ -540,19 +512,6 @@ export function TerrainViewer({
             </svg>
             <span className="tooltip">Place Radar (Click terrain)</span>
           </button>
-          <button
-            className={`toolbar-btn ${activeTool === "SELECT_CELL" ? "active" : ""}`}
-            onClick={() => setActiveTool("SELECT_CELL")}
-            aria-label="Landslide Simulation Mode"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 20h20V12l-10-6L2 20z" fill="rgba(255,255,255,0.05)" />
-              <path d="M2 20l10-14 10 6" />
-              <line x1="8" y1="8" x2="14" y2="13" stroke="var(--danger)" strokeWidth="2.5" />
-              <polyline points="11 13 14 13 14 10" stroke="var(--danger)" strokeWidth="2.5" />
-            </svg>
-            <span className="tooltip">Simulate Slide (Click cell)</span>
-          </button>
         </div>
 
         <div className="toolbar-divider" />
@@ -620,40 +579,90 @@ export function TerrainViewer({
       {showShadowOverlay && (
         <div className="geotechnical-hud-legend">
           <div className="hud-legend-title">
-            {visualizationMode === "SENSITIVITY"
-              ? "Geometric Sensitivity Legend"
-              : "LOS Quality Legend"}
+            {visualizationMode === "SENSITIVITY" ? (
+              <>
+                <span lang="en">Geometric projection index</span>
+                {" / "}
+                <span lang="es">Índice de proyección geométrica</span>
+              </>
+            ) : (
+              <>
+                <span lang="en">Geometric line-of-sight (LOS) index</span>
+                {" / "}
+                <span lang="es">Índice geométrico de línea de vista (LOS)</span>
+              </>
+            )}
           </div>
 
           {visualizationMode === "SENSITIVITY" ? (
             <>
               <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
+                <div
+                  className="hud-legend-color"
+                  style={{ background: "transparent", outline: "1px dashed var(--text-secondary)" }}
+                />
                 <div>
-                  <span className="hud-legend-label">Obstructed Zone (Shadow)</span>
-                  <div className="hud-legend-desc">Obstructed by topography or out of range. Rendered transparent.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">No data — transparent</span>
+                    {" / "}
+                    <span lang="es">Sin datos — transparente</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Transparent means no contributing observation: no individual LOS is VISIBLE with a computable terrain gradient. This can result from NODATA, an unknown ray state, outside range/FOV, shadow, or a VISIBLE cell without a computable gradient; transparency alone does not identify shadow.</span>
+                    {" / "}
+                    <span lang="es">Transparente significa que no hay observación contribuyente: ningún LOS individual es VISIBLE con un gradiente del terreno calculable. Puede deberse a NODATA, un estado de rayo desconocido, fuera de alcance/FOV, sombra o una celda VISIBLE sin gradiente calculable; la transparencia por sí sola no identifica la sombra.</span>
+                  </div>
                 </div>
               </div>
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(300, 100%, 25%)" }} />
                 <div>
-                  <span className="hud-legend-label">Critical Blind Zone (0.0 - 0.2)</span>
-                  <div className="hud-legend-desc">Displacement is perpendicular to radar LOS. Complete detection failure.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">Low geometric projection (0.0 - 0.2)</span>
+                    {" / "}
+                    <span lang="es">Proyección geométrica baja (0.0 - 0.2)</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Lower geometric projection magnitude.</span>
+                    {" / "}
+                    <span lang="es">Menor magnitud de proyección geométrica.</span>
+                  </div>
                 </div>
               </div>
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(220, 80%, 45%)" }} />
                 <div>
-                  <span className="hud-legend-label">Low/Medium Sensitivity (0.2 - 0.6)</span>
-                  <div className="hud-legend-desc">Oblique angle. Signal detects partial motion vector components.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">Intermediate geometric projection (0.2 - 0.6)</span>
+                    {" / "}
+                    <span lang="es">Proyección geométrica intermedia (0.2 - 0.6)</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Intermediate geometric projection magnitude.</span>
+                    {" / "}
+                    <span lang="es">Magnitud de proyección geométrica intermedia.</span>
+                  </div>
                 </div>
               </div>
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
                 <div>
-                  <span className="hud-legend-label">Optimal Sensitivity (0.6 - 1.0)</span>
-                  <div className="hud-legend-desc">Aligned direction. Radar visual is parallel to slope movement direction.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">High geometric projection (0.6 - 1.0)</span>
+                    {" / "}
+                    <span lang="es">Proyección geométrica alta (0.6 - 1.0)</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Higher geometric projection magnitude.</span>
+                    {" / "}
+                    <span lang="es">Mayor magnitud de proyección geométrica.</span>
+                  </div>
                 </div>
+              </div>
+              <div className="hud-legend-desc">
+                <span lang="en">One contributor: |dot| between the maximum-slope direction and radar line of sight (LOS); multiple contributors: RMS(dotᵢ) across contributors. A measured zero has at least one contributor; no contributors means no data, not zero. These are geometric-index ranges, not detection thresholds or RF/SNR performance.</span>
+                {" / "}
+                <span lang="es">Con un contribuyente: |dot| entre la dirección de máxima pendiente y la línea de vista (LOS) del radar; con varios contribuyentes: RMS(dotᵢ) entre ellos. Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. Son intervalos de un índice geométrico, no umbrales de detección ni rendimiento RF/SNR.</span>
               </div>
             </>
           ) : (
@@ -661,30 +670,90 @@ export function TerrainViewer({
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
                 <div>
-                  <span className="hud-legend-label">Shadowed Zone (Obstructed)</span>
-                  <div className="hud-legend-desc">No line of sight (LOS) to any active radar. Obstructed or out of range.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">Confirmed obstruction shadow</span>
+                    {" / "}
+                    <span lang="es">Sombra por obstrucción confirmada</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">SHADOW marks an obstruction on the terrain LOS ray; it is distinct from OUT_OF_RANGE and OUTSIDE_FOV.</span>
+                    {" / "}
+                    <span lang="es">SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.</span>
+                  </div>
+                </div>
+              </div>
+              <div className="hud-legend-row">
+                <div
+                  className="hud-legend-color"
+                  style={{ background: "transparent", outline: "1px dashed var(--text-secondary)" }}
+                />
+                <div>
+                  <span className="hud-legend-label">
+                    <span lang="en">Transparent — no index value</span>
+                    {" / "}
+                    <span lang="es">Transparente — sin valor de índice</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">NODATA, UNKNOWN_RAY, OUT_OF_RANGE and OUTSIDE_FOV have no displayed index and appear transparent; transparency does not indicate a confirmed shadow.</span>
+                    {" / "}
+                    <span lang="es">NODATA, UNKNOWN_RAY, OUT_OF_RANGE y OUTSIDE_FOV no tienen un índice mostrado y aparecen transparentes; la transparencia no indica una sombra confirmada.</span>
+                  </div>
                 </div>
               </div>
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(351, 80%, 50%)" }} />
                 <div>
-                  <span className="hud-legend-label">Poor Quality (0.0 - 0.3)</span>
-                  <div className="hud-legend-desc">Suboptimal signal angle or long distance. Hard to monitor.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">Low geometric index (0.0 - 0.3)</span>
+                    {" / "}
+                    <span lang="es">Índice geométrico bajo (0.0 - 0.3)</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Lower band of the geometric index.</span>
+                    {" / "}
+                    <span lang="es">Intervalo bajo del índice geométrico.</span>
+                  </div>
                 </div>
               </div>
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(38, 90%, 45%)" }} />
                 <div>
-                  <span className="hud-legend-label">Medium Quality (0.3 - 0.7)</span>
-                  <div className="hud-legend-desc">Adequate signal. Reliable geotechnical data collection.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">Intermediate geometric index (0.3 - 0.7)</span>
+                    {" / "}
+                    <span lang="es">Índice geométrico intermedio (0.3 - 0.7)</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Intermediate band of the geometric index.</span>
+                    {" / "}
+                    <span lang="es">Intervalo intermedio del índice geométrico.</span>
+                  </div>
                 </div>
               </div>
               <div className="hud-legend-row">
                 <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
                 <div>
-                  <span className="hud-legend-label">Excellent Quality (0.7 - 1.0)</span>
-                  <div className="hud-legend-desc">Perfect angle of incidence and short distance. Ideal SNR.</div>
+                  <span className="hud-legend-label">
+                    <span lang="en">High geometric index (0.7 - 1.0)</span>
+                    {" / "}
+                    <span lang="es">Índice geométrico alto (0.7 - 1.0)</span>
+                  </span>
+                  <div className="hud-legend-desc">
+                    <span lang="en">Higher band of the geometric index.</span>
+                    {" / "}
+                    <span lang="es">Intervalo alto del índice geométrico.</span>
+                  </div>
                 </div>
+              </div>
+              <div className="hud-legend-desc">
+                <span lang="en">Only VISIBLE cells have this geometric index. A displayed value of 0.0 is measured; missing data is transparent.</span>
+                {" / "}
+                <span lang="es">El índice geométrico se calcula solo para celdas VISIBLE. Un valor mostrado de 0.0 es medido; los datos ausentes son transparentes.</span>
+              </div>
+              <div className="hud-legend-desc">
+                <span lang="en">For VISIBLE cells, the 0–1 score combines terrain-normal/LOS alignment with distance relative to the configured maximum range; it is a geometric index, not an estimate of sensor signal or data reliability.</span>
+                {" / "}
+                <span lang="es">Para celdas VISIBLE, el valor de 0–1 combina la orientación de la normal del terreno respecto al LOS con la distancia relativa al alcance máximo configurado; es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.</span>
               </div>
             </>
           )}

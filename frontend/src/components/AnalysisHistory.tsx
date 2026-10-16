@@ -1,4 +1,9 @@
+import { useState, useCallback } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
+
+function formatPercent(value: number | null): string {
+  return value !== null && Number.isFinite(value) ? `${value.toFixed(1)}%` : "Sin datos";
+}
 
 export function AnalysisHistory() {
   const history = useAnalysisStore((s) => s.history);
@@ -6,30 +11,73 @@ export function AnalysisHistory() {
   const toggleHistoryEntrySelection = useAnalysisStore((s) => s.toggleHistoryEntrySelection);
   const removeHistoryEntry = useAnalysisStore((s) => s.removeHistoryEntry);
 
+  // Collapsible state
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    if (typeof localStorage !== "undefined" && localStorage.getItem) {
+      return localStorage.getItem("geotradar-collapse-history") === "true";
+    }
+    return false;
+  });
+
+  const toggleCollapse = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      if (typeof localStorage !== "undefined" && localStorage.setItem) {
+        localStorage.setItem("geotradar-collapse-history", String(next));
+      }
+      return next;
+    });
+  }, []);
+
   if (history.length === 0) return null;
 
   return (
     <div className="glass-panel mt-4">
-      <div className="flex-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-        <h3 style={{ margin: 0 }}>History</h3>
-        <button
-          onClick={clearHistory}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "var(--danger)",
-            cursor: "pointer",
-            fontSize: "10px",
-            textTransform: "uppercase",
-            fontWeight: "bold",
-            letterSpacing: "0.05em"
+      <div 
+        onClick={toggleCollapse}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none", marginBottom: isCollapsed ? "0px" : "12px" }}
+      >
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>History</h3>
+          {!isCollapsed && (
+            <button
+              onClick={(e) => { e.stopPropagation(); clearHistory(); }}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--danger)",
+                cursor: "pointer",
+                fontSize: "10px",
+                textTransform: "uppercase",
+                fontWeight: "bold",
+                letterSpacing: "0.05em",
+                outline: "none"
+              }}
+            >
+              Clear All
+            </button>
+          )}
+        </div>
+        <svg 
+          viewBox="0 0 24 24" 
+          width="16" 
+          height="16" 
+          fill="none" 
+          stroke="var(--text-secondary)" 
+          strokeWidth="2.5" 
+          strokeLinecap="round" 
+          strokeLinejoin="round"
+          style={{ 
+            transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
+            transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
           }}
         >
-          Clear All
-        </button>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </div>
 
-      <div className="flex-col" style={{ gap: "8px" }}>
+      {!isCollapsed && (
+        <div className="flex-col" style={{ gap: "8px" }}>
         {history.map((entry, idx) => {
           const isSelected = !!entry.selected;
           return (
@@ -84,9 +132,12 @@ export function AnalysisHistory() {
                   <span style={{ opacity: 0.6, fontSize: "10px", fontFamily: "var(--font-mono)" }}>
                     {entry.timestamp}
                   </span>
-                  <span style={{ color: entry.coveragePct > 50 ? "var(--success)" : "var(--warning)", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
-                    {entry.coveragePct.toFixed(1)}%
+                  <span style={{ color: entry.coveragePct === null ? "var(--text-secondary)" : entry.coveragePct > 50 ? "var(--success)" : "var(--warning)", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
+                    {formatPercent(entry.coveragePct)}
                   </span>
+                </div>
+                <div style={{ opacity: 0.8, fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                  Completitud: {formatPercent(entry.result.completeness_pct)}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px", opacity: 0.8, fontFamily: "var(--font-mono)", fontSize: "10px" }}>
                   <span><span style={{ opacity: 0.4 }}>X:</span> {entry.position.x.toFixed(0)}</span>
@@ -130,7 +181,8 @@ export function AnalysisHistory() {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
