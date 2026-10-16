@@ -32,9 +32,14 @@ self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
 
 // LOS is intentionally bounded before result buffers are allocated: no axis may exceed 16,384
 // nodes, the output may contain at most 1,000,000 cells, and the conservative candidate-ray
-// estimate may contain at most 5,000,000 triangle intervals. This also rejects pathological
+// estimate may contain at most 25,000,000 triangle intervals. This also rejects pathological
 // skinny grids even when their total cell count alone would fit the memory cap.
-const MAX_LOS_ESTIMATED_WORK = 5_000_000;
+//
+// The worker-budget cap was raised from 5,000,000 to 25,000,000 to accommodate grids
+// near the new size limit (rows*cols ~ 1M). The estimate is a conservative upper bound:
+// actual ray-march cost is typically lower because azimuth filtering, OUT_OF_RANGE cells,
+// and terrain occlusion skip much of the candidate work.
+const MAX_LOS_ESTIMATED_WORK = 25_000_000;
 
 type RayTraceState = typeof LOSCellState.VISIBLE | typeof LOSCellState.SHADOW | typeof LOSCellState.UNKNOWN_RAY;
 

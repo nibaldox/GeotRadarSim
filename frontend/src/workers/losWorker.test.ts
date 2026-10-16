@@ -423,13 +423,16 @@ describe("LOS worker cell-state contract", () => {
   });
 
   it("rejects estimated ray-traversal work above the worker budget", async () => {
-    const size = 112;
+    // The cap sits at 25,000,000 intervals. size=224 centered radar at 2000 m range
+    // produces an upper-bound estimate of ~45M (cell_count=50176 < 1M cap, so it
+    // passes the dimension check and reaches the work-budget guard).
+    const size = 224;
     const result = await runWorker({
       grid: Array.from({ length: size }, () => Array(size).fill(0)),
       bounds: { min_x: 0, min_y: 0, max_x: size - 1, max_y: size - 1 },
       resolution: 1,
       radar_position: [(size - 1) / 2, (size - 1) / 2, 10],
-      radar_config: { ...radar, max_range_m: 1_000 },
+      radar_config: { ...radar, max_range_m: 2_000 },
     });
 
     expect(result.error).toMatch(/LOS .*work|work.*LOS/i);
@@ -437,13 +440,16 @@ describe("LOS worker cell-state contract", () => {
   });
 
   it("includes terrain reached from outside the grid in the work estimate", async () => {
-    const size = 112;
+    // Radar placed outside the grid footprint must still count the cells it can
+    // actually reach, otherwise the work estimate would undercount. Sizes bumped
+    // (size=224, range=400) to keep the input above the 25M cap.
+    const size = 224;
     const result = await runWorker({
       grid: Array.from({ length: size }, () => Array(size).fill(0)),
       bounds: { min_x: 0, min_y: 0, max_x: size - 1, max_y: size - 1 },
       resolution: 1,
-      radar_position: [200, (size - 1) / 2, 10],
-      radar_config: { ...radar, max_range_m: 200 },
+      radar_position: [400, (size - 1) / 2, 10],
+      radar_config: { ...radar, max_range_m: 400 },
     });
 
     expect(result.error).toMatch(/LOS .*work|work.*LOS/i);
