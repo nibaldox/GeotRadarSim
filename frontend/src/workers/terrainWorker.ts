@@ -7,22 +7,51 @@ export interface TerrainWorkerInput {
   fileData: ArrayBuffer;
   filename: string;
   resolution: number;
+  /**
+   * `full` (default) parses the file and builds the DTM grid.
+   * `bounds` parses the file only far enough to compute the X/Y/Z min/max
+   * envelope, returning the result without allocating the grid or running IDW.
+   * Used by the upload UI to suggest a resolution that fits under the cell cap.
+   */
+  mode?: 'full' | 'bounds';
 }
 
+/** Output of the worker when `mode: 'full'` (the default). */
 export interface TerrainWorkerOutput {
+  mode?: 'full';
   grid?: number[][];
   metadata?: DTMMetadata;
   warnings?: string[];
   error?: string;
 }
 
+/** Output of the worker when `mode: 'bounds'`. */
+export interface TerrainBoundsWorkerOutput {
+  mode: 'bounds';
+  source: 'STL' | 'DXF';
+  pointCount: number;
+  bbox: {
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+    minZ: number; maxZ: number;
+  };
+  span: {
+    x: number;
+    y: number;
+    z: number;
+  };
+}
+
+export type TerrainWorkerMessage = TerrainWorkerOutput | TerrainBoundsWorkerOutput;
+
 self.onmessage = async (e: MessageEvent<TerrainWorkerInput>) => {
   try {
-    const { fileData, filename, resolution } = e.data;
+    const { fileData, filename, resolution, mode = 'full' } = e.data;
     const isStl = filename.toLowerCase().endsWith('.stl');
-    
+    const source: 'STL' | 'DXF' = isStl ? 'STL' : 'DXF';
+
     let points: Array<[number, number, number]> = [];
-    
+
     if (isStl) {
       points = parseSTL(fileData);
     } else {
@@ -31,17 +60,53 @@ self.onmessage = async (e: MessageEvent<TerrainWorkerInput>) => {
       const text = decoder.decode(fileData);
       points = parseDXF(text);
     }
-    
+
     if (points.length === 0) {
       throw new Error("No usable points found in file");
     }
-    
+
+    if (mode === 'bounds') {
+      const bounds = computeBounds(source, points);
+      self.postMessage(bounds);
+      return;
+    }
+
     const result = generateDTM(points, resolution);
     self.postMessage(result);
   } catch (err: any) {
     self.postMessage({ error: err.message || String(err) });
   }
 };
+
+/**
+ * Walk the parsed point array once to compute the X/Y/Z envelope. O(points)
+ * with no auxiliary allocations — the goal is to return the file's true
+ * extent so the upload UI can suggest a resolution that fits the cell cap
+ * without first paying the cost of building a full grid.
+ */
+function computeBounds(source: 'STL' | 'DXF', points: TerrainPoint[]): TerrainBoundsWorkerOutput {
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  let minZ = Infinity, maxZ = -Infinity;
+  for (const [x, y, z] of points) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(minZ)) {
+    throw new Error('Could not compute terrain bounds: no finite coordinates parsed');
+  }
+  return {
+    mode: 'bounds',
+    source,
+    pointCount: points.length,
+    bbox: { minX, maxX, minY, maxY, minZ, maxZ },
+    span: { x: maxX - minX, y: maxY - minY, z: maxZ - minZ },
+  };
+}
 
 const MAX_STL_TRIANGLES = 500_000;
 const STL_NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;

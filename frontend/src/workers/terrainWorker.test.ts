@@ -1,5 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { TerrainWorkerInput, TerrainWorkerOutput } from "./terrainWorker";
+import type {
+  TerrainBoundsWorkerOutput,
+  TerrainWorkerInput,
+  TerrainWorkerMessage,
+  TerrainWorkerOutput,
+} from "./terrainWorker";
 
 type Point = [number, number, number];
 type Triangle = [Point, Point, Point];
@@ -10,12 +15,12 @@ const SURFACE: Triangle[] = [
 ];
 
 const globalSelf = globalThis as any;
-const messagesSent: TerrainWorkerOutput[] = [];
+const messagesSent: TerrainWorkerMessage[] = [];
 let workerHandler!: (event: MessageEvent<TerrainWorkerInput>) => Promise<void>;
 
 beforeAll(async () => {
   globalSelf.self = {
-    postMessage: (message: TerrainWorkerOutput) => messagesSent.push(message),
+    postMessage: (message: TerrainWorkerMessage) => messagesSent.push(message),
     onmessage: null,
   };
 
@@ -81,9 +86,27 @@ function binaryStl(triangles: Triangle[], header = "solid binary surface"): Arra
 }
 
 async function runWorker(fileData: ArrayBuffer, resolution = 1, filename = "surface.stl"): Promise<TerrainWorkerOutput> {
+  const message = await runWorkerRaw(fileData, resolution, filename);
+  expect(message.mode).not.toBe('bounds');
+  return message as TerrainWorkerOutput;
+}
+
+async function runBoundsWorker(fileData: ArrayBuffer, filename: string): Promise<TerrainBoundsWorkerOutput | { error: string }> {
+  const message = await runWorkerRaw(fileData, 1, filename, 'bounds');
+  // Bounds mode can also surface a parse error (e.g. an empty STL). Return
+  // whatever the worker posted and let the test branch on shape.
+  return message as TerrainBoundsWorkerOutput | { error: string };
+}
+
+async function runWorkerRaw(
+  fileData: ArrayBuffer,
+  resolution: number,
+  filename: string,
+  mode: 'full' | 'bounds' = 'full',
+): Promise<TerrainWorkerMessage> {
   messagesSent.length = 0;
   await workerHandler({
-    data: { fileData, filename, resolution },
+    data: { fileData, filename, resolution, mode },
   } as MessageEvent<TerrainWorkerInput>);
 
   expect(messagesSent).toHaveLength(1);
@@ -562,5 +585,67 @@ NaN
     expect(binaryResult.error).toBeUndefined();
     expect(asciiResult.metadata).toEqual(binaryResult.metadata);
     expect(asciiResult.grid).toEqual(binaryResult.grid);
+  });
+});
+
+describe("terrainWorker — bounds preview mode", () => {
+  it("returns the X/Y/Z envelope of an ASCII STL without allocating a grid", async () => {
+    const result = await runBoundsWorker(encodeAscii(asciiStl(SURFACE)), "preview-ascii.stl");
+    if ('error' in result) throw new Error(`unexpected error: ${result.error}`);
+
+    expect(result.source).toBe("STL");
+    // SURFACE has 2 triangles, 3 vertices each = 6 points (step=1 in scanAsciiSTL).
+    expect(result.pointCount).toBe(6);
+    expect(result.bbox).toEqual({ minX: 0, maxX: 1, minY: 0, maxY: 1, minZ: 0, maxZ: 3 });
+    expect(result.span).toEqual({ x: 1, y: 1, z: 3 });
+    expect(result.mode).toBe("bounds");
+  });
+
+  it("matches the bounding box from binary STL preview to the ASCII preview of the same surface", async () => {
+    const asciiResult = await runBoundsWorker(encodeAscii(asciiStl(SURFACE)), "preview-ascii.stl");
+    const binaryResult = await runBoundsWorker(binaryStl(SURFACE, "solid binary surface"), "preview-binary.stl");
+    if ('error' in asciiResult) throw new Error(`unexpected error: ${asciiResult.error}`);
+    if ('error' in binaryResult) throw new Error(`unexpected error: ${binaryResult.error}`);
+
+    expect(asciiResult.bbox).toEqual(binaryResult.bbox);
+    expect(asciiResult.span).toEqual(binaryResult.span);
+    expect(asciiResult.pointCount).toBe(binaryResult.pointCount);
+  });
+
+  it("reads bounds from a DXF POINT cloud and tags the source as DXF", async () => {
+    const dxf = dxfDocument(dxfPointEntities([
+      [10, 20, 5],
+      [-5, 30, 15],
+      [12, 0, -3],
+    ]));
+    const result = await runBoundsWorker(dxf, "preview.dxf");
+    if ('error' in result) throw new Error(`unexpected error: ${result.error}`);
+
+    expect(result.source).toBe("DXF");
+    expect(result.pointCount).toBe(3);
+    expect(result.bbox).toEqual({
+      minX: -5, maxX: 12,
+      minY: 0, maxY: 30,
+      minZ: -3, maxZ: 15,
+    });
+    expect(result.span).toEqual({ x: 17, y: 30, z: 18 });
+  });
+
+  it("propagates empty-file errors back as a single { error } message", async () => {
+    // An STL that has no usable points must surface the parse error rather than
+    // returning an "empty" bounds envelope, which would mislead the upload UI.
+    // Empty file: 0 triangles, no vertices.
+    const result = await runBoundsWorker(encodeAscii("solid empty\nendsolid empty\n"), "empty.stl");
+    expect('error' in result).toBe(true);
+    expect((result as { error: string }).error).toMatch(/no facets found/i);
+  });
+
+  it("does not allocate a grid or DTM metadata in bounds mode", async () => {
+    const result = await runBoundsWorker(encodeAscii(asciiStl(SURFACE)), "preview.stl");
+    // Bounds-mode messages must not carry full-mode fields; tests for the upload
+    // path rely on this contract to short-circuit UI suggestions.
+    const fullOnly = result as TerrainWorkerOutput;
+    expect(fullOnly.grid).toBeUndefined();
+    expect(fullOnly.metadata).toBeUndefined();
   });
 });
