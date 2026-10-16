@@ -106,6 +106,8 @@ export interface AnalysisState {
   setElevationOverrides: (min: number | null, max: number | null) => void;
   setAzimuthOverrides: (center: number | null, width: number | null) => void;
   runAnalysis: (terrainId: string) => Promise<void>;
+  /** Cancel any in-flight single or multi LOS analysis (never the radar catalog load). */
+  cancelAnalysis: () => void;
   clearResult: () => void;
   clearHistory: () => void;
   restoreHistoryEntry: (index: number) => void;
@@ -634,6 +636,18 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
           loading: false,
         });
       }
+    },
+
+    cancelAnalysis: () => {
+      const state = get();
+      // Only a running single/multi analysis may be cancelled: finished results
+      // are preserved and the shared loadRadars catalog fetch is left alone
+      // (the UI hides the control while the radar catalog is loading).
+      if (!state.loading && !state.multiLoading) return;
+      // advanceRequestGeneration fences every pending single/multi poll and
+      // terminates all tracked LOS jobs via cancelLOSAnalysis; jobs created
+      // afterwards settle stale and get cancelled on arrival.
+      set({ ...invalidateForConfigurationChange() });
     },
 
     clearResult: () => {

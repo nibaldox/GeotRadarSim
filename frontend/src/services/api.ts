@@ -54,6 +54,24 @@ function releaseJobTerrainLease(jobId: string): void {
   release();
 }
 
+// Wall-time watchdog around the active LOS worker lifetime: it covers worker
+// construction, message transport, and execution. A LOS job whose worker is
+// still running after this budget is marked FAILED, its worker terminated,
+// and its terrain lease released. Sensitivity and terrain workers are not watched.
+const LOS_WORKER_WATCHDOG_MS = 125_000;
+const LOS_WORKER_WATCHDOG_ERROR =
+  "El análisis LOS superó el tiempo máximo de 125 segundos y fue cancelado. " +
+  "Aumente el tamaño de celda (m), reduzca el área o disminuya el alcance del radar e intente nuevamente.";
+
+const losJobWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
+
+function clearLosJobWatchdog(jobId: string): void {
+  const timer = losJobWatchdogs.get(jobId);
+  if (!timer) return;
+  losJobWatchdogs.delete(jobId);
+  clearTimeout(timer);
+}
+
 // ────────────────────────────────────────────
 // Radar Definitions (Hardcoded for local app)
 // ────────────────────────────────────────────
@@ -380,6 +398,26 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     releaseJobTerrainLease(jobId);
   };
 
+  // Arm the watchdog around the whole active worker lifetime. Every terminal
+  // path (completion, worker error, construction or postMessage failure,
+  // cancellation) must clear it; late timers after those paths are ignored.
+  losJobWatchdogs.set(jobId, setTimeout(() => {
+    losJobWatchdogs.delete(jobId);
+    if (!losJobIds.has(jobId) || jobStore.get(jobId)?.status !== "PENDING") return;
+    markFailed(LOS_WORKER_WATCHDOG_ERROR);
+    const watchdogWorker = activeLOSWorkers.get(jobId);
+    if (watchdogWorker) {
+      activeLOSWorkers.delete(jobId);
+      watchdogWorker.onmessage = null;
+      watchdogWorker.onerror = null;
+      try {
+        watchdogWorker.terminate();
+      } catch {
+        // The FAILED status and lease release are already recorded.
+      }
+    }
+  }, LOS_WORKER_WATCHDOG_MS));
+
   let worker: Worker | undefined;
   let synchronousFailure = false;
   try {
@@ -387,6 +425,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     const activeWorker = worker;
     activeLOSWorkers.set(jobId, activeWorker);
     const cleanup = () => {
+      clearLosJobWatchdog(jobId);
       if (activeLOSWorkers.get(jobId) === activeWorker) activeLOSWorkers.delete(jobId);
       activeWorker.onmessage = null;
       activeWorker.onerror = null;
@@ -440,6 +479,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     activeWorker.postMessage(workerInput);
   } catch (err) {
     synchronousFailure = true;
+    clearLosJobWatchdog(jobId);
     markFailed(err instanceof Error ? err.message : String(err));
     if (worker) {
       if (activeLOSWorkers.get(jobId) === worker) activeLOSWorkers.delete(jobId);
@@ -476,6 +516,7 @@ export function releaseLOSJob(jobId: string): void {
 export function cancelLOSAnalysis(jobId: string): void {
   if (!losJobIds.has(jobId)) return;
   losJobIds.delete(jobId);
+  clearLosJobWatchdog(jobId);
   jobStore.delete(jobId);
   releaseJobTerrainLease(jobId);
   const worker = activeLOSWorkers.get(jobId);

@@ -31,15 +31,36 @@ self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
 };
 
 // LOS is intentionally bounded before result buffers are allocated: no axis may exceed 16,384
-// nodes, the output may contain at most 1,000,000 cells, and the conservative candidate-ray
-// estimate may contain at most 25,000,000 triangle intervals. This also rejects pathological
+// nodes and the output may contain at most 1,000,000 cells. This also rejects pathological
 // skinny grids even when their total cell count alone would fit the memory cap.
 //
-// The worker-budget cap was raised from 5,000,000 to 25,000,000 to accommodate grids
-// near the new size limit (rows*cols ~ 1M). The estimate is a conservative upper bound:
-// actual ray-march cost is typically lower because azimuth filtering, OUT_OF_RANGE cells,
-// and terrain occlusion skip much of the candidate work.
-const MAX_LOS_ESTIMATED_WORK = 25_000_000;
+// Traversal cost is not pre-estimated: an interval estimate only saw the grid geometry and
+// rejected cheap filtered scenes it could not inspect. Instead every compute runs under a
+// monotonic runtime deadline, checked periodically inside the real triangle traversal and the
+// outer target/zone loops, so any input is bounded in wall-clock time.
+export const LOS_RUNTIME_DEADLINE_MS = 120_000;
+const LOS_RUNTIME_CHECK_INTERVAL = 1_024;
+
+/** Per-compute monotonic deadline; one instance per computeLOS call, never shared across requests. */
+interface LOSRuntimeDeadline {
+  check: () => void;
+}
+
+function createLOSRuntimeDeadline(): LOSRuntimeDeadline {
+  const startedAt = performance.now();
+  return {
+    check: (): void => {
+      if (performance.now() - startedAt > LOS_RUNTIME_DEADLINE_MS) {
+        throw new RangeError(
+          `El cálculo de visibilidad LOS excedió el tiempo máximo de ejecución ` +
+            `(${Math.round(LOS_RUNTIME_DEADLINE_MS / 1000)} segundos). ` +
+            "Reduzca el área del terreno, aumente la resolución o disminuya el alcance del radar " +
+            "y vuelva a intentarlo.",
+        );
+      }
+    },
+  };
+}
 
 type RayTraceState = typeof LOSCellState.VISIBLE | typeof LOSCellState.SHADOW | typeof LOSCellState.UNKNOWN_RAY;
 
@@ -245,6 +266,7 @@ function traceTerrainRay(
   endX: number,
   endY: number,
   endZ: number,
+  deadline: LOSRuntimeDeadline,
 ): RayTraceState {
   const rows = grid.length;
   const cols = grid[0]?.length ?? 0;
@@ -279,7 +301,10 @@ function traceTerrainRay(
 
   let rayUnknown = false;
   let intervalStart = clip.start;
+  let intervalIndex = 0;
   while (intervalStart < clip.end) {
+    // Clock is read only once per LOS_RUNTIME_CHECK_INTERVAL intervals, never per interval.
+    if ((++intervalIndex & (LOS_RUNTIME_CHECK_INTERVAL - 1)) === 0) deadline.check();
     const intervalEnd = Math.min(
       clip.end,
       nextCrossingParameter(gridStartX, deltaX, intervalStart),
@@ -352,37 +377,6 @@ export function sampleTerrainAtCoordinates(
   return height;
 }
 
-function estimateRayTraversalWork(
-  rows: number,
-  cols: number,
-  minX: number,
-  minY: number,
-  resolution: number,
-  radarX: number,
-  radarY: number,
-  maxRange: number,
-): number {
-  const radarGridX = (radarX - minX) / resolution;
-  const radarGridY = (radarY - minY) / resolution;
-  if (!Number.isFinite(radarGridX) || !Number.isFinite(radarGridY)) return 0;
-
-  const gridDiagonal = Math.hypot(cols - 1, rows - 1);
-  const maxRangeInCells = maxRange / resolution;
-  const maxSegmentRangeInCells = Math.min(maxRangeInCells, gridDiagonal);
-  const countNodesInRange = (center: number, maxIndex: number): number => {
-    const roundingMargin = Number.EPSILON * Math.max(1, Math.abs(center), maxRangeInCells, maxIndex) * 4;
-    const first = Math.max(0, Math.ceil(center - maxRangeInCells - roundingMargin));
-    const last = Math.min(maxIndex, Math.floor(center + maxRangeInCells + roundingMargin));
-    return first <= last ? last - first + 1 : 0;
-  };
-  const candidateTargetBound = countNodesInRange(radarGridX, cols - 1) *
-    countNodesInRange(radarGridY, rows - 1);
-  // Each ray crosses at most |dx| + |dy| grid lines and |dx + dy| diagonal lines.
-  // With an L1 bound of sqrt(2) * its clipped span, this bounds all ray intervals.
-  const maxIntervalsPerRay = Math.ceil(2 * Math.SQRT2 * maxSegmentRangeInCells) + 3;
-  return candidateTargetBound * maxIntervalsPerRay;
-}
-
 function terrainGradient(
   before: number | undefined,
   after: number | undefined,
@@ -426,16 +420,9 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
     throw new RangeError("LOS elevation limits must be finite, within [-90, 90], and ordered");
   }
 
-  // Run the conservative work estimate before allocating any result grids. The grid-axis and
-  // cell-count caps bound memory; this interval budget bounds candidate targets × ray steps.
-  const estimatedWork = estimateRayTraversalWork(
-    rows, cols, bounds.min_x, bounds.min_y, resolution, rx, ry, maxRange,
-  );
-  if (!Number.isFinite(estimatedWork) || estimatedWork > MAX_LOS_ESTIMATED_WORK) {
-    throw new RangeError(
-      `LOS estimated traversal work exceeds the worker limit of ${MAX_LOS_ESTIMATED_WORK} intervals`,
-    );
-  }
+  // Every compute owns a fresh monotonic deadline. Start timing before allocating the
+  // memory-bounded result buffers; feasibility is checked during execution, not estimated.
+  const deadline = createLOSRuntimeDeadline();
 
   const cell_states = new Uint8Array(cellCount);
   const shadow_grid: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false));
@@ -460,6 +447,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
 
   // LOS targets use the same node coordinates as terrainWorker and TerrainViewer (no half-cell offset).
   for (let r = 0; r < rows; r++) {
+    deadline.check();
     const cy = bounds.min_y + r * resolution;
     for (let c = 0; c < cols; c++) {
       const idx = r * cols + c;
@@ -489,7 +477,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       }
 
       const rayState = traceTerrainRay(
-        grid, bounds.min_x, bounds.min_y, resolution, rx, ry, rz, cx, cy, targetZ,
+        grid, bounds.min_x, bounds.min_y, resolution, rx, ry, rz, cx, cy, targetZ, deadline,
       );
       if (rayState === LOSCellState.SHADOW) {
         cell_states[idx] = LOSCellState.SHADOW;
@@ -532,6 +520,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   const visited = new Uint8Array(rows * cols);
   let zoneId = 0;
   for (let r = 0; r < rows; r++) {
+    deadline.check();
     for (let c = 0; c < cols; c++) {
       const startIndex = r * cols + c;
       if (cell_states[startIndex] !== LOSCellState.SHADOW || visited[startIndex]) continue;
@@ -540,6 +529,9 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       const queue: number[] = [startIndex];
       visited[startIndex] = 1;
       for (let head = 0; head < queue.length; head++) {
+        if ((head & (LOS_RUNTIME_CHECK_INTERVAL - 1)) === LOS_RUNTIME_CHECK_INTERVAL - 1) {
+          deadline.check();
+        }
         const index = queue[head]!;
         const row = Math.floor(index / cols);
         const col = index % cols;

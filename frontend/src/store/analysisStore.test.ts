@@ -18,7 +18,7 @@ vi.mock("../services/api", () => ({
 }));
 
 import { runLOSAnalysis, listRadars, getLOSJob, releaseLOSJob, cancelLOSAnalysis } from "../services/api";
-import type { RadarConfig, LOSResponse } from "../types/api";
+import type { RadarConfig, LOSResponse, JobResponse } from "../types/api";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -657,6 +657,151 @@ describe("useAnalysisStore — stale request protection", () => {
     expect(state.deployedRadars.map((radar) => radar.id)).toEqual(["radar-1"]);
     expect(state.deployedRadars[0]).not.toHaveProperty("result");
     expect(state).toMatchObject({ unifiedLos: null, losResult: null, multiLoading: false });
+  });
+});
+
+// ────────────────────────────────────────────
+// cancelAnalysis action
+// ────────────────────────────────────────────
+describe("useAnalysisStore — cancelAnalysis", () => {
+  const position = { x: 10, y: 20, z: 3 };
+
+  const activateForCancel = () => {
+    useAnalysisStore.getState().activateTerrain({ terrain_id: "terrain-cancel", epoch: 1 });
+    useAnalysisStore.setState({ selectedRadarId: "radar-A", radarPosition: position });
+  };
+
+  it("cancels an in-flight single analysis, terminates its job, and prevents late publication", async () => {
+    const pendingPoll = deferred<any>();
+    vi.useFakeTimers();
+    vi.mocked(runLOSAnalysis).mockResolvedValueOnce({ job_id: "job-cancel", status: "PENDING" });
+    vi.mocked(getLOSJob).mockReturnValueOnce(pendingPoll.promise);
+
+    activateForCancel();
+    const run = useAnalysisStore.getState().runAnalysis("terrain-cancel");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(getLOSJob).toHaveBeenCalledWith("job-cancel");
+    expect(useAnalysisStore.getState().loading).toBe(true);
+
+    useAnalysisStore.getState().cancelAnalysis();
+
+    expect(cancelLOSAnalysis).toHaveBeenCalledWith("job-cancel");
+    expect(useAnalysisStore.getState().loading).toBe(false);
+
+    pendingPoll.resolve({ job_id: "job-cancel", status: "COMPLETED", created_at: "now", result: sampleLOS });
+    await Promise.resolve();
+    await Promise.resolve();
+    await run;
+
+    const state = useAnalysisStore.getState();
+    expect(state.losResult).toBeNull();
+    expect(state.activeSnapshot).toBeNull();
+    expect(state.history).toHaveLength(0);
+    expect(state.loading).toBe(false);
+    expect(releaseLOSJob).not.toHaveBeenCalledWith("job-cancel");
+  });
+
+  it("terminates a job whose creation settles after the cancel", async () => {
+    const pendingCreation = deferred<JobResponse>();
+    vi.mocked(runLOSAnalysis).mockReturnValueOnce(pendingCreation.promise);
+
+    activateForCancel();
+    const run = useAnalysisStore.getState().runAnalysis("terrain-cancel");
+    expect(useAnalysisStore.getState().loading).toBe(true);
+
+    useAnalysisStore.getState().cancelAnalysis();
+    expect(useAnalysisStore.getState().loading).toBe(false);
+
+    pendingCreation.resolve({ job_id: "job-late", status: "PENDING" });
+    await Promise.resolve();
+    await Promise.resolve();
+    await run;
+
+    expect(cancelLOSAnalysis).toHaveBeenCalledWith("job-late");
+    expect(useAnalysisStore.getState().loading).toBe(false);
+    expect(useAnalysisStore.getState().losResult).toBeNull();
+  });
+
+  it("cancels every job of an in-flight multi analysis and prevents unified publication", async () => {
+    const firstPoll = deferred<any>();
+    const secondPoll = deferred<any>();
+    const radar1 = { id: "radar-1", modelId: "model-1", position, color: "#f00" };
+    const radar2 = { id: "radar-2", modelId: "model-2", position: { x: 30, y: 40, z: 5 }, color: "#0f0" };
+    vi.useFakeTimers();
+    activateForCancel();
+    useAnalysisStore.setState({ deployedRadars: [radar1, radar2] });
+    vi.mocked(runLOSAnalysis)
+      .mockResolvedValueOnce({ job_id: "job-multi-1", status: "PENDING" })
+      .mockResolvedValueOnce({ job_id: "job-multi-2", status: "PENDING" });
+    vi.mocked(getLOSJob)
+      .mockReturnValueOnce(firstPoll.promise)
+      .mockReturnValueOnce(secondPoll.promise);
+
+    const run = useAnalysisStore.getState().runMultiAnalysis("terrain-cancel");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(getLOSJob).toHaveBeenCalledWith("job-multi-1");
+    expect(getLOSJob).toHaveBeenCalledWith("job-multi-2");
+    expect(useAnalysisStore.getState().multiLoading).toBe(true);
+
+    useAnalysisStore.getState().cancelAnalysis();
+
+    expect(cancelLOSAnalysis).toHaveBeenCalledWith("job-multi-1");
+    expect(cancelLOSAnalysis).toHaveBeenCalledWith("job-multi-2");
+    expect(useAnalysisStore.getState()).toMatchObject({ multiLoading: false, unifiedLos: null, losResult: null });
+
+    firstPoll.resolve({ job_id: "job-multi-1", status: "COMPLETED", created_at: "now", result: sampleLOS });
+    secondPoll.resolve({ job_id: "job-multi-2", status: "COMPLETED", created_at: "now", result: sampleLOS });
+    await Promise.resolve();
+    await Promise.resolve();
+    await run;
+
+    const state = useAnalysisStore.getState();
+    expect(state.unifiedLos).toBeNull();
+    expect(state.losResult).toBeNull();
+    expect(state.multiLoading).toBe(false);
+    expect(state.deployedRadars.map((radar) => radar.id)).toEqual(["radar-1", "radar-2"]);
+    expect(state.deployedRadars[0]).not.toHaveProperty("result");
+  });
+
+  it("preserves terrain, radar configuration, history entries, and deployed positions", () => {
+    activateForCancel();
+    useAnalysisStore.setState({
+      history: [{
+        position, coveragePct: 50, timestamp: "old", result: sampleLOS,
+        radarId: "radar-A", selected: false, terrain_id: "terrain-cancel", terrain_epoch: 1,
+      }],
+      deployedRadars: [{ id: "radar-1", modelId: "model-1", position, color: "#f00", result: sampleLOS }],
+      unifiedLos: sampleLOS,
+      losResult: sampleLOS,
+      multiLoading: true,
+    });
+
+    useAnalysisStore.getState().cancelAnalysis();
+
+    const state = useAnalysisStore.getState();
+    expect(state.terrainKey).toEqual({ terrain_id: "terrain-cancel", epoch: 1 });
+    expect(state.terrainTransitioning).toBe(false);
+    expect(state.selectedRadarId).toBe("radar-A");
+    expect(state.radarPosition).toEqual(position);
+    expect(state.history).toHaveLength(1);
+    expect(state.history[0]!.result).toBe(sampleLOS);
+    expect(state.deployedRadars[0]!.id).toBe("radar-1");
+    expect(state.deployedRadars[0]!.position).toEqual(position);
+    expect(state.deployedRadars[0]).not.toHaveProperty("result");
+    expect(state.losResult).toBeNull();
+    expect(state.unifiedLos).toBeNull();
+    expect(state.loading).toBe(false);
+    expect(state.multiLoading).toBe(false);
+  });
+
+  it("does not cancel finished work when no analysis is running", () => {
+    useAnalysisStore.setState({ losResult: sampleLOS, loading: false, multiLoading: false });
+
+    useAnalysisStore.getState().cancelAnalysis();
+
+    expect(useAnalysisStore.getState().losResult).toBe(sampleLOS);
+    expect(cancelLOSAnalysis).not.toHaveBeenCalled();
+    expect(releaseLOSJob).not.toHaveBeenCalled();
   });
 });
 

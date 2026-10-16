@@ -327,3 +327,65 @@ describe("App — Auto loadGrid after STL upload", () => {
     });
   });
 });
+
+// ────────────────────────────────────────────
+// Cancelar análisis (loading-banner cancel control)
+// ────────────────────────────────────────────
+describe("App — Cancelar análisis", () => {
+  const catalogRadar = { model_id: "groundprobe-ssr-fx", display_name: "GroundProbe SSR-FX" } as any;
+
+  it("shows the cancel button while a single analysis is loading and cancels on click", () => {
+    act(() => {
+      useAnalysisStore.setState({
+        radars: [catalogRadar],
+        selectedRadarId: "groundprobe-ssr-fx",
+        radarPosition: { x: 1, y: 2, z: 3 },
+        loading: true,
+      });
+    });
+    render(<App />);
+
+    const cancelBtn = screen.getByRole("button", { name: /cancelar análisis/i });
+    expect(cancelBtn).toBeInTheDocument();
+
+    // Spy AFTER the initial render, then flush a re-render so the component
+    // subscribes to the spied (pass-through) action reference.
+    const cancelSpy = vi.spyOn(useAnalysisStore.getState(), "cancelAnalysis");
+    act(() => {
+      useAnalysisStore.setState({});
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /cancelar análisis/i }));
+
+    expect(cancelSpy).toHaveBeenCalledOnce();
+    expect(useAnalysisStore.getState().loading).toBe(false);
+    expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/running analysis/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the cancel button while a multi analysis is loading and hides it after cancel", () => {
+    act(() => {
+      useAnalysisStore.setState({ radars: [catalogRadar], multiLoading: true });
+    });
+    render(<App />);
+
+    expect(screen.getByText(/running analysis/i)).toBeInTheDocument();
+    const cancelBtn = screen.getByRole("button", { name: /cancelar análisis/i });
+    expect(cancelBtn).toBeInTheDocument();
+
+    fireEvent.click(cancelBtn);
+
+    expect(useAnalysisStore.getState().multiLoading).toBe(false);
+    expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/running analysis/i)).not.toBeInTheDocument();
+  });
+
+  it("does not offer cancel while only the radar catalog is loading", () => {
+    act(() => {
+      useAnalysisStore.setState({ radars: [], loading: true });
+    });
+    render(<App />);
+
+    expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
+  });
+});

@@ -1749,3 +1749,179 @@ describe("terrain ownership and worker leases", () => {
     }
   });
 });
+
+// ────────────────────────────────────────────
+// LOS Worker Watchdog Tests
+// ────────────────────────────────────────────
+
+describe("LOS worker watchdog", () => {
+  const watchdogLosResult: LOSResponse = {
+    shadow_grid: [[false]],
+    cell_states: new Uint8Array([LOSCellState.VISIBLE]),
+    grid_rows: 1,
+    grid_cols: 1,
+    resolution: 1,
+    quality_grid: [[1]],
+    coverage_pct: 100,
+    completeness_pct: 100,
+    visible_area_m2: 1,
+    coverage_polygon: [],
+    shadow_zones: [],
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Starts a LOS job whose mocked worker never answers, with its terrain active and leased. */
+  async function startStalledLOSJob() {
+    const terrain = await generateSynthetic({ size_x: 4, size_y: 4, depth: 1, resolution: 2 });
+    activateTerrain(terrain.terrain_id);
+    const job = await runLOSAnalysis({
+      terrain_id: terrain.terrain_id,
+      radar_position: { x: 0, y: 0, z: 5 },
+      radar_model_id: "ibis-arcsar360",
+    });
+    return { job, worker: MockWorker.instances[0]!, terrain };
+  }
+
+  it("arms a 125000ms watchdog while a LOS job is pending and does not fire before the deadline", async () => {
+    const { job } = await startStalledLOSJob();
+
+    // One pending timer is the MockWorker delivery at t=0; the second is the watchdog.
+    expect(vi.getTimerCount()).toBe(2);
+
+    vi.advanceTimersByTime(124999);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "PENDING" });
+  });
+
+  it("fails a stalled pending LOS job at the 125000ms watchdog, terminates its worker, and releases its terrain lease", async () => {
+    const { job, worker, terrain } = await startStalledLOSJob();
+    const terrainB = await generateSynthetic({ size_x: 4, size_y: 4, depth: 1, resolution: 2 });
+    activateTerrain(terrainB.terrain_id);
+
+    vi.advanceTimersByTime(125000);
+
+    const status = await getLOSJob(job.job_id);
+    expect(status.status).toBe("FAILED");
+    expect(status.error).toMatch(/125\s*segundos/i);
+    expect(status.error).toMatch(/intente/i);
+    expect(worker.terminateCalls).toBe(1);
+    expect(getLocalTerrain(terrain.terrain_id)).toBeUndefined();
+
+    // A late worker result must not resurrect the job or disturb the FAILED record.
+    worker.onmessage?.({ data: watchdogLosResult } as MessageEvent);
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the watchdog on completion so a late timer cannot overwrite or delete the result", async () => {
+    const { job, worker } = await startStalledLOSJob();
+
+    vi.advanceTimersByTime(124999);
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "PENDING" });
+
+    worker.onmessage?.({ data: watchdogLosResult } as MessageEvent);
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "COMPLETED", result: watchdogLosResult });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(worker.terminateCalls).toBe(1);
+
+    vi.advanceTimersByTime(125000);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "COMPLETED", result: watchdogLosResult });
+  });
+
+  it("clears the watchdog on cancel so the pending timer cannot fire or leak", async () => {
+    const { job, worker } = await startStalledLOSJob();
+
+    vi.advanceTimersByTime(1); // flush the no-op mock delivery timer
+    cancelLOSAnalysis(job.job_id);
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(125000);
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    expect(worker.terminateCalls).toBe(1);
+
+    // Late worker traffic stays fenced off after cancellation.
+    worker.onmessage?.({ data: watchdogLosResult } as MessageEvent);
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+  });
+
+  it("clears the watchdog when the worker reports an error so the timer cannot overwrite it", async () => {
+    MockWorker.mockResponses.push({ error: "worker failed" });
+    const { job } = await startStalledLOSJob();
+
+    vi.advanceTimersByTime(1);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "worker failed" });
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(125000);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "worker failed" });
+  });
+
+  it("clears the watchdog when postMessage fails synchronously", async () => {
+    MockWorker.postMessageError = new Error("postMessage unavailable");
+    const { job, worker } = await startStalledLOSJob();
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "postMessage unavailable" });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(worker.terminateCalls).toBe(1);
+
+    vi.advanceTimersByTime(125000);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "postMessage unavailable" });
+  });
+
+  it("clears the watchdog when the Worker constructor throws synchronously", async () => {
+    const terrain = await generateSynthetic({ size_x: 4, size_y: 4, depth: 1, resolution: 2 });
+    activateTerrain(terrain.terrain_id);
+    MockWorker.constructionError = new Error("constructor unavailable");
+
+    const job = await runLOSAnalysis({
+      terrain_id: terrain.terrain_id,
+      radar_position: { x: 0, y: 0, z: 5 },
+      radar_model_id: "ibis-arcsar360",
+    });
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "constructor unavailable" });
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(125000);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "constructor unavailable" });
+  });
+
+  it("does not apply the LOS watchdog to sensitivity jobs", async () => {
+    installSensitivityTerrain();
+    activateTerrain(sensitivityTerrainKey.terrain_id);
+    const job = await runSensitivityAnalysis(sensitivityRequest());
+    const worker = MockWorker.instances[0]!;
+
+    vi.advanceTimersByTime(1); // flush the no-op mock delivery timer
+    vi.advanceTimersByTime(125000);
+
+    expect(await getLOSJob(job.job_id)).toMatchObject({ status: "PENDING" });
+    expect(worker.terminateCalls).toBe(0);
+  });
+
+  it("does not apply the LOS watchdog to terrain import workers", async () => {
+    let settled = false;
+    void uploadSTL(new File([new ArrayBuffer(8)], "watchdog-terrain.stl"), 1.0).then(
+      () => { settled = true; },
+      () => { settled = true; },
+    );
+
+    await vi.advanceTimersByTimeAsync(125000);
+
+    expect(settled).toBe(false);
+    expect(MockWorker.instances[0]!.terminateCalls).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

@@ -422,37 +422,132 @@ describe("LOS worker cell-state contract", () => {
     expect(result.cell_states).toBeUndefined();
   });
 
-  it("rejects estimated ray-traversal work above the worker budget", async () => {
-    // The cap sits at 25,000,000 intervals. size=224 centered radar at 2000 m range
-    // produces an upper-bound estimate of ~45M (cell_count=50176 < 1M cap, so it
-    // passes the dimension check and reaches the work-budget guard).
-    const size = 224;
+  it("computes the 467x819 res2 no-data scene that the work estimate used to reject", async () => {
+    // Real scene shape: 467x819 @ res 2, origin 92008.875/20288.2734375, radar
+    // 92929.5/20721.3/3112.5, range 1200 m. The removed interval estimate scored this
+    // geometry at ~650M intervals and rejected it before inspecting the terrain, even
+    // though a fully no-data scene traverses no triangles at all.
+    const rows = 467;
+    const cols = 819;
     const result = await runWorker({
-      grid: Array.from({ length: size }, () => Array(size).fill(0)),
-      bounds: { min_x: 0, min_y: 0, max_x: size - 1, max_y: size - 1 },
-      resolution: 1,
-      radar_position: [(size - 1) / 2, (size - 1) / 2, 10],
-      radar_config: { ...radar, max_range_m: 2_000 },
+      grid: Array.from({ length: rows }, () => Array(cols).fill(Number.NaN)),
+      bounds: {
+        min_x: 92_008.875,
+        min_y: 20_288.2734375,
+        max_x: 92_008.875 + (cols - 1) * 2,
+        max_y: 20_288.2734375 + (rows - 1) * 2,
+      },
+      resolution: 2,
+      radar_position: [92_929.5, 20_721.3, 3_112.5],
+      radar_config: { ...radar, max_range_m: 1_200 },
     });
 
-    expect(result.error).toMatch(/LOS .*work|work.*LOS/i);
+    expect(result.error).toBeUndefined();
+    expect(result.cell_states).toHaveLength(rows * cols);
+    expect(result.cell_states![0]).toBe(LOSCellState.NODATA);
+    expect(result.cell_states![rows * cols - 1]).toBe(LOSCellState.NODATA);
+  });
+
+  it("traverses real rays for a high-estimate sector-filtered scene without any pre-rejection", async () => {
+    // Same scene shape with one finite node inside an exact-azimuth sector: the removed
+    // estimate still scored ~650M intervals (it ignores NaN terrain and azimuth filtering)
+    // while the actual ray work is a handful of intervals.
+    const rows = 467;
+    const cols = 819;
+    const min_x = 92_008.875;
+    const min_y = 20_288.2734375;
+    const targetRow = 216;
+    const targetCol = 461;
+    const cx = min_x + targetCol * 2;
+    const cy = min_y + targetRow * 2;
+    const targetAzimuth = Math.atan2(cx - 92_929.5, cy - 20_721.3) * (180 / Math.PI);
+    const grid: number[][] = Array.from({ length: rows }, () => Array(cols).fill(Number.NaN));
+    grid[targetRow]![targetCol] = 3_000;
+    const result = await runWorker({
+      grid,
+      bounds: { min_x, min_y, max_x: min_x + (cols - 1) * 2, max_y: min_y + (rows - 1) * 2 },
+      resolution: 2,
+      radar_position: [92_929.5, 20_721.3, 3_112.5],
+      radar_config: {
+        ...radar,
+        max_range_m: 1_200,
+        scan_pattern: "RAR",
+        azimuth_range_deg: [targetAzimuth, targetAzimuth],
+      },
+    });
+
+    expect(result.error).toBeUndefined();
+    // The finite node is in-sector, so its ray really runs; NaN terrain along the way
+    // leaves the ray unknown rather than visible.
+    expect(result.cell_states![targetRow * cols + targetCol]).toBe(LOSCellState.UNKNOWN_RAY);
+    expect(result.cell_states![0]).toBe(LOSCellState.NODATA);
+  });
+
+  it("aborts a single long ray through the periodic traversal deadline check", async () => {
+    // One finite node at the far end of a 2000-node row forces a single ~2000-interval
+    // ray that the old 25M estimate let through (~22.6M). The deterministic clock keeps
+    // the start read and the first outer-loop read inside the budget, then every later
+    // read exceeds it, so only the ~1024-interval traversal check can trip the deadline.
+    const cols = 2_000;
+    const clockReads = [0, 0];
+    vi.stubGlobal("performance", {
+      now: () => (clockReads.length > 0 ? clockReads.shift()! : 1e12),
+    });
+    const targetAzimuth = Math.atan2(cols - 1, 0) * (180 / Math.PI);
+    const grid: number[][] = [Array(cols).fill(Number.NaN), Array(cols).fill(Number.NaN)];
+    grid[0]![cols - 1] = 0;
+    const result = await runWorker({
+      grid,
+      bounds: { min_x: 0, min_y: 0, max_x: cols - 1, max_y: 1 },
+      resolution: 1,
+      radar_position: [0, 0, 10],
+      radar_config: {
+        ...radar,
+        max_range_m: 5_000,
+        scan_pattern: "RAR",
+        azimuth_range_deg: [targetAzimuth, targetAzimuth],
+      },
+    });
+
+    expect(result.error).toMatch(/excedió el tiempo máximo/i);
+    expect(result.error).toMatch(/vuelva a intentarlo/);
     expect(result.cell_states).toBeUndefined();
   });
 
-  it("includes terrain reached from outside the grid in the work estimate", async () => {
-    // Radar placed outside the grid footprint must still count the cells it can
-    // actually reach, otherwise the work estimate would undercount. Sizes bumped
-    // (size=224, range=400) to keep the input above the 25M cap.
-    const size = 224;
+  it("aborts the outer target loop when the runtime deadline elapses before any ray", async () => {
+    // Sector-filtered 467x819 scene (the old estimate rejected it at ~650M before seeing
+    // the sector). With the deterministic clock the budget is already spent when the first
+    // outer-loop row is checked, so the compute aborts before traversing any triangle.
+    const rows = 467;
+    const cols = 819;
+    let clockCalls = 0;
+    vi.stubGlobal("performance", {
+      now: () => (clockCalls++ === 0 ? 0 : 125_000),
+    });
+    const targetAzimuth = Math.atan2(
+      92_008.875 + 461 * 2 - 92_929.5,
+      20_288.2734375 + 216 * 2 - 20_721.3,
+    ) * (180 / Math.PI);
     const result = await runWorker({
-      grid: Array.from({ length: size }, () => Array(size).fill(0)),
-      bounds: { min_x: 0, min_y: 0, max_x: size - 1, max_y: size - 1 },
-      resolution: 1,
-      radar_position: [400, (size - 1) / 2, 10],
-      radar_config: { ...radar, max_range_m: 400 },
+      grid: Array.from({ length: rows }, () => Array(cols).fill(0)),
+      bounds: {
+        min_x: 92_008.875,
+        min_y: 20_288.2734375,
+        max_x: 92_008.875 + (cols - 1) * 2,
+        max_y: 20_288.2734375 + (rows - 1) * 2,
+      },
+      resolution: 2,
+      radar_position: [92_929.5, 20_721.3, 3_112.5],
+      radar_config: {
+        ...radar,
+        max_range_m: 1_200,
+        scan_pattern: "RAR",
+        azimuth_range_deg: [targetAzimuth, targetAzimuth],
+      },
     });
 
-    expect(result.error).toMatch(/LOS .*work|work.*LOS/i);
+    expect(result.error).toMatch(/excedió el tiempo máximo/i);
+    expect(result.error).toMatch(/vuelva a intentarlo/);
     expect(result.cell_states).toBeUndefined();
   });
 

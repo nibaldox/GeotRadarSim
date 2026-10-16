@@ -110,6 +110,9 @@ function App() {
   const runAnalysis = useAnalysisStore((s) => s.runAnalysis);
   const losResult = useAnalysisStore((s) => s.losResult);
   const analysisLoading = useAnalysisStore((s) => s.loading);
+  const multiLoading = useAnalysisStore((s) => s.multiLoading);
+  const radarCatalogReady = useAnalysisStore((s) => s.radars.length > 0);
+  const cancelAnalysis = useAnalysisStore((s) => s.cancelAnalysis);
   const analysisError = useAnalysisStore((s) => s.error);
 
   // Auto-show the overlay as soon as any analysis result arrives
@@ -319,9 +322,30 @@ function App() {
 
         <ExportPanel />
 
-        {analysisLoading && (
+        {(analysisLoading || multiLoading) && (
           <div className="loading-banner">
             Running analysis...
+            {radarCatalogReady && (
+              <button
+                type="button"
+                onClick={cancelAnalysis}
+                style={{
+                  display: "block",
+                  margin: "8px auto 0",
+                  padding: "4px 14px",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  color: "var(--accent-hover)",
+                  background: "transparent",
+                  border: "1px solid hsla(250, 85%, 65%, 0.35)",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                }}
+              >
+                Cancelar análisis
+              </button>
+            )}
           </div>
         )}
 
