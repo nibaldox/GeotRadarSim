@@ -13,6 +13,7 @@ export function RadarControls() {
   const radars = useAnalysisStore((s) => s.radars);
   const selectedRadarId = useAnalysisStore((s) => s.selectedRadarId);
   const radarPosition = useAnalysisStore((s) => s.radarPosition);
+  const terrainTransitioning = useAnalysisStore((s) => s.terrainTransitioning);
   const loadRadars = useAnalysisStore((s) => s.loadRadars);
   const selectRadar = useAnalysisStore((s) => s.selectRadar);
   const rangeMinOverride = useAnalysisStore((s) => s.rangeMinOverride);
@@ -66,6 +67,7 @@ export function RadarControls() {
   }, [radarPosition]);
 
   const handleApplyPosition = useCallback(async () => {
+    if (useAnalysisStore.getState().terrainTransitioning) return;
     if (!inputX || !inputY || !inputZ) return;
     
     const x = Number(inputX);
@@ -126,6 +128,7 @@ export function RadarControls() {
               className="select-box"
               value={selectedRadarId ?? ""}
               onChange={(e) => selectRadar(e.target.value || null)}
+              disabled={terrainTransitioning}
             >
               <option value="">-- Select model --</option>
               {radars.map((r) => (
@@ -171,6 +174,7 @@ export function RadarControls() {
                       placeholder={String(selectedRadar.min_range_m)}
                       value={rangeMinOverride ?? ""}
                       onChange={(e) => setRangeOverrides(e.target.value ? Number(e.target.value) : null, rangeMaxOverride)}
+                      disabled={terrainTransitioning}
                     />
                   </div>
                   <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
@@ -182,6 +186,7 @@ export function RadarControls() {
                       placeholder={String(selectedRadar.max_range_m)}
                       value={rangeMaxOverride ?? ""}
                       onChange={(e) => setRangeOverrides(rangeMinOverride, e.target.value ? Number(e.target.value) : null)}
+                      disabled={terrainTransitioning}
                     />
                   </div>
                 </div>
@@ -196,6 +201,7 @@ export function RadarControls() {
                       placeholder={String(selectedRadar.elevation_min_deg)}
                       value={elMinOverride ?? ""}
                       onChange={(e) => setElevationOverrides(e.target.value ? Number(e.target.value) : null, elMaxOverride)}
+                      disabled={terrainTransitioning}
                     />
                   </div>
                   <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
@@ -207,6 +213,7 @@ export function RadarControls() {
                       placeholder={String(selectedRadar.elevation_max_deg)}
                       value={elMaxOverride ?? ""}
                       onChange={(e) => setElevationOverrides(elMinOverride, e.target.value ? Number(e.target.value) : null)}
+                      disabled={terrainTransitioning}
                     />
                   </div>
                 </div>
@@ -221,6 +228,7 @@ export function RadarControls() {
                       placeholder="0"
                       value={azCenterOverride ?? ""}
                       onChange={(e) => setAzimuthOverrides(e.target.value ? Number(e.target.value) : null, azWidthOverride)}
+                      disabled={terrainTransitioning}
                     />
                   </div>
                   <div className="flex-col" style={{ flex: 1, gap: "4px" }}>
@@ -232,6 +240,7 @@ export function RadarControls() {
                       placeholder={String(selectedRadar.scan_pattern === "SAR360" ? 360 : 120)}
                       value={azWidthOverride ?? ""}
                       onChange={(e) => setAzimuthOverrides(azCenterOverride, e.target.value ? Number(e.target.value) : null)}
+                      disabled={terrainTransitioning}
                     />
                   </div>
                 </div>
@@ -252,6 +261,7 @@ export function RadarControls() {
                 placeholder="Easting"
                 value={inputX}
                 onChange={(e) => setInputX(e.target.value)}
+                disabled={terrainTransitioning}
               />
             </div>
             <div className="flex-row" style={{ gap: "10px", alignItems: "center" }}>
@@ -265,6 +275,7 @@ export function RadarControls() {
                 placeholder="Northing"
                 value={inputY}
                 onChange={(e) => setInputY(e.target.value)}
+                disabled={terrainTransitioning}
               />
             </div>
             <div className="flex-row" style={{ gap: "10px", alignItems: "center" }}>
@@ -278,13 +289,14 @@ export function RadarControls() {
                 placeholder="Elevation"
                 value={inputZ}
                 onChange={(e) => setInputZ(e.target.value)}
+                disabled={terrainTransitioning}
               />
             </div>
             
             <button
               className="btn-primary mt-2"
               onClick={handleApplyPosition}
-              disabled={!inputX || !inputY || !inputZ || !selectedRadarId}
+              disabled={!inputX || !inputY || !inputZ || !selectedRadarId || terrainTransitioning}
               style={{ padding: "10px 14px", fontSize: "12px", alignSelf: "stretch" }}
             >
               Apply Coordinates

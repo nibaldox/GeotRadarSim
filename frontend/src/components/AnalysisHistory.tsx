@@ -1,6 +1,10 @@
 import { useState, useCallback } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
 
+function formatPercent(value: number | null): string {
+  return value !== null && Number.isFinite(value) ? `${value.toFixed(1)}%` : "Sin datos";
+}
+
 export function AnalysisHistory() {
   const history = useAnalysisStore((s) => s.history);
   const clearHistory = useAnalysisStore((s) => s.clearHistory);
@@ -128,9 +132,12 @@ export function AnalysisHistory() {
                   <span style={{ opacity: 0.6, fontSize: "10px", fontFamily: "var(--font-mono)" }}>
                     {entry.timestamp}
                   </span>
-                  <span style={{ color: entry.coveragePct > 50 ? "var(--success)" : "var(--warning)", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
-                    {entry.coveragePct.toFixed(1)}%
+                  <span style={{ color: entry.coveragePct === null ? "var(--text-secondary)" : entry.coveragePct > 50 ? "var(--success)" : "var(--warning)", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
+                    {formatPercent(entry.coveragePct)}
                   </span>
+                </div>
+                <div style={{ opacity: 0.8, fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+                  Completitud: {formatPercent(entry.result.completeness_pct)}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px", opacity: 0.8, fontFamily: "var(--font-mono)", fontSize: "10px" }}>
                   <span><span style={{ opacity: 0.4 }}>X:</span> {entry.position.x.toFixed(0)}</span>

@@ -1,4 +1,5 @@
 import type { DTMMetadata } from "../types/api";
+import { gridNodeCountForSpan, validateTerrainGridDimensions, validateTerrainResolution } from "../utils/terrainLimits";
 
 export interface DTMResult {
   metadata: DTMMetadata;
@@ -18,19 +19,30 @@ export function generateSyntheticTerrain(
   depth: number,
   resolution: number = 2.0
 ): DTMResult {
-  const gridCols = Math.max(1, Math.round(sizeX / resolution));
-  const gridRows = Math.max(1, Math.round(sizeY / resolution));
+  validateTerrainResolution(resolution, "Synthetic terrain");
+  if (!Number.isFinite(sizeX) || sizeX <= 0 || !Number.isFinite(sizeY) || sizeY <= 0) {
+    throw new RangeError("Synthetic terrain sizes must be finite and positive");
+  }
+  if (!Number.isFinite(depth) || depth < 0) {
+    throw new RangeError("Synthetic terrain depth must be finite and non-negative");
+  }
+
+  const gridCols = gridNodeCountForSpan(sizeX, resolution, "Synthetic terrain width");
+  const gridRows = gridNodeCountForSpan(sizeY, resolution, "Synthetic terrain height");
+  validateTerrainGridDimensions(gridRows, gridCols, "Synthetic terrain");
+  const terrainExtentX = (gridCols - 1) * resolution;
+  const terrainExtentY = (gridRows - 1) * resolution;
 
   const grid: number[][] = [];
 
   for (let r = 0; r < gridRows; r++) {
     const row: number[] = [];
-    const y = -sizeY / 2 + (r / (gridRows - 1 || 1)) * sizeY;
-    const rY = y / (sizeY / 2);
+    const y = -terrainExtentY / 2 + r * resolution;
+    const rY = terrainExtentY > 0 ? y / (terrainExtentY / 2) : 0;
 
     for (let c = 0; c < gridCols; c++) {
-      const x = -sizeX / 2 + (c / (gridCols - 1 || 1)) * sizeX;
-      const rX = x / (sizeX / 2);
+      const x = -terrainExtentX / 2 + c * resolution;
+      const rX = terrainExtentX > 0 ? x / (terrainExtentX / 2) : 0;
 
       const rSquared = rX * rX + rY * rY;
       let gridZ = -depth * (1.0 - rSquared);
@@ -48,9 +60,9 @@ export function generateSyntheticTerrain(
     bounds: {
       min_x: 0.0,
       min_y: 0.0,
-      min_z: -depth,
-      max_x: sizeX,
-      max_y: sizeY,
+      min_z: depth === 0 ? 0 : -depth,
+      max_x: terrainExtentX,
+      max_y: terrainExtentY,
       max_z: 0.0,
     },
     resolution: resolution,

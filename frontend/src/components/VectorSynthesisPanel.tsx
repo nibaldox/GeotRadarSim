@@ -3,6 +3,13 @@ import { useVectorStore } from "../store/vectorStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
 
+function countObservedCells(counts: Uint16Array | null): number {
+  if (!counts) return 0;
+  let observed = 0;
+  for (const count of counts) if (count > 0) observed++;
+  return observed;
+}
+
 export function VectorSynthesisPanel() {
   // Collapsible state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -22,13 +29,17 @@ export function VectorSynthesisPanel() {
     });
   }, []);
 
-  const sensitivityGrid = useVectorStore((s) => s.sensitivityGrid);
+  const sensitivityMap = useVectorStore((s) => s.sensitivityMap);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
   const loading = useVectorStore((s) => s.loading);
   const error = useVectorStore((s) => s.error);
 
   const computeSensitivityMap = useVectorStore((s) => s.computeSensitivityMap);
   const setVisualizationMode = useVectorStore((s) => s.setVisualizationMode);
+  const observedCellCount = useMemo(
+    () => countObservedCells(sensitivityMap?.observer_count ?? null),
+    [sensitivityMap],
+  );
 
   const metadata = useTerrainStore((s) => s.metadata);
   const history = useAnalysisStore((s) => s.history);
@@ -105,11 +116,11 @@ export function VectorSynthesisPanel() {
               }}>
                 {deployedRadars.length === 1 ? (
                   <>
-                    <strong>💡 Monitoreo 1D Activo:</strong> Tienes 1 postura seleccionada. El mapa mostrará el <strong>Ángulo de Incidencia / Ángulo de Ataque (1D)</strong>. Agrega una segunda postura desde el historial para evaluar coberturas combinadas en 3D.
+                    <strong>💡 Una postura:</strong> cuando el LOS individual es VISIBLE y el gradiente es calculable, el valor es <strong>|dot|</strong> entre la dirección de movimiento de máxima pendiente y la línea de vista del radar.
                   </>
                 ) : (
                   <>
-                    <strong>✓ Red Multidireccional Activa:</strong> Tienes {deployedRadars.length} posturas seleccionadas. El mapa evaluará la sensibilidad de combinación vectorial en 3D para reducir las zonas ciegas.
+                    <strong>✓ Varias posturas:</strong> sensibilidad por celda <strong>√(Σ dot² / número de radares contribuyentes)</strong>; solo aportan análisis con LOS individual VISIBLE y gradiente calculable.
                   </>
                 )}
               </div>
@@ -178,9 +189,14 @@ export function VectorSynthesisPanel() {
 
               {error && <div className="error-text">❌ Error: {error}</div>}
 
-              {sensitivityGrid && (
-                <div style={{ fontSize: "10px", color: "var(--success)", background: "hsla(125, 85%, 45%, 0.06)", padding: "6px 10px", borderRadius: "6px", border: "1px solid hsla(125, 85%, 45%, 0.15)", fontFamily: "var(--font-mono)" }}>
-                  ✓ Mapa de sensibilidad vectorial global cargado en el shader.
+              {sensitivityMap && observedCellCount > 0 && (
+                <div role="status" style={{ fontSize: "10px", color: "var(--success)", background: "hsla(125, 85%, 45%, 0.06)", padding: "6px 10px", borderRadius: "6px", border: "1px solid hsla(125, 85%, 45%, 0.15)", fontFamily: "var(--font-mono)" }}>
+                  ✓ Mapa geométrico cargado — {observedCellCount} {observedCellCount === 1 ? "celda con observación contribuyente" : "celdas con observaciones contribuyentes"}.
+                </div>
+              )}
+              {sensitivityMap && observedCellCount === 0 && (
+                <div role="status" style={{ fontSize: "10px", color: "var(--text-secondary)", background: "hsla(0, 0%, 100%, 0.03)", padding: "6px 10px", borderRadius: "6px" }}>
+                  Sin datos: no hay celdas con gradiente calculable y al menos un LOS individual VISIBLE.
                 </div>
               )}
 
@@ -195,7 +211,7 @@ export function VectorSynthesisPanel() {
                 lineHeight: "1.5",
                 marginTop: "2px"
               }}>
-                📖 <strong>Sensibilidad Geométrica:</strong> Muestra qué tan bien la red actual de radares es capaz de detectar movimientos en la dirección de máxima pendiente del talud. El color púrpura indica zonas ciegas (movimiento ortogonal a la red), mientras que el verde indica zonas con sensibilidad óptima.
+                📖 <strong>Sensibilidad geométrica:</strong> mide la proyección sobre la dirección de máxima pendiente usando solo radares con LOS individual VISIBLE y gradiente finito calculable. Sin contribuyentes, la celda queda transparente y es “Sin datos”; un cero con al menos un contribuyente sí es un valor medido. Es un índice geométrico, no SNR ni un modelo RF.
               </div>
             </>
           )}
