@@ -3,6 +3,8 @@ import {
   gridNodeCountForSpan,
   MAX_TERRAIN_GRID_CELLS,
   MAX_TERRAIN_GRID_DIMENSION,
+  NICE_RESOLUTION_STEPS,
+  suggestResolutionForSpan,
   validateTerrainGridDimensions,
   validateTerrainResolution,
   validateTerrainTotalArea,
@@ -52,5 +54,60 @@ describe("shared terrain and LOS resource limits", () => {
 
   it("accepts finite total grid area", () => {
     expect(validateTerrainTotalArea(1e308, 1, "LOS")).toBe(1e308);
+  });
+});
+
+describe("suggestResolutionForSpan", () => {
+  it("keeps NICE_RESOLUTION_STEPS strictly ascending so the suggestion loop terminates at the first fit", () => {
+    const steps = NICE_RESOLUTION_STEPS;
+    for (let i = 1; i < steps.length; i++) {
+      expect(steps[i]!).toBeGreaterThan(steps[i - 1]!);
+    }
+  });
+
+  it("snaps a 200×200 m terrain to 0.25 m because finer steps already fit the 1 M cell budget with margin", () => {
+    // 200 m / 0.25 m = 801 nodes per axis → 641,601 cells, fits within 850k budget.
+    // 200 m / 0.1 m would be 2001² ≈ 4 M cells, over budget, so we don't go finer.
+    expect(suggestResolutionForSpan(200, 200)).toBe(0.25);
+  });
+
+  it("snaps a 1 km × 1 km terrain to 2 m because 1 m would overflow the 1 M cell budget", () => {
+    // 1000 m / 1 m = 1001 nodes per axis → 1,002,001 cells > 1M cap.
+    // 1000 m / 2 m = 501 nodes per axis → 251,001 cells, fits within 850k budget.
+    expect(suggestResolutionForSpan(1000, 1000)).toBe(2);
+  });
+
+  it("snaps a 5 km × 5 km terrain to 10 m", () => {
+    // 5000 m / 5 m = 1001 nodes per axis → ~1M cells, over budget.
+    // 5000 m / 10 m = 501 nodes per axis → 251,001 cells, fits.
+    expect(suggestResolutionForSpan(5000, 5000)).toBe(10);
+  });
+
+  it("honors a custom budget and safety factor", () => {
+    // With a 100k budget and 1.0 safety factor, 100 m span fits at r=0.5 (201²=40,401 cells)
+    // but r=0.25 yields 401² = 160,801 cells which exceeds the 100k budget.
+    expect(suggestResolutionForSpan(100, 100, 100_000, 1.0)).toBe(0.5);
+  });
+
+  it("returns the largest NICE step when no smaller step keeps the grid under budget", () => {
+    // 100,000 km × 100,000 km cannot fit even at the coarsest step (r=5000 → 20,001² ≈ 4e8 cells).
+    // We return the largest step so the caller can surface validateTerrainGridDimensions
+    // with an actionable "your file is too large even at 5 km/cell" message.
+    expect(suggestResolutionForSpan(100_000_000, 100_000_000)).toBe(
+      NICE_RESOLUTION_STEPS[NICE_RESOLUTION_STEPS.length - 1],
+    );
+  });
+
+  it("rejects non-positive or non-finite spans", () => {
+    expect(() => suggestResolutionForSpan(0, 100)).toThrow(/finite and positive/i);
+    expect(() => suggestResolutionForSpan(-1, 100)).toThrow(/finite and positive/i);
+    expect(() => suggestResolutionForSpan(Number.NaN, 100)).toThrow(/finite and positive/i);
+    expect(() => suggestResolutionForSpan(Infinity, 100)).toThrow(/finite and positive/i);
+  });
+
+  it("rejects an out-of-range safety factor", () => {
+    expect(() => suggestResolutionForSpan(100, 100, 1_000_000, 0)).toThrow(/safetyFactor/i);
+    expect(() => suggestResolutionForSpan(100, 100, 1_000_000, 1.5)).toThrow(/safetyFactor/i);
+    expect(() => suggestResolutionForSpan(100, 100, 0)).toThrow(/maxCells/i);
   });
 });

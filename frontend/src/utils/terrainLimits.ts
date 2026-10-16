@@ -1,6 +1,16 @@
 export const MAX_TERRAIN_GRID_DIMENSION = 16_384;
 export const MAX_TERRAIN_GRID_CELLS = 1_000_000;
 
+/**
+ * Coarse-friendly resolution steps the UI uses when snapping a computed
+ * suggestion to a value users can pick from a dropdown/slider. Kept in
+ * ascending order so {@link suggestResolutionForSpan} can stop at the first
+ * step that fits within the cell budget.
+ */
+export const NICE_RESOLUTION_STEPS = [
+  0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000,
+] as const;
+
 const ENDPOINT_RELATIVE_TOLERANCE = 1e-9;
 
 /** Count nodes, admitting the next lattice point only for a tightly near-divisible span. */
@@ -90,4 +100,44 @@ export function validateTerrainTotalArea(cellArea: number, cellCount: number, la
     throw new RangeError(`${label} total grid area must be finite`);
   }
   return totalArea;
+}
+
+/**
+ * Pick a resolution that fits a span into the given cell budget.
+ *
+ * The candidate steps (in ascending order) come from {@link NICE_RESOLUTION_STEPS}.
+ * For each step, the resulting cell count is the exact product `(spanX / r + 1) * (spanY / r + 1)`,
+ * which is what {@link gridNodeCountForSpan} actually allocates per axis.
+ *
+ * `safetyFactor` reserves a fraction of the budget for sparse rows that the IDW step might
+ * densify, so we never sit right on the limit. Defaults to 0.85 (15% headroom).
+ *
+ * Returns the largest {@link NICE_RESOLUTION_STEPS} entry when even that step cannot keep the
+ * grid under budget — callers should treat that as "the terrain is genuinely too large at any
+ * supported resolution" and surface the underlying {@link validateTerrainGridDimensions} error.
+ */
+export function suggestResolutionForSpan(
+  spanX: number,
+  spanY: number,
+  maxCells: number = MAX_TERRAIN_GRID_CELLS,
+  safetyFactor: number = 0.85,
+): number {
+  if (!Number.isFinite(spanX) || spanX <= 0 || !Number.isFinite(spanY) || spanY <= 0) {
+    throw new RangeError("Span values must be finite and positive");
+  }
+  if (!Number.isFinite(maxCells) || maxCells <= 0) {
+    throw new RangeError("maxCells must be finite and positive");
+  }
+  if (!Number.isFinite(safetyFactor) || safetyFactor <= 0 || safetyFactor > 1) {
+    throw new RangeError("safetyFactor must lie in the (0, 1] interval");
+  }
+
+  const budget = maxCells * safetyFactor;
+  for (const step of NICE_RESOLUTION_STEPS) {
+    const cells = (spanX / step + 1) * (spanY / step + 1);
+    if (cells <= budget) {
+      return step;
+    }
+  }
+  return NICE_RESOLUTION_STEPS[NICE_RESOLUTION_STEPS.length - 1]!;
 }
