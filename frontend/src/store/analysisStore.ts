@@ -126,7 +126,14 @@ export interface AnalysisState {
 
 // ─── Helper: merge multiple LOSResponse results into one ────────────────────
 
-function mergeResults(results: LOSResponse[]): LOSResponse {
+/**
+ * Merge individual LOS results into their union view. Geometric quality v2:
+ * merged incidence = max over individual VISIBLE finite incidence values;
+ * merged projection = RMS over individual VISIBLE finite projections only.
+ * Missing/legacy projections stay unavailable (NaN), never fabricated zeros,
+ * and the merge only claims the geometric-v2 tag when every source result does.
+ */
+export function mergeResults(results: LOSResponse[]): LOSResponse {
   if (results.length === 0) throw new Error("No results to merge");
   if (results.length === 1) return results[0]!;
 
@@ -148,6 +155,9 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
   const cell_states = new Uint8Array(size);
   const flat_quality_grid = new Float32Array(size);
   flat_quality_grid.fill(-1);
+  const flat_projection_grid = new Float32Array(size);
+  flat_projection_grid.fill(Number.NaN);
+  const allVersioned = results.every((result) => result.quality_model === "geometric-v2");
   const shadow_grid: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false));
   const quality_grid: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
   let visibleCount = 0;
@@ -169,7 +179,9 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
     const col = idx % cols;
     if (mergedState === LOSCellState.VISIBLE) {
       visibleCount++;
-      let bestQuality = 0;
+      let bestQuality: number | undefined;
+      let projectionSumSquares = 0;
+      let projectionContributors = 0;
       for (const result of results) {
         if (result.cell_states[idx] !== LOSCellState.VISIBLE) continue;
         const flatQuality = result.flat_quality_grid?.[idx];
@@ -178,11 +190,24 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
           ? flatQuality
           : gridQuality !== undefined && Number.isFinite(gridQuality) && gridQuality >= 0
             ? gridQuality
-            : 0;
-        bestQuality = Math.max(bestQuality, quality);
+            : undefined;
+        if (quality !== undefined && (bestQuality === undefined || quality > bestQuality)) {
+          bestQuality = quality;
+        }
+        // Only individual VISIBLE finite projections contribute; missing/legacy
+        // projections are excluded instead of being counted as zeros.
+        const projection = result.flat_projection_grid?.[idx];
+        if (projection !== undefined && Number.isFinite(projection)) {
+          projectionSumSquares += projection * projection;
+          projectionContributors++;
+        }
       }
-      quality_grid[row]![col] = bestQuality;
-      flat_quality_grid[idx] = bestQuality;
+      const mergedQuality = bestQuality ?? Number.NaN;
+      quality_grid[row]![col] = mergedQuality;
+      flat_quality_grid[idx] = mergedQuality;
+      flat_projection_grid[idx] = projectionContributors > 0
+        ? Math.sqrt(projectionSumSquares / projectionContributors)
+        : Number.NaN;
     } else if (mergedState === LOSCellState.SHADOW) {
       shadowCount++;
       shadow_grid[row]![col] = true;
@@ -232,6 +257,8 @@ function mergeResults(results: LOSResponse[]): LOSResponse {
     resolution,
     quality_grid,
     flat_quality_grid,
+    ...(allVersioned ? { quality_model: "geometric-v2" as const } : {}),
+    flat_projection_grid,
     coverage_pct: candidateCount > 0 ? Number(((visibleCount / candidateCount) * 100).toFixed(2)) : null,
     completeness_pct: candidateCount > 0
       ? Number((((visibleCount + shadowCount) / candidateCount) * 100).toFixed(2))
