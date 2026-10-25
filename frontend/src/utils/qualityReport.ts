@@ -253,7 +253,9 @@ export function validateQualityExportContext(
     if (band === "low") lowCount++;
     else if (band === "medium") mediumCount++;
     else highCount++;
-    if (value >= candidate.policy.mediumMin) usefulCount++;
+    // Same Float32 band classification as the summary; a second double
+    // comparison here would re-introduce CPU/GPU disagreement.
+    if (band === "medium" || band === "high") usefulCount++;
   }
 
   if (target.cellCount !== targetCount || summary.target?.cellCount !== targetCount) {

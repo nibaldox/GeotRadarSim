@@ -33,27 +33,44 @@ export function isValidQualityPolicy(policy: unknown): policy is QualityPolicy {
   if (!policy || typeof policy !== "object") return false;
   const { mediumMin, highMin } = policy as QualityPolicy;
   return Number.isFinite(mediumMin) && Number.isFinite(highMin) &&
-    0 <= mediumMin && mediumMin < highMin && highMin <= 1;
+    0 <= mediumMin && mediumMin < highMin && highMin <= 1 &&
+    // Bands are painted in Float32: thresholds collapsing into one Float32
+    // cannot classify anything and are rejected, never silently reordered.
+    Math.fround(mediumMin) < Math.fround(highMin);
 }
 
-/** Strict boundaries: low q < mediumMin; medium mediumMin <= q < highMin; high q >= highMin. */
+/**
+ * Strict boundaries: low q < mediumMin; medium mediumMin <= q < highMin; high q >= highMin.
+ *
+ * Canonical precision is Float32, shared with the GPU: metric grids and shader
+ * uniforms are Float32, so values and thresholds are compared after Math.fround
+ * and the CPU bands always agree with the painted colors (f32(0.7) is a high,
+ * not a medium). The policy payload keeps the user's exact thresholds; only the
+ * comparison is canonicalized. Measured zero stays a measured value; NaN and
+ * out-of-range values stay out of the bands.
+ */
 export function classifyQualityValue(value: number, policy: QualityPolicy): QualityBand | null {
   if (!Number.isFinite(value) || value < 0 || value > 1) return null;
-  if (value < policy.mediumMin) return "low";
-  if (value < policy.highMin) return "medium";
+  const canonical = Math.fround(value);
+  const mediumMin = Math.fround(policy.mediumMin);
+  const highMin = Math.fround(policy.highMin);
+  if (canonical < mediumMin) return "low";
+  if (canonical < highMin) return "medium";
   return "high";
 }
 
-function formatThreshold(value: number): string {
-  return value.toFixed(2);
+/** Threshold at the precision the user typed, for legends and reports. */
+export function formatQualityThreshold(value: number): string {
+  const fixed = value.toFixed(10);
+  return fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed;
 }
 
-/** Numeric band interval exactly as classified and painted, for legends and exports. */
+/** Half-open band interval exactly as classified and painted, for legends and exports. */
 export function formatBandRange(band: QualityBand, policy: QualityPolicy): string {
   switch (band) {
-    case "low": return `0.00 - ${formatThreshold(policy.mediumMin)}`;
-    case "medium": return `${formatThreshold(policy.mediumMin)} - ${formatThreshold(policy.highMin)}`;
-    case "high": return `${formatThreshold(policy.highMin)} - 1.00`;
+    case "low": return `[0, ${formatQualityThreshold(policy.mediumMin)})`;
+    case "medium": return `[${formatQualityThreshold(policy.mediumMin)}, ${formatQualityThreshold(policy.highMin)})`;
+    case "high": return `[${formatQualityThreshold(policy.highMin)}, 1]`;
   }
 }
 
@@ -131,13 +148,23 @@ export interface QualitySummaryInput {
   snapshot?: AnalysisSnapshot | null;
 }
 
+const isTerrainKeyValid = (
+  left: Readonly<{ terrain_id: string; epoch: number }> | null | undefined,
+): boolean => !!left && typeof left.terrain_id === "string" && left.terrain_id.length > 0 &&
+  Number.isFinite(left.epoch);
+
+/**
+ * Exact provenance match: both the active terrain key and the result's snapshot
+ * key must be present, valid and equal. A missing key is not proof of currency.
+ */
 const sameKey = (
   left: Readonly<{ terrain_id: string; epoch: number }> | null | undefined,
   right: Readonly<{ terrain_id: string; epoch: number }> | null | undefined,
-): boolean => {
-  if (!left || !right) return true;
-  return left.terrain_id === right.terrain_id && left.epoch === right.epoch;
-};
+): boolean => isTerrainKeyValid(left) && isTerrainKeyValid(right) &&
+  left!.terrain_id === right!.terrain_id && left!.epoch === right!.epoch;
+
+/** Stable cell-state codes accepted in a coherent v2 result. */
+const KNOWN_CELL_STATES: ReadonlySet<number> = new Set(Object.values(LOSCellState));
 
 /**
  * Current quality summary for one result, or null when quality is unavailable
@@ -148,9 +175,11 @@ export function computeQualitySummary(input: QualitySummaryInput): QualitySummar
   const { metric, policy, losResult, terrainGrid, terrainResolution } = input;
   if (!isValidQualityPolicy(policy)) return null;
   if (losResult.quality_model !== QUALITY_MODEL_V2) return null;
+  if (!Number.isFinite(terrainResolution) || terrainResolution <= 0) return null;
 
   const rows = terrainGrid.length;
   const cols = rows > 0 ? terrainGrid[0]!.length : 0;
+  if (terrainGrid.some((row) => row.length !== cols)) return null;
   if (losResult.grid_rows !== rows || losResult.grid_cols !== cols ||
       losResult.resolution !== terrainResolution ||
       !(losResult.cell_states instanceof Uint8Array) ||
@@ -173,7 +202,14 @@ export function computeQualitySummary(input: QualitySummaryInput): QualitySummar
   let noIndexCount = 0;
 
   for (let idx = 0; idx < size; idx++) {
-    if (losResult.cell_states[idx] !== LOSCellState.VISIBLE) continue;
+    const state = losResult.cell_states[idx]!;
+    if (!KNOWN_CELL_STATES.has(state)) return null;
+    const terrainNode = terrainGrid[Math.floor(idx / cols)]![idx % cols];
+    const terrainFinite = Number.isFinite(terrainNode);
+    // v2 results mark missing terrain nodes NODATA. Any other disagreement
+    // would summarize coverage over 100 % or against a shrunk shared target.
+    if (state === LOSCellState.NODATA ? terrainFinite : !terrainFinite) return null;
+    if (state !== LOSCellState.VISIBLE) continue;
     visibleCount++;
     const value = metricGrid[idx]!;
     // v2 incidence reserves -1 as the non-visible sentinel; NaN means missing index.
@@ -186,7 +222,9 @@ export function computeQualitySummary(input: QualitySummaryInput): QualitySummar
     if (band === "low") lowCount++;
     else if (band === "medium") mediumCount++;
     else highCount++;
-    if (value >= policy.mediumMin) usefulCount++;
+    // The useful numerator is exactly the medium/high bands — the same
+    // Float32 classification the shader paints, never a second double comparison.
+    if (band === "medium" || band === "high") usefulCount++;
   }
 
   return {

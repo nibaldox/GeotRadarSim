@@ -244,12 +244,12 @@ describe("TerrainViewer geometric projection legend", () => {
     expect(screen.getByText("Proyección del movimiento")).toBeInTheDocument();
     expect(screen.getByText("No data — transparent")).toBeInTheDocument();
     expect(screen.getByText("Sin datos — transparente")).toBeInTheDocument();
-    expect(screen.getByText("Low projection (0.00 - 0.30)")).toBeInTheDocument();
-    expect(screen.getByText("Proyección baja (0.00 - 0.30)")).toBeInTheDocument();
-    expect(screen.getByText("Medium projection (0.30 - 0.70)")).toBeInTheDocument();
-    expect(screen.getByText("Proyección media (0.30 - 0.70)")).toBeInTheDocument();
-    expect(screen.getByText("High projection (0.70 - 1.00)")).toBeInTheDocument();
-    expect(screen.getByText("Proyección alta (0.70 - 1.00)")).toBeInTheDocument();
+    expect(screen.getByText("Low projection ([0, 0.3))")).toBeInTheDocument();
+    expect(screen.getByText("Proyección baja ([0, 0.3))")).toBeInTheDocument();
+    expect(screen.getByText("Medium projection ([0.3, 0.7))")).toBeInTheDocument();
+    expect(screen.getByText("Proyección media ([0.3, 0.7))")).toBeInTheDocument();
+    expect(screen.getByText("High projection ([0.7, 1])")).toBeInTheDocument();
+    expect(screen.getByText("Proyección alta ([0.7, 1])")).toBeInTheDocument();
     expect(screen.getByText(
       "Transparent means no contributing observation: no individual LOS is VISIBLE with a computable terrain gradient. This can result from NODATA, an unknown ray state, outside range/FOV, shadow, or a VISIBLE cell without a computable gradient; transparency alone does not identify shadow.",
     )).toBeInTheDocument();
@@ -293,9 +293,9 @@ describe("TerrainViewer geometric projection legend", () => {
 
     render(<TerrainViewer showShadowOverlay />);
 
-    expect(screen.getByText("Low projection (0.00 - 0.25)")).toBeInTheDocument();
-    expect(screen.getByText("Medium projection (0.25 - 0.80)")).toBeInTheDocument();
-    expect(screen.getByText("High projection (0.80 - 1.00)")).toBeInTheDocument();
+    expect(screen.getByText("Low projection ([0, 0.25))")).toBeInTheDocument();
+    expect(screen.getByText("Medium projection ([0.25, 0.8))")).toBeInTheDocument();
+    expect(screen.getByText("High projection ([0.8, 1])")).toBeInTheDocument();
     useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } });
   });
 });
@@ -322,12 +322,12 @@ describe("TerrainViewer quality legend", () => {
 
     expect(screen.getByText("Surface incidence index (geometric v2)")).toBeInTheDocument();
     expect(screen.getByText("Índice de incidencia superficial (geométrico v2)")).toBeInTheDocument();
-    expect(screen.getByText("Low incidence (0.00 - 0.30)")).toBeInTheDocument();
-    expect(screen.getByText("Incidencia baja (0.00 - 0.30)")).toBeInTheDocument();
-    expect(screen.getByText("Medium incidence (0.30 - 0.70)")).toBeInTheDocument();
-    expect(screen.getByText("Incidencia media (0.30 - 0.70)")).toBeInTheDocument();
-    expect(screen.getByText("High incidence (0.70 - 1.00)")).toBeInTheDocument();
-    expect(screen.getByText("Incidencia alta (0.70 - 1.00)")).toBeInTheDocument();
+    expect(screen.getByText("Low incidence ([0, 0.3))")).toBeInTheDocument();
+    expect(screen.getByText("Incidencia baja ([0, 0.3))")).toBeInTheDocument();
+    expect(screen.getByText("Medium incidence ([0.3, 0.7))")).toBeInTheDocument();
+    expect(screen.getByText("Incidencia media ([0.3, 0.7))")).toBeInTheDocument();
+    expect(screen.getByText("High incidence ([0.7, 1])")).toBeInTheDocument();
+    expect(screen.getByText("Incidencia alta ([0.7, 1])")).toBeInTheDocument();
 
     expect(screen.queryByText("Confirmed obstruction shadow")).not.toBeInTheDocument();
     expect(screen.queryByText("Sombra por obstrucción confirmada")).not.toBeInTheDocument();
@@ -364,9 +364,9 @@ describe("TerrainViewer quality legend", () => {
     expect(legend).not.toHaveTextContent(/suboptimal signal angle|hard to monitor|adequate signal|reliable geotechnical|perfect angle of incidence|ideal snr/i);
     expect(legend).not.toHaveTextContent(/combines terrain-normal\/LOS alignment with distance/i);
     const qualityColors = [
-      screen.getByText("Low incidence (0.00 - 0.30)").closest(".hud-legend-row"),
-      screen.getByText("Medium incidence (0.30 - 0.70)").closest(".hud-legend-row"),
-      screen.getByText("High incidence (0.70 - 1.00)").closest(".hud-legend-row"),
+      screen.getByText("Low incidence ([0, 0.3))").closest(".hud-legend-row"),
+      screen.getByText("Medium incidence ([0.3, 0.7))").closest(".hud-legend-row"),
+      screen.getByText("High incidence ([0.7, 1])").closest(".hud-legend-row"),
     ].map((row) => row?.querySelector<HTMLElement>(".hud-legend-color")?.style.background);
     expect(qualityColors).toEqual([
       "rgb(230, 26, 56)",

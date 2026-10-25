@@ -289,4 +289,22 @@ describe("validateQualityExportContext", () => {
     otherResult.flat_quality_grid = new Float32Array([0.9, 0.9, Number.NaN, -1, -1, -1]);
     expect(() => validateQualityExportContext(context, snapshot, otherResult)).toThrow(QualityExportContextError);
   });
+
+  it("counts Float32-boundary values by their classified band and rejects double-based counts", () => {
+    const losResult = v2Result();
+    losResult.flat_quality_grid = new Float32Array([
+      Math.fround(0.35), Math.fround(0.7), Number.NaN, -1, -1, -1,
+    ]);
+    const boundaryPolicy: QualityPolicy = { mediumMin: 0.35, highMin: 0.7 };
+    const context = build({ losResult, policy: boundaryPolicy });
+    expect(context).not.toBeNull();
+    // Both values sit exactly on their Float32 cutoff: medium and high, both useful.
+    expect(context!.summary.usefulCount).toBe(2);
+    expect(context!.summary.mediumHighAmongVisiblePct).toBeCloseTo((2 / 3) * 100, 10);
+    expect(() => validateQualityExportContext(context, snapshot, losResult)).not.toThrow();
+    // A summary counted with JS double comparisons (0 useful) is stale and rejected.
+    expect(() => validateQualityExportContext(
+      { ...context!, summary: { ...context!.summary, usefulCount: 0 } }, snapshot, losResult,
+    )).toThrow(QualityExportContextError);
+  });
 });

@@ -12,6 +12,15 @@ import {
   metricLabel,
 } from "./qualityMetrics";
 
+const activeTerrainKey = { terrain_id: "terrain-a", epoch: 1 };
+const activeSnapshot: AnalysisSnapshot = {
+  terrainKey: activeTerrainKey,
+  analysisId: "job-1",
+  sourceAnalysisIds: ["job-1"],
+  generation: 1,
+  radars: [],
+};
+
 describe("quality policy validation and classification", () => {
   it("accepts the provisional default bands and rejects invalid thresholds without reordering", () => {
     expect(DEFAULT_QUALITY_POLICY).toEqual({ mediumMin: 0.3, highMin: 0.7 });
@@ -23,6 +32,8 @@ describe("quality policy validation and classification", () => {
     expect(isValidQualityPolicy({ mediumMin: 0.5, highMin: 1.2 })).toBe(false);
     expect(isValidQualityPolicy({ mediumMin: Number.NaN, highMin: 0.7 })).toBe(false);
     expect(isValidQualityPolicy({ mediumMin: 0.3, highMin: Number.POSITIVE_INFINITY })).toBe(false);
+    // Thresholds collapsing into one Float32 cannot define bands; rejected explicitly.
+    expect(isValidQualityPolicy({ mediumMin: 0.7, highMin: 0.700000001 })).toBe(false);
   });
 
   it("classifies with strict boundaries and keeps missing values out of the bands", () => {
@@ -39,9 +50,13 @@ describe("quality policy validation and classification", () => {
   });
 
   it("formats band ranges and metric labels shared by legend, cards and export", () => {
-    expect(formatBandRange("low", DEFAULT_QUALITY_POLICY)).toBe("0.00 - 0.30");
-    expect(formatBandRange("medium", DEFAULT_QUALITY_POLICY)).toBe("0.30 - 0.70");
-    expect(formatBandRange("high", DEFAULT_QUALITY_POLICY)).toBe("0.70 - 1.00");
+    expect(formatBandRange("low", DEFAULT_QUALITY_POLICY)).toBe("[0, 0.3)");
+    expect(formatBandRange("medium", DEFAULT_QUALITY_POLICY)).toBe("[0.3, 0.7)");
+    expect(formatBandRange("high", DEFAULT_QUALITY_POLICY)).toBe("[0.7, 1]");
+    // Typed user precision survives; intervals are half-open and unambiguous.
+    expect(formatBandRange("low", { mediumMin: 0.705, highMin: 0.9 })).toBe("[0, 0.705)");
+    expect(formatBandRange("medium", { mediumMin: 0.705, highMin: 0.9 })).toBe("[0.705, 0.9)");
+    expect(formatBandRange("high", { mediumMin: 0.705, highMin: 0.9 })).toBe("[0.9, 1]");
     expect(metricLabel("INCIDENCE")).toBe("Incidencia superficial");
     expect(metricLabel("PROJECTION")).toBe("Proyección del movimiento");
   });
@@ -78,6 +93,8 @@ describe("common target — topografía válida completa", () => {
       losResult: v2Result({ states: statesA, rows: 2, cols: 3, incidence: [0.9, 0.9, -1, 0.9, -1, -1] }),
       terrainGrid: grid,
       terrainResolution: 1,
+      terrainKey: activeTerrainKey,
+      snapshot: activeSnapshot,
     });
     const second = computeQualitySummary({
       metric: "INCIDENCE",
@@ -85,6 +102,8 @@ describe("common target — topografía válida completa", () => {
       losResult: v2Result({ states: statesB, rows: 2, cols: 3, incidence: [0.9, -1, 0.9, -1, -1, 0.9] }),
       terrainGrid: grid,
       terrainResolution: 1,
+      terrainKey: activeTerrainKey,
+      snapshot: activeSnapshot,
     });
     expect(first!.target).toEqual(second!.target);
     expect(first!.target.cellCount).toBe(5);
@@ -100,6 +119,8 @@ describe("common target — topografía válida completa", () => {
       losResult: v2Result({ states: [LOSCellState.NODATA, LOSCellState.NODATA], rows: 1, cols: 2, incidence: [-1, -1] }),
       terrainGrid: grid,
       terrainResolution: 1,
+      terrainKey: activeTerrainKey,
+      snapshot: activeSnapshot,
     });
     expect(summary).not.toBeNull();
     expect(summary!.target.cellCount).toBe(0);
@@ -120,6 +141,8 @@ describe("quality summary — useful coverage and distribution", () => {
     policy: { mediumMin: 0.3, highMin: 0.7 },
     terrainGrid,
     terrainResolution: 2,
+    terrainKey: activeTerrainKey,
+    snapshot: activeSnapshot,
   };
 
   it("computes useful coverage over the common target and media+alta over all visible cells", () => {
@@ -425,3 +448,125 @@ function v2Result(params: V2ResultParams): LOSResponse {
     shadow_zones: [],
   };
 }
+
+describe("quality summary — canonical Float32 band precision", () => {
+  function nextFloat32(value: number, direction: 1 | -1): number {
+    const view = new DataView(new ArrayBuffer(4));
+    view.setFloat32(0, value);
+    view.setUint32(0, view.getUint32(0) + direction);
+    return view.getFloat32(0);
+  }
+
+  it("classifies in the canonical Float32 space shared with the GPU bands", () => {
+    const policy = { mediumMin: 0.3, highMin: 0.7 };
+    // Canonical grid values are Float32: f32(0.7) sits exactly on the high cutoff.
+    expect(classifyQualityValue(Math.fround(0.7), policy)).toBe("high");
+    expect(classifyQualityValue(nextFloat32(Math.fround(0.7), -1), policy)).toBe("medium");
+    expect(classifyQualityValue(Math.fround(0.7), policy)).toBe("high");
+    expect(classifyQualityValue(nextFloat32(Math.fround(0.7), 1), policy)).toBe("high");
+
+    const midPolicy = { mediumMin: 0.35, highMin: 0.7 };
+    expect(classifyQualityValue(nextFloat32(Math.fround(0.35), -1), midPolicy)).toBe("low");
+    expect(classifyQualityValue(Math.fround(0.35), midPolicy)).toBe("medium");
+    expect(classifyQualityValue(nextFloat32(Math.fround(0.35), 1), midPolicy)).toBe("medium");
+
+    // Measured zero stays a measured low; NaN and out-of-range stay out of the bands.
+    expect(classifyQualityValue(0, policy)).toBe("low");
+    expect(classifyQualityValue(Number.NaN, policy)).toBeNull();
+    expect(classifyQualityValue(1.0001, policy)).toBeNull();
+  });
+
+  it("counts the useful numerator from the classified band, never a second double comparison", () => {
+    const summary = computeQualitySummary({
+      metric: "INCIDENCE",
+      policy: { mediumMin: 0.35, highMin: 0.7 },
+      losResult: v2Result({
+        states: [5, 5, 4, 4, 4, 4],
+        rows: 2,
+        cols: 3,
+        resolution: 2,
+        incidence: [Math.fround(0.35), Math.fround(0.7), -1, -1, -1, -1],
+      }),
+      terrainGrid: [[0, 1, 2], [3, 4, 5]],
+      terrainResolution: 2,
+      terrainKey: activeTerrainKey,
+      snapshot: activeSnapshot,
+    })!;
+    // Both values equal their cutoff in Float32: medium and high, both useful.
+    expect(summary.distribution).toEqual({
+      lowCount: 0, mediumCount: 1, highCount: 1, noIndexCount: 0,
+      lowPct: 0, mediumPct: 50, highPct: 50, noIndexPct: 0,
+    });
+    expect(summary.usefulCount).toBe(2);
+    expect(summary.mediumHighAmongVisiblePct).toBe(100);
+  });
+
+  it("rejects thresholds that collapse in Float32 instead of reordering them", () => {
+    expect(computeQualitySummary({
+      metric: "INCIDENCE",
+      policy: { mediumMin: 0.7, highMin: 0.700000001 },
+      losResult: v2Result({ states: [5, 4, 4, 4], rows: 2, cols: 2, resolution: 1, incidence: [0.5, -1, -1, -1] }),
+      terrainGrid: [[0, 1], [2, 3]],
+      terrainResolution: 1,
+      terrainKey: activeTerrainKey,
+      snapshot: activeSnapshot,
+    })).toBeNull();
+  });
+});
+
+describe("quality summary — provenance and grid coherence", () => {
+  const validInput = {
+    metric: "INCIDENCE" as const,
+    policy: DEFAULT_QUALITY_POLICY,
+    losResult: v2Result({ states: [5, 5, 5, 4], rows: 2, cols: 2, resolution: 1, incidence: [0.5, 0.5, 0.5, -1] }),
+    terrainGrid: [[0, 1], [2, 3]],
+    terrainResolution: 1,
+    terrainKey: activeTerrainKey,
+    snapshot: activeSnapshot,
+  };
+
+  it("requires the active terrain key and the snapshot key to be present, valid and exactly equal", () => {
+    expect(computeQualitySummary(validInput)).not.toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainKey: null })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, snapshot: null })).toBeNull();
+    expect(computeQualitySummary({
+      ...validInput,
+      snapshot: { ...activeSnapshot, terrainKey: undefined as never },
+    })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainKey: { terrain_id: "terrain-a", epoch: 2 } })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainKey: { terrain_id: "terrain-b", epoch: 1 } })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainKey: { terrain_id: "", epoch: 1 } })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainKey: { terrain_id: "terrain-a", epoch: Number.NaN } })).toBeNull();
+  });
+
+  it("rejects ragged grids and dimension, resolution or area mismatches with valid provenance", () => {
+    expect(computeQualitySummary({ ...validInput, terrainGrid: [[0, 1], [2]] })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainGrid: [[0, 1, 2], [3, 4, 5]] })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainResolution: 2 })).toBeNull();
+    expect(computeQualitySummary({
+      ...validInput,
+      losResult: v2Result({ states: [5, 5, 5, 4], rows: 2, cols: 2, resolution: 0, incidence: [0.5, 0.5, 0.5, -1] }),
+      terrainResolution: 0,
+    })).toBeNull();
+    expect(computeQualitySummary({ ...validInput, terrainResolution: Number.NaN })).toBeNull();
+  });
+
+  it("rejects results whose cell states disagree with the terrain data", () => {
+    // VISIBLE over a missing terrain node would report coverage beyond the target.
+    expect(computeQualitySummary({
+      ...validInput,
+      terrainGrid: [[0, 1], [Number.NaN, 3]],
+      losResult: v2Result({ states: [5, 5, 5, 5], rows: 2, cols: 2, resolution: 1, incidence: [0.5, 0.5, 0.5, 0.5] }),
+    })).toBeNull();
+    // NODATA over a finite terrain node shrinks the shared target below the data.
+    expect(computeQualitySummary({
+      ...validInput,
+      losResult: v2Result({ states: [5, 5, 5, 0], rows: 2, cols: 2, resolution: 1, incidence: [0.5, 0.5, 0.5, -1] }),
+    })).toBeNull();
+    // Unknown cell-state codes cannot be summarized.
+    expect(computeQualitySummary({
+      ...validInput,
+      losResult: v2Result({ states: [5, 5, 5, 7], rows: 2, cols: 2, resolution: 1, incidence: [0.5, 0.5, 0.5, -1] }),
+    })).toBeNull();
+  });
+});
