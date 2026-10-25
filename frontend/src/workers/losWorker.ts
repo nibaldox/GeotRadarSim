@@ -2,6 +2,7 @@
 
 import { LOSCellState } from "../types/api";
 import type { LOSResponse, RadarConfig } from "../types/api";
+import { terrainGradientAt } from "../utils/sensitivity";
 import { validateTerrainGridDimensions, validateTerrainResolution, validateTerrainTotalArea } from "../utils/terrainLimits";
 
 export interface LOSWorkerInput {
@@ -24,7 +25,7 @@ export interface LOSWorkerOutput extends LOSResponse {
 self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
   try {
     const result = computeLOS(e.data);
-    self.postMessage(result, [result.flat_quality_grid!.buffer]);
+    self.postMessage(result, [result.flat_quality_grid!.buffer, result.flat_projection_grid!.buffer]);
   } catch (err) {
     self.postMessage({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -377,20 +378,6 @@ export function sampleTerrainAtCoordinates(
   return height;
 }
 
-function terrainGradient(
-  before: number | undefined,
-  after: number | undefined,
-  center: number,
-  resolution: number,
-): number {
-  const hasBefore = before !== undefined && Number.isFinite(before);
-  const hasAfter = after !== undefined && Number.isFinite(after);
-  if (hasBefore && hasAfter) return (after - before) / (2 * resolution);
-  if (hasAfter) return (after - center) / resolution;
-  if (hasBefore) return (center - before) / resolution;
-  return 0;
-}
-
 function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   const { grid, bounds, resolution, radar_position: [rx, ry, rz], radar_config } = input;
   if (!Array.isArray(grid) || grid.length === 0 || !Array.isArray(grid[0]) || grid[0].length === 0) {
@@ -429,6 +416,8 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
   const quality_grid: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
   const flat_quality_grid = new Float32Array(rows * cols);
   flat_quality_grid.fill(-1);
+  const flat_projection_grid = new Float32Array(rows * cols);
+  flat_projection_grid.fill(Number.NaN);
   const coverage_polygon: Array<[number, number]> = [];
 
   let visibleCount = 0;
@@ -495,24 +484,46 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       visibleCount++;
       if (coverage_polygon.length < 100) coverage_polygon.push([cx, cy]);
 
-      const left = c > 0 ? grid[r]![c - 1]! : undefined;
-      const right = c + 1 < cols ? grid[r]![c + 1]! : undefined;
-      const down = r > 0 ? grid[r - 1]![c]! : undefined;
-      const up = r + 1 < rows ? grid[r + 1]![c]! : undefined;
-      const gradX = terrainGradient(left, right, targetZ, resolution);
-      const gradY = terrainGradient(down, up, targetZ, resolution);
-      const normalLength = Math.hypot(gradX, gradY, 1);
-      const nx = -gradX / normalLength;
-      const ny = -gradY / normalLength;
+      // Geometric quality v2: angular incidence and slope-motion projection.
+      // The incidence score is clamp(dot(surface normal, terrain→radar), 0, 1);
+      // distance is NOT a multiplier — maximum range only gates LOS eligibility.
+      const gradient = terrainGradientAt(grid, r, c, resolution);
+      if (gradient === null) {
+        // Strict no-data: a missing gradient axis yields no index, never a measured zero.
+        quality_grid[r]![c] = Number.NaN;
+        flat_quality_grid[idx] = Number.NaN;
+        continue;
+      }
+      const normalLength = Math.hypot(gradient.gradX, gradient.gradY, 1);
+      const nx = -gradient.gradX / normalLength;
+      const ny = -gradient.gradY / normalLength;
       const nz = 1 / normalLength;
-      const distance3d = Math.hypot(dx, dy, targetZ - rz) || 0.1;
-      const dotProduct = Math.max(0, Math.min(1, -((dx / distance3d) * nx + (dy / distance3d) * ny + ((targetZ - rz) / distance3d) * nz)));
-      const distanceFactor = Number.isFinite(maxRange) && maxRange > 0
-        ? Math.sqrt(Math.max(0, 1 - distance / maxRange))
-        : 1;
-      const quality = Number.isFinite(dotProduct * distanceFactor) ? dotProduct * distanceFactor : 0;
-      quality_grid[r]![c] = quality;
-      flat_quality_grid[idx] = quality;
+      const dz = targetZ - rz;
+      const distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.1;
+      const ux = dx / distance3d;
+      const uy = dy / distance3d;
+      const uz = dz / distance3d;
+      const incidence = Math.max(0, Math.min(1, -(ux * nx + uy * ny + uz * nz)));
+      quality_grid[r]![c] = incidence;
+      flat_quality_grid[idx] = incidence;
+
+      // Slope-motion projection: |dot| of the unit LOS against the normalized
+      // downhill tangent, with the downward-vertical fallback on flat terrain.
+      // The exact vectorWorker convention keeps merged RMS values consistent.
+      let tx = -gradient.gradX;
+      let ty = -gradient.gradY;
+      let tz = -(gradient.gradX * gradient.gradX + gradient.gradY * gradient.gradY);
+      const tangentNorm = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tangentNorm > 1e-4) {
+        tx /= tangentNorm;
+        ty /= tangentNorm;
+        tz /= tangentNorm;
+      } else {
+        tx = 0;
+        ty = 0;
+        tz = -1;
+      }
+      flat_projection_grid[idx] = Math.abs(ux * tx + uy * ty + uz * tz);
     }
   }
 
@@ -564,6 +575,8 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
     resolution,
     quality_grid,
     flat_quality_grid,
+    quality_model: "geometric-v2",
+    flat_projection_grid,
     coverage_pct,
     completeness_pct,
     visible_area_m2: visibleCount * cellArea,

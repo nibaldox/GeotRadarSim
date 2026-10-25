@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildTerrainMeshGeometry } from "../components/TerrainViewer";
 import { LOSCellState, type RadarConfig } from "../types/api";
+import { terrainGradientAt } from "../utils/sensitivity";
 import type { LOSWorkerInput, LOSWorkerOutput } from "./losWorker";
 
 const radar: RadarConfig = {
@@ -602,5 +603,156 @@ describe("LOS worker cell-state contract", () => {
     expect(result.error).toMatch(/total.*area|area.*total/i);
     expect(result.cell_states).toBeUndefined();
     expect(result.visible_area_m2).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Geometric quality v2: angular incidence and slope-motion projection
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runWorkerWithTransport(input: LOSWorkerInput): Promise<{
+  result: LOSWorkerOutput & { error?: string };
+  transfer: readonly unknown[];
+}> {
+  vi.resetModules();
+  const scope: {
+    onmessage: ((event: MessageEvent<LOSWorkerInput>) => void) | null;
+    postMessage: ReturnType<typeof vi.fn>;
+  } = { onmessage: null, postMessage: vi.fn() };
+  vi.stubGlobal("self", scope);
+  await import("./losWorker");
+  if (!scope.onmessage) throw new Error("LOS worker did not register its message handler");
+  scope.onmessage({ data: input } as MessageEvent<LOSWorkerInput>);
+  const call = scope.postMessage.mock.calls[0]!;
+  return {
+    result: call[0] as LOSWorkerOutput & { error?: string },
+    transfer: (call[1] ?? []) as readonly unknown[],
+  };
+}
+
+/** Inclined plane z = x on a 3x3 grid at the origin: normal (-1,0,1)/√2, downhill (-1,0,-1)/√2. */
+const PLANE_GRID = [
+  [0, 1, 2],
+  [0, 1, 2],
+  [0, 1, 2],
+];
+
+function planeInput(
+  radar_position: [number, number, number],
+  maxRange = 100,
+  grid: number[][] = PLANE_GRID,
+): LOSWorkerInput {
+  return {
+    grid,
+    bounds: { min_x: 0, min_y: 0, max_x: 2, max_y: 2 },
+    resolution: 1,
+    radar_position,
+    radar_config: { ...radar, max_range_m: maxRange },
+  };
+}
+
+describe("LOS worker geometric quality v2", () => {
+  it("tags new results as geometric-v2 and transfers both flat index buffers", async () => {
+    const { result, transfer } = await runWorkerWithTransport(planeInput([0, 1, 5]));
+
+    expect(result.error).toBeUndefined();
+    expect(result.quality_model).toBe("geometric-v2");
+    expect(result.flat_quality_grid).toBeInstanceOf(Float32Array);
+    expect(result.flat_projection_grid).toBeInstanceOf(Float32Array);
+    expect(result.flat_projection_grid!.length).toBe(9);
+    expect(transfer).toContain(result.flat_quality_grid!.buffer);
+    expect(transfer).toContain(result.flat_projection_grid!.buffer);
+  });
+
+  it("keeps the incidence score independent of maximum range for still-VISIBLE samples", async () => {
+    const wide = await runWorker(planeInput([0, 1, 5], 100));
+    const narrow = await runWorker(planeInput([0, 1, 5], 1.5));
+    const cell = 1 * 3 + 1;
+
+    expect(wide.cell_states![cell]).toBe(LOSCellState.VISIBLE);
+    expect(narrow.cell_states![cell]).toBe(LOSCellState.VISIBLE);
+    // Plane z = x, cell (1,1): normal (-1,0,1)/√2 against terrain→radar (-1,0,4)/√17 = 5/√34.
+    const expected = 5 / Math.sqrt(34);
+    expect(wide.flat_quality_grid![cell]).toBeCloseTo(expected, 6);
+    expect(narrow.flat_quality_grid![cell]).toBeCloseTo(expected, 6);
+    // No sqrt(1 - distance/maxRange) multiplier: identical scores across ranges.
+    expect(narrow.flat_quality_grid![cell]).toBe(wide.flat_quality_grid![cell]);
+  });
+
+  it("measures incidence and slope-motion projection as aligned/orthogonal complements on the planar slope", async () => {
+    // Terrain→radar along the surface normal (-1,0,1): incidence 1, movement projection 0.
+    const normalView = await runWorker(planeInput([-2, 0, 2]));
+    // Terrain→radar along the in-slope direction (1,0,1): incidence 0, movement projection 1.
+    const downhillView = await runWorker(planeInput([2, 0, 2]));
+
+    expect(normalView.cell_states![0]).toBe(LOSCellState.VISIBLE);
+    expect(downhillView.cell_states![0]).toBe(LOSCellState.VISIBLE);
+    expect(normalView.flat_quality_grid![0]).toBeCloseTo(1, 6);
+    expect(normalView.flat_projection_grid![0]).toBeCloseTo(0, 6);
+    expect(downhillView.flat_quality_grid![0]).toBeCloseTo(0, 6);
+    expect(downhillView.flat_projection_grid![0]).toBeCloseTo(1, 6);
+    // Measured zeros are finite data, never missing indices.
+    expect(Number.isNaN(normalView.flat_projection_grid![0]!)).toBe(false);
+    expect(Number.isNaN(downhillView.flat_quality_grid![0]!)).toBe(false);
+  });
+
+  it("keeps the measured zero of the incidence index at exactly zero", async () => {
+    const result = await runWorker(planeInput([3, 1, 3]));
+
+    expect(result.cell_states![4]).toBe(LOSCellState.VISIBLE);
+    expect(result.flat_quality_grid![4]).toBe(0);
+    expect(result.flat_projection_grid![4]).toBeCloseTo(1, 6);
+  });
+
+  it("reports non-visible projection as NaN while keeping the non-visible incidence sentinel", async () => {
+    const result = await runWorker(planeInput([0, 1, 5], 1.5));
+    const outOfRange = 1 * 3 + 2;
+
+    expect(result.cell_states![outOfRange]).toBe(LOSCellState.OUT_OF_RANGE);
+    expect(result.flat_quality_grid![outOfRange]).toBe(-1);
+    expect(Number.isNaN(result.flat_projection_grid![outOfRange]!)).toBe(true);
+    expect(Number.isNaN(result.flat_projection_grid![1 * 3]!)).toBe(false);
+  });
+
+  it("never invents a zero slope where a gradient axis has no finite neighbor", async () => {
+    const grid = [
+      [0, 1, 2],
+      [0, 1, 2],
+      [0, Number.NaN, 2],
+    ];
+    const result = await runWorker(planeInput([0, 1, 5], 100, grid));
+    expect(result.error).toBeUndefined();
+
+    let visibleChecked = 0;
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const idx = row * 3 + col;
+        if (result.cell_states![idx] !== LOSCellState.VISIBLE) continue;
+        visibleChecked++;
+        const gradient = terrainGradientAt(grid, row, col, 1);
+        if (gradient === null) {
+          // Strict no-data: the canonical v2 indices are NaN, never a measured zero.
+          expect(Number.isNaN(result.flat_quality_grid![idx]!)).toBe(true);
+          expect(Number.isNaN(result.flat_projection_grid![idx]!)).toBe(true);
+        } else {
+          expect(Number.isFinite(result.flat_quality_grid![idx]!)).toBe(true);
+          expect(Number.isFinite(result.flat_projection_grid![idx]!)).toBe(true);
+        }
+      }
+    }
+    expect(visibleChecked).toBeGreaterThan(0);
+  });
+
+  it("characterizes unchanged range/FOV/state codes and counts around the v2 buffers", async () => {
+    const result = await runWorker(planeInput([0, 1, 5], 1.5));
+
+    expect(Array.from(result.cell_states!)).toEqual([
+      LOSCellState.VISIBLE, LOSCellState.VISIBLE, LOSCellState.OUT_OF_RANGE,
+      LOSCellState.VISIBLE, LOSCellState.VISIBLE, LOSCellState.OUT_OF_RANGE,
+      LOSCellState.VISIBLE, LOSCellState.VISIBLE, LOSCellState.OUT_OF_RANGE,
+    ]);
+    expect(result.visible_area_m2).toBe(6);
+    expect(result.coverage_pct).toBe(100);
+    expect(result.completeness_pct).toBe(100);
   });
 });

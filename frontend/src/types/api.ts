@@ -70,6 +70,10 @@ export interface LOSResponse {
   quality_grid?: number[][];
   /** Flat quality values; -1 is non-visible, while cell_states identifies its reason. */
   flat_quality_grid?: Float32Array;
+  /** Score-model tag: present only when flat_quality_grid holds geometric-v2 incidence. */
+  quality_model?: "geometric-v2";
+  /** Flat slope-motion projection per cell; NaN = unavailable (non-visible or no computable gradient). */
+  flat_projection_grid?: Float32Array;
 }
 
 export interface TerrainGridResponse {
