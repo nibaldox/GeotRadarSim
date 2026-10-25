@@ -11,6 +11,8 @@ import { TerrainViewer } from "./components/TerrainViewer";
 import { RadarControls } from "./components/RadarControls";
 import { VectorSynthesisPanel } from "./components/VectorSynthesisPanel";
 import { AnalysisHistory } from "./components/AnalysisHistory";
+import { QualityDashboard } from "./components/QualityDashboard";
+import { QualityPolicyControl } from "./components/QualityPolicyControl";
 import { ExportPanel } from "./components/ExportPanel";
 import { UploadTerrainDialog } from "./components/UploadTerrainDialog";
 import { useTerrainStore } from "./store/terrainStore";
@@ -308,6 +310,8 @@ function App() {
         <RadarControls />
         <VectorSynthesisPanel />
         <AnalysisHistory />
+        <QualityDashboard />
+        <QualityPolicyControl />
 
         <div className="glass-panel">
           <label className="checkbox-label">

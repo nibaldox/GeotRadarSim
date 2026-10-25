@@ -1,15 +1,49 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
+import { useTerrainStore } from "../store/terrainStore";
+import { useVectorStore } from "../store/vectorStore";
+import { useQualityPolicyStore } from "../store/qualityPolicyStore";
+import { computeQualitySummary, metricLabel } from "../utils/qualityMetrics";
+import type { QualityMetric, QualitySummary } from "../utils/qualityMetrics";
+import { QualitySummaryView } from "./QualitySummaryView";
 
-function formatPercent(value: number | null): string {
-  return value !== null && Number.isFinite(value) ? `${value.toFixed(1)}%` : "Sin datos";
-}
+const metricForMode = (mode: "QUALITY" | "SENSITIVITY"): QualityMetric =>
+  mode === "SENSITIVITY" ? "PROJECTION" : "INCIDENCE";
 
 export function AnalysisHistory() {
   const history = useAnalysisStore((s) => s.history);
   const clearHistory = useAnalysisStore((s) => s.clearHistory);
   const toggleHistoryEntrySelection = useAnalysisStore((s) => s.toggleHistoryEntrySelection);
   const removeHistoryEntry = useAnalysisStore((s) => s.removeHistoryEntry);
+  const terrainGrid = useTerrainStore((s) => s.grid);
+  const terrainMetadata = useTerrainStore((s) => s.metadata);
+  const terrainKey = useTerrainStore((s) => s.terrainKey);
+  const visualizationMode = useVectorStore((s) => s.visualizationMode);
+  const policy = useQualityPolicyStore((s) => s.policy);
+  const metric = metricForMode(visualizationMode);
+
+  // Per-entry current quality summary with terrain/epoch guards; reclassified
+  // live by policy edits without rerunning any LOS analysis.
+  const summaries = useMemo(
+    () => history.map((entry): QualitySummary | null => {
+      if (!terrainGrid || !terrainMetadata) return null;
+      const resultKey = entry.snapshot?.terrainKey ?? null;
+      // A missing snapshot or terrain key is not proof of currency while the
+      // terrain state is active: no current quality, recalculate instead.
+      if (!terrainKey || !resultKey) return null;
+      return computeQualitySummary({
+        metric,
+        policy,
+        losResult: entry.result,
+        terrainGrid,
+        // Expected dimensions and resolution come from the ACTIVE metadata.
+        terrainResolution: terrainMetadata.resolution,
+        terrainKey,
+        snapshot: entry.snapshot ?? null,
+      });
+    }),
+    [history, terrainGrid, terrainMetadata, terrainKey, metric, policy],
+  );
 
   // Collapsible state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -80,6 +114,7 @@ export function AnalysisHistory() {
         <div className="flex-col" style={{ gap: "8px" }}>
         {history.map((entry, idx) => {
           const isSelected = !!entry.selected;
+          const summary = summaries[idx] ?? null;
           return (
             <div
               key={`${entry.timestamp}-${idx}`}
@@ -132,13 +167,14 @@ export function AnalysisHistory() {
                   <span style={{ opacity: 0.6, fontSize: "10px", fontFamily: "var(--font-mono)" }}>
                     {entry.timestamp}
                   </span>
-                  <span style={{ color: entry.coveragePct === null ? "var(--text-secondary)" : entry.coveragePct > 50 ? "var(--success)" : "var(--warning)", fontWeight: "bold", fontFamily: "var(--font-mono)" }}>
-                    {formatPercent(entry.coveragePct)}
-                  </span>
                 </div>
-                <div style={{ opacity: 0.8, fontFamily: "var(--font-mono)", fontSize: "10px" }}>
-                  Completitud: {formatPercent(entry.result.completeness_pct)}
-                </div>
+                <QualitySummaryView
+                  compact
+                  summary={summary}
+                  metricLabel={metricLabel(metric)}
+                  coveragePct={entry.coveragePct}
+                  completenessPct={entry.result.completeness_pct ?? null}
+                />
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px", opacity: 0.8, fontFamily: "var(--font-mono)", fontSize: "10px" }}>
                   <span><span style={{ opacity: 0.4 }}>X:</span> {entry.position.x.toFixed(0)}</span>
                   <span><span style={{ opacity: 0.4 }}>Y:</span> {entry.position.y.toFixed(0)}</span>

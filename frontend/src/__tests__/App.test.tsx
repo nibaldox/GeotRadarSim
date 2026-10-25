@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import App from "../App";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
@@ -67,7 +67,7 @@ import {
   getLOSJob,
 } from "../services/api";
 import type { TerrainBoundsPreview } from "../services/api";
-import type { DTMMetadata, TerrainGridResponse } from "../types/api";
+import type { AnalysisSnapshot, DTMMetadata, LOSResponse, TerrainGridResponse } from "../types/api";
 
 const sampleBoundsPreview: TerrainBoundsPreview = {
   source: "DXF",
@@ -114,6 +114,70 @@ beforeEach(() => {
     terrainTransitioning: false,
   });
   vi.mocked(listRadars).mockResolvedValue([]);
+});
+
+describe("App — resumen global de calidad y bandas", () => {
+  const key = { terrain_id: "terrain-syn-1", epoch: 1 };
+
+  const v2Result: LOSResponse = {
+    shadow_grid: [[false, false, false], [false, false, true]],
+    cell_states: Uint8Array.from([5, 5, 5, 5, 4, 3]),
+    grid_rows: 2,
+    grid_cols: 3,
+    resolution: 2,
+    coverage_polygon: [],
+    coverage_pct: 66.7,
+    completeness_pct: 100,
+    visible_area_m2: 16,
+    shadow_zones: [],
+    quality_grid: [[0.25, 0.5, 0.75], [Number.NaN, 0, 0]],
+    flat_quality_grid: Float32Array.from([0.25, 0.5, 0.75, Number.NaN, -1, -1]),
+    quality_model: "geometric-v2",
+    flat_projection_grid: Float32Array.from([0.75, 0.75, Number.NaN, 0.5, Number.NaN, Number.NaN]),
+  };
+
+  const snapshot: AnalysisSnapshot = {
+    terrainKey: { ...key },
+    analysisId: "job-global-app",
+    sourceAnalysisIds: ["job-global-app"],
+    generation: 1,
+    radars: [],
+  };
+
+  it("mounts the shared band control and an identifiable global summary section", () => {
+    render(<App />);
+
+    expect(screen.getByTestId("quality-policy-control")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Resumen global de calidad" })).toBeInTheDocument();
+  });
+
+  it("shows the selected-set summary inside the global section, scoped apart from history cards", async () => {
+    useTerrainStore.setState({
+      grid: [[0, 1, 2], [3, 4, 5]],
+      metadata: {
+        terrain_id: key.terrain_id,
+        bounds: { min_x: 0, min_y: 0, min_z: 0, max_x: 4, max_y: 2, max_z: 5 },
+        resolution: 2,
+        grid_rows: 2,
+        grid_cols: 3,
+      },
+      terrainKey: { ...key },
+    });
+    useAnalysisStore.setState({ losResult: v2Result, activeSnapshot: snapshot });
+    render(<App />);
+
+    // Let the mocked radar-catalog request settle so the loading guard lifts.
+    await waitFor(() =>
+      expect(screen.queryByTestId("quality-global-summary-guarded")).not.toBeInTheDocument(),
+    );
+
+    const region = within(screen.getByRole("region", { name: "Resumen global de calidad" }));
+    expect(region.getByText(/Cobertura útil/).parentElement).toHaveTextContent("33.3%");
+    expect(region.getByText(/Cobertura útil/).parentElement).toHaveTextContent("Incidencia superficial");
+    expect(region.getByText(/Visibilidad \(candidatos\)/).parentElement).toHaveTextContent("66.7%");
+    // The band control carries no summary numbers, so nothing is confused with cards.
+    expect(within(screen.getByTestId("quality-policy-control")).queryByText(/Cobertura útil/)).not.toBeInTheDocument();
+  });
 });
 
 describe("App — Terrain Upload UI", () => {
