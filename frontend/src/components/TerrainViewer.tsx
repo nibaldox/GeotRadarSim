@@ -668,21 +668,6 @@ export function TerrainViewer({
           ) : (
             <>
               <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(0, 0%, 50%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">Confirmed obstruction shadow</span>
-                    {" / "}
-                    <span lang="es">Sombra por obstrucción confirmada</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">SHADOW marks an obstruction on the terrain LOS ray; it is distinct from OUT_OF_RANGE and OUTSIDE_FOV.</span>
-                    {" / "}
-                    <span lang="es">SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
                 <div
                   className="hud-legend-color"
                   style={{ background: "transparent", outline: "1px dashed var(--text-secondary)" }}
@@ -694,9 +679,14 @@ export function TerrainViewer({
                     <span lang="es">Transparente — sin valor de índice</span>
                   </span>
                   <div className="hud-legend-desc">
-                    <span lang="en">NODATA, UNKNOWN_RAY, OUT_OF_RANGE and OUTSIDE_FOV have no displayed index and appear transparent; transparency does not indicate a confirmed shadow.</span>
+                    <span lang="en">NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV and SHADOW have no displayed index and appear transparent, showing the base terrain; transparency alone does not identify the cause.</span>
                     {" / "}
-                    <span lang="es">NODATA, UNKNOWN_RAY, OUT_OF_RANGE y OUTSIDE_FOV no tienen un índice mostrado y aparecen transparentes; la transparencia no indica una sombra confirmada.</span>
+                    <span lang="es">NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV y SHADOW no tienen un índice mostrado y aparecen transparentes, mostrando el terreno base; la transparencia por sí sola no identifica la causa.</span>
+                  </div>
+                  <div className="hud-legend-desc">
+                    <span lang="en">SHADOW marks an obstruction on the terrain LOS ray; it is distinct from OUT_OF_RANGE and OUTSIDE_FOV.</span>
+                    {" / "}
+                    <span lang="es">SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.</span>
                   </div>
                 </div>
               </div>

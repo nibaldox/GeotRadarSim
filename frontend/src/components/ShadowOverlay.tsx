@@ -2,8 +2,10 @@
  * ShadowOverlay — semi-transparent overlay on terrain showing monitoring window.
  *
  * Color coding:
- * - Green: visible zone (monitoring window — radar can "see" this area)
- * - Red/dark: shadow zone (obstructed — radar cannot monitor here)
+ * - Transparent: cells without a contributing observation (NODATA, OUT_OF_RANGE,
+ *   OUTSIDE_FOV, UNKNOWN_RAY and SHADOW) leave the base terrain unchanged.
+ * - Red → yellow → green: observed (VISIBLE) cells colored by the geometric LOS
+ *   index; a measured 0.0 is data and stays painted red.
  *
  * Overlay sits slightly above terrain to prevent z-fighting.
  */
@@ -83,11 +85,9 @@ const fragmentShader = `
     vec3 finalColor;
     if (mapMode < 0.5) {
       float cellState = floor(texture2D(cellStateTexture, vUv).r * 255.0 + 0.5);
-      if (cellState != 4.0 && cellState != 5.0) discard;
-      if (cellState == 4.0) {
-        gl_FragColor = vec4(vec3(0.38, 0.04, 0.06), opacity);
-        return;
-      }
+      // Only observed (VISIBLE) cells are painted. SHADOW and every other
+      // unobserved state leaves the base terrain unchanged.
+      if (cellState != 5.0) discard;
 
       float q = texture2D(qualityTexture, vUv).r;
       vec3 colorLow  = vec3(0.9, 0.1, 0.1);

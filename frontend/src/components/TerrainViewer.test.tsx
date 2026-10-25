@@ -264,7 +264,7 @@ describe("TerrainViewer geometric projection legend", () => {
 });
 
 describe("TerrainViewer quality legend", () => {
-  it("describes geometric index bands and separates obstruction shadows from transparent states", () => {
+  it("describes geometric index bands and groups shadows with transparent states", () => {
     useTerrainStore.setState({
       grid,
       metadata: {
@@ -291,8 +291,8 @@ describe("TerrainViewer quality legend", () => {
     expect(screen.getByText("High geometric index (0.7 - 1.0)")).toBeInTheDocument();
     expect(screen.getByText("Índice geométrico alto (0.7 - 1.0)")).toBeInTheDocument();
 
-    expect(screen.getByText("Confirmed obstruction shadow")).toBeInTheDocument();
-    expect(screen.getByText("Sombra por obstrucción confirmada")).toBeInTheDocument();
+    expect(screen.queryByText("Confirmed obstruction shadow")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sombra por obstrucción confirmada")).not.toBeInTheDocument();
     expect(screen.getByText(
       "SHADOW marks an obstruction on the terrain LOS ray; it is distinct from OUT_OF_RANGE and OUTSIDE_FOV.",
     )).toBeInTheDocument();
@@ -303,10 +303,10 @@ describe("TerrainViewer quality legend", () => {
     expect(screen.getByText("Transparent — no index value")).toBeInTheDocument();
     expect(screen.getByText("Transparente — sin valor de índice")).toBeInTheDocument();
     expect(screen.getByText(
-      "NODATA, UNKNOWN_RAY, OUT_OF_RANGE and OUTSIDE_FOV have no displayed index and appear transparent; transparency does not indicate a confirmed shadow.",
+      "NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV and SHADOW have no displayed index and appear transparent, showing the base terrain; transparency alone does not identify the cause.",
     )).toBeInTheDocument();
     expect(screen.getByText(
-      "NODATA, UNKNOWN_RAY, OUT_OF_RANGE y OUTSIDE_FOV no tienen un índice mostrado y aparecen transparentes; la transparencia no indica una sombra confirmada.",
+      "NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV y SHADOW no tienen un índice mostrado y aparecen transparentes, mostrando el terreno base; la transparencia por sí sola no identifica la causa.",
     )).toBeInTheDocument();
     expect(screen.getByText(
       "Only VISIBLE cells have this geometric index. A displayed value of 0.0 is measured; missing data is transparent.",
