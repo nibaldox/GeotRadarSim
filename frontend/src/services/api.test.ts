@@ -110,6 +110,8 @@ vi.mock("./exportEngine", () => ({
 }));
 
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
+import { buildQualityExportContext } from "../utils/qualityReport";
+import type { QualityMetric } from "../utils/qualityMetrics";
 
 beforeEach(() => {
   MockWorker.instances = [];
@@ -497,7 +499,7 @@ describe("terrain import identity", () => {
       }],
     };
     await exportCSV(exportSnapshot, completedLOS.result);
-    expect.soft(generateCSVBlob).toHaveBeenCalledWith(exportSnapshot, losResult);
+    expect.soft(generateCSVBlob).toHaveBeenCalledWith(exportSnapshot, losResult, undefined);
 
     const sensitivitySnapshot: AnalysisSnapshot = {
       ...exportSnapshot,
@@ -1459,7 +1461,7 @@ describe("exportPDF", () => {
     expect(resultBlob).toBeInstanceOf(Blob);
     expect(resultBlob.type).toBe("application/pdf");
 
-    expect(generatePDFBlob).toHaveBeenCalledWith(exportSnapshotForApi, mockLOSResult);
+    expect(generatePDFBlob).toHaveBeenCalledWith(exportSnapshotForApi, mockLOSResult, undefined);
   });
 });
 
@@ -1502,7 +1504,7 @@ describe("exportCSV", () => {
     expect(resultBlob).toBeInstanceOf(Blob);
     expect(resultBlob.type).toBe("text/csv");
 
-    expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, mockLOSResult);
+    expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, mockLOSResult, undefined);
   });
 
   it("exports an explicit consumed LOS result after releasing its job", async () => {
@@ -1531,7 +1533,7 @@ describe("exportCSV", () => {
     const blob = await exportCSV(exportSnapshotForApi, consumed.result);
 
     expect(blob.type).toBe("text/csv");
-    expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, consumed.result);
+    expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, consumed.result, undefined);
     await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
   });
 });
@@ -1595,7 +1597,7 @@ describe("terrain ownership and worker leases", () => {
     };
     const exported = await exportCSV(snapshot, terminal.result as LOSResponse);
     expect(exported.type).toBe("text/csv");
-    expect(generateCSVBlob).toHaveBeenCalledWith(snapshot, losResult);
+    expect(generateCSVBlob).toHaveBeenCalledWith(snapshot, losResult, undefined);
   });
 
   it("retains a leased sensitivity grid through worker validation, without cross-kind cancellation releasing it", async () => {
@@ -1923,5 +1925,67 @@ describe("LOS worker watchdog", () => {
     expect(settled).toBe(false);
     expect(MockWorker.instances[0]!.terminateCalls).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// exportPDF / exportCSV optional quality context
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("exportPDF / exportCSV quality context", () => {
+  const v2Result: LOSResponse = {
+    shadow_grid: [[false, false, false], [true, false, false]],
+    cell_states: new Uint8Array([
+      LOSCellState.VISIBLE, LOSCellState.VISIBLE, LOSCellState.VISIBLE,
+      LOSCellState.SHADOW, LOSCellState.NODATA, LOSCellState.OUT_OF_RANGE,
+    ]),
+    grid_rows: 2,
+    grid_cols: 3,
+    resolution: 2,
+    coverage_polygon: [],
+    coverage_pct: 80,
+    completeness_pct: 82.5,
+    visible_area_m2: 12,
+    shadow_zones: [],
+    quality_grid: [[0, 0.5, 0], [0, 0, 0]],
+    flat_quality_grid: new Float32Array([0, 0.5, Number.NaN, -1, -1, -1]),
+    flat_projection_grid: new Float32Array([Number.NaN, 0.8, 0.25, Number.NaN, Number.NaN, Number.NaN]),
+    quality_model: "geometric-v2",
+  };
+
+  const contextFor = (metric: QualityMetric) => buildQualityExportContext({
+    snapshot: exportSnapshotForApi,
+    losResult: v2Result,
+    metric,
+    policy: { mediumMin: 0.3, highMin: 0.7 },
+    terrainGrid: [[0, 0, 0], [0, Number.NaN, 0]],
+    terrainMetadata: { terrain_id: "terrain-custom", resolution: 2, grid_rows: 2, grid_cols: 3 },
+    terrainKey: exportSnapshotForApi.terrainKey,
+  });
+
+  it("forwards the captured incidence context to the PDF engine", async () => {
+    const context = contextFor("INCIDENCE");
+    expect(context).not.toBeNull();
+
+    await exportPDF(exportSnapshotForApi, v2Result, context!);
+
+    expect(generatePDFBlob).toHaveBeenCalledWith(exportSnapshotForApi, v2Result, context);
+  });
+
+  it("forwards the captured projection context to the CSV engine", async () => {
+    const context = contextFor("PROJECTION");
+    expect(context).not.toBeNull();
+
+    await exportCSV(exportSnapshotForApi, v2Result, context!);
+
+    expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, v2Result, context);
+  });
+
+  it("keeps delegating direct calls without a context", async () => {
+    await exportCSV(exportSnapshotForApi, v2Result);
+    await exportPDF(exportSnapshotForApi, v2Result);
+
+    expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, v2Result, undefined);
+    expect(generatePDFBlob).toHaveBeenCalledWith(exportSnapshotForApi, v2Result, undefined);
   });
 });

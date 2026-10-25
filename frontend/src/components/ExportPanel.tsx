@@ -5,12 +5,22 @@
  * - PDF: uses jsPDF with a structured coverage report.
  * - CSV: serializes the quality grid row by row.
  * - Image: captures the WebGL canvas as PNG.
+ *
+ * For current geometric-v2 results the click captures an optional quality
+ * context (metric, policy copy, target and summary from the current terrain
+ * grid) that the export engine re-verifies before writing the useful-coverage
+ * report. Legacy exports keep working without it and never invent one.
  */
 
 import { useState, useCallback } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
+import { useVectorStore } from "../store/vectorStore";
+import { useQualityPolicyStore } from "../store/qualityPolicyStore";
 import { exportPDF, exportCSV } from "../services/api";
+import { metricLabel } from "../utils/qualityMetrics";
+import { buildQualityExportContext, metricForVisualizationMode } from "../utils/qualityReport";
+import type { QualityExportContext } from "../utils/qualityReport";
 import type { AnalysisSnapshot, LOSResponse } from "../types/api";
 
 const sameTerrainKey = (
@@ -43,6 +53,24 @@ function isCurrentExport(snapshot: AnalysisSnapshot, result: LOSResponse): boole
     terrain.metadata?.terrain_id === snapshot.terrainKey.terrain_id;
 }
 
+/**
+ * Capture the quality-report context synchronously at the click from the
+ * current metric/policy/terrain grid. Returns null (legacy export) for
+ * unversioned results or stale terrain metadata.
+ */
+function captureQualityContext(snapshot: AnalysisSnapshot, result: LOSResponse): QualityExportContext | null {
+  const terrain = useTerrainStore.getState();
+  return buildQualityExportContext({
+    snapshot,
+    losResult: result,
+    metric: metricForVisualizationMode(useVectorStore.getState().visualizationMode),
+    policy: useQualityPolicyStore.getState().policy,
+    terrainGrid: terrain.grid,
+    terrainMetadata: terrain.metadata,
+    terrainKey: terrain.terrainKey,
+  });
+}
+
 export function ExportPanel() {
   const losResult = useAnalysisStore((s) => s.losResult);
   const activeSnapshot = useAnalysisStore((s) => s.activeSnapshot);
@@ -50,10 +78,12 @@ export function ExportPanel() {
   const terrainTransitioning = useAnalysisStore((s) => s.terrainTransitioning);
   const terrainKey = useTerrainStore((s) => s.terrainKey);
   const terrainId = useTerrainStore((s) => s.metadata?.terrain_id);
+  const visualizationMode = useVectorStore((s) => s.visualizationMode);
   const hasAnalysis = !!losResult && !!activeSnapshot && !terrainTransitioning &&
     sameTerrainKey(activeSnapshot.terrainKey, analysisTerrainKey) &&
     sameTerrainKey(activeSnapshot.terrainKey, terrainKey) &&
     terrainId === activeSnapshot.terrainKey.terrain_id;
+  const isV2Result = losResult?.quality_model === "geometric-v2";
 
   // Collapsible state
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
@@ -80,9 +110,10 @@ export function ExportPanel() {
     const result = useAnalysisStore.getState().losResult;
     if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
 
+    const qualityContext = captureQualityContext(snapshot, result);
     try {
       const exportableSnapshot = cloneAnalysisSnapshot(snapshot);
-      const blob = await exportPDF(exportableSnapshot, result);
+      const blob = await exportPDF(exportableSnapshot, result, qualityContext ?? undefined);
       if (!isCurrentExport(snapshot, result)) return;
       downloadBlob(blob, `coverage-report-${snapshot.terrainKey.terrain_id}.pdf`);
     } catch (err) {
@@ -99,9 +130,10 @@ export function ExportPanel() {
     const result = useAnalysisStore.getState().losResult;
     if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
 
+    const qualityContext = captureQualityContext(snapshot, result);
     try {
       const exportableSnapshot = cloneAnalysisSnapshot(snapshot);
-      const blob = await exportCSV(exportableSnapshot, result);
+      const blob = await exportCSV(exportableSnapshot, result, qualityContext ?? undefined);
       if (!isCurrentExport(snapshot, result)) return;
       downloadBlob(blob, `coverage-data-${snapshot.terrainKey.terrain_id}.csv`);
     } catch (err) {
@@ -142,7 +174,7 @@ export function ExportPanel() {
           width="16" 
           height="16" 
           fill="none" 
-          stroke="var(--text-secondary)" 
+          stroke="var(--text-secondary)"
           strokeWidth="2.5" 
           strokeLinecap="round" 
           strokeLinejoin="round"
@@ -159,10 +191,19 @@ export function ExportPanel() {
         <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
           {hasAnalysis ? (
             <div className="text-sm" style={{ marginBottom: "2px" }}>
-              <div><span className="text-value">Coverage:</span> {formatPercent(losResult!.coverage_pct)}</div>
+              <div><span className="text-value">Visibilidad (candidatos):</span> {formatPercent(losResult!.coverage_pct)}</div>
               <div><span className="text-value">Completeness:</span> {formatPercent(losResult!.completeness_pct)}</div>
               <div><span className="text-value">Visible area:</span> {Number.isFinite(losResult!.visible_area_m2) ? `${losResult!.visible_area_m2.toFixed(0)} m²` : "Sin datos"}</div>
               <div><span className="text-value">Shadow zones:</span> {losResult!.shadow_zones.length}</div>
+              {isV2Result ? (
+                <div>
+                  Los informes PDF y CSV incluyen cobertura útil y calidad (métrica: {metricLabel(metricForVisualizationMode(visualizationMode))}).
+                </div>
+              ) : (
+                <div>
+                  Resultado sin modelo de calidad v2: los informes no incluyen cobertura útil y conservan la visibilidad (candidatos).
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-sm" style={{ marginBottom: "2px", margin: "0 0 4px 0" }}>

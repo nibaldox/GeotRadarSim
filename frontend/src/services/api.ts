@@ -34,6 +34,7 @@ import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
 import type { SensitivityWorkerInput, SensitivityWorkerOutput } from "../workers/vectorWorker";
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
 import type { LOSResponse } from "../types/api";
+import type { QualityExportContext } from "../utils/qualityReport";
 import { validateTerrainGridDimensions, validateTerrainResolution } from "../utils/terrainLimits";
 import { terrainGradientAt } from "../utils/sensitivity";
 
@@ -549,18 +550,26 @@ export async function getRadar(modelId: string): Promise<RadarConfig> {
 // Export endpoints
 // ────────────────────────────────────────────
 
-export async function exportPDF(snapshot: AnalysisSnapshot, customResult?: LOSResponse): Promise<Blob> {
+export async function exportPDF(
+  snapshot: AnalysisSnapshot,
+  customResult?: LOSResponse,
+  context?: QualityExportContext
+): Promise<Blob> {
   if (!snapshot || !customResult) {
     throw new Error("No analysis data available to export. Run LOS analysis first.");
   }
-  return generatePDFBlob(snapshot, customResult);
+  return generatePDFBlob(snapshot, customResult, context);
 }
 
-export async function exportCSV(snapshot: AnalysisSnapshot, customResult?: LOSResponse): Promise<Blob> {
+export async function exportCSV(
+  snapshot: AnalysisSnapshot,
+  customResult?: LOSResponse,
+  context?: QualityExportContext
+): Promise<Blob> {
   if (!snapshot || !customResult) {
     throw new Error("No analysis data available to export. Run LOS analysis first.");
   }
-  return generateCSVBlob(snapshot, customResult);
+  return generateCSVBlob(snapshot, customResult, context);
 }
 
 function inflateLOSResult(

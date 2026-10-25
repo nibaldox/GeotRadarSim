@@ -39,6 +39,8 @@ vi.mock("@react-three/drei", async () => {
 import { useAnalysisStore } from "../store/analysisStore";
 import type { HistoryEntry } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
+import { useVectorStore } from "../store/vectorStore";
+import { useQualityPolicyStore } from "../store/qualityPolicyStore";
 import type { AnalysisSnapshot } from "../types/api";
 import * as api from "../services/api";
 import type { LOSResponse } from "../types/api";
@@ -55,6 +57,8 @@ beforeEach(() => {
     selectedRadarId: null,
     radarPosition: null,
   });
+  useQualityPolicyStore.getState().resetPolicy();
+  useVectorStore.setState({ sensitivityMap: null, visualizationMode: "QUALITY", loading: false, error: null });
   useTerrainStore.setState({
     metadata: null,
     grid: null,
@@ -174,7 +178,7 @@ describe("ExportPanel", () => {
 
     render(<ExportPanel />);
 
-    expect(screen.getByText(/Coverage:/).parentElement).toHaveTextContent("100.0%");
+    expect(screen.getByText(/Visibilidad \(candidatos\):/).parentElement).toHaveTextContent("100.0%");
   });
 
   it("shows no-data instead of zero coverage for an empty candidate set", () => {
@@ -500,5 +504,163 @@ describe("ExportPanel", () => {
     expect(scene.querySelectorAll("mesh")).toHaveLength(5);
     expect(toBlob).toHaveBeenCalledWith(expect.any(Function), "image/png");
     await waitFor(() => expect(downloadedFilenames).toEqual(["terrain-snapshot-t1.png"]));
+  });
+});
+
+// ─── Quality-report context captured at the click (geometric-v2) ────────────
+
+const v2TerrainGrid = [[0, 0, 0], [0, Number.NaN, 0]];
+
+function v2Result(): LOSResponse {
+  return {
+    shadow_grid: [[false, false, false], [true, false, false]],
+    cell_states: new Uint8Array([5, 5, 5, 4, 0, 1]),
+    grid_rows: 2,
+    grid_cols: 3,
+    resolution: 2,
+    coverage_polygon: [],
+    coverage_pct: 80,
+    completeness_pct: 82.5,
+    visible_area_m2: 12,
+    shadow_zones: [{ zone_id: 1, cell_count: 1 }],
+    quality_grid: [[0, 0.5, 0], [0, 0, 0]],
+    flat_quality_grid: new Float32Array([0, 0.5, Number.NaN, -1, -1, -1]),
+    flat_projection_grid: new Float32Array([Number.NaN, 0.8, 0.25, Number.NaN, Number.NaN, Number.NaN]),
+    quality_model: "geometric-v2",
+  };
+}
+
+function setV2ExportableAnalysis(result = v2Result()) {
+  useAnalysisStore.setState({
+    losResult: result,
+    activeSnapshot: exportSnapshot,
+    terrainKey: exportSnapshot.terrainKey,
+    terrainTransitioning: false,
+    selectedRadarId: "groundprobe-ssr-fx",
+    radarPosition: exportSnapshot.radars[0]!.position,
+  });
+  useTerrainStore.setState({
+    metadata: {
+      terrain_id: "t1",
+      bounds: { min_x: 0, min_y: 0, min_z: 0, max_x: 1, max_y: 1, max_z: 1 },
+      resolution: 2,
+      grid_rows: 2,
+      grid_cols: 3,
+    },
+    grid: v2TerrainGrid,
+    terrainKey: exportSnapshot.terrainKey,
+    terrainEpoch: 1,
+  });
+}
+
+describe("ExportPanel quality context", () => {
+  it("captures metric, policy and summary at click time, before the export resolves", async () => {
+    let resolveExport!: (blob: Blob) => void;
+    const delayed = new Promise<Blob>((resolve) => { resolveExport = resolve; });
+    const exporter = vi.spyOn(api, "exportPDF").mockReturnValue(delayed);
+    class MockURL extends URL {
+      static createObjectURL = vi.fn(() => "blob:quality-context");
+      static revokeObjectURL = vi.fn();
+    }
+    vi.stubGlobal("URL", MockURL);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    useQualityPolicyStore.getState().setPolicy({ mediumMin: 0.4, highMin: 0.8 });
+    useVectorStore.setState({ visualizationMode: "SENSITIVITY" });
+    setV2ExportableAnalysis();
+
+    render(<ExportPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /pdf report/i }));
+    await waitFor(() => expect(exporter).toHaveBeenCalledOnce());
+
+    // policy edits after the click must never reach the captured report
+    useQualityPolicyStore.getState().setPolicy({ mediumMin: 0.1, highMin: 0.2 });
+
+    const context = exporter.mock.calls[0]![2];
+    expect(context).toBeDefined();
+    expect(context!.metric).toBe("PROJECTION");
+    expect(context!.policy).toEqual({ mediumMin: 0.4, highMin: 0.8 });
+    expect(context!.summary.policy).toEqual({ mediumMin: 0.4, highMin: 0.8 });
+    expect(context!.summary.metric).toBe("PROJECTION");
+    expect(context!.target.label).toBe("Topografía válida completa");
+    expect(context!.target.cellCount).toBe(5);
+    expect(context!.summary.visibleCount).toBe(3);
+    expect(context!.summary.usefulCount).toBe(1);
+    expect(context!.terrainKey).toEqual({ terrain_id: "t1", epoch: 1 });
+    expect(context!.sourceAnalysisIds).toEqual(["job-original"]);
+
+    resolveExport(new Blob(["late quality export"]));
+    await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
+  });
+
+  it("downloads the CSV with the useful-coverage report through the real export path", async () => {
+    class MockURL extends URL {
+      static createObjectURL = vi.fn((_blob: Blob) => "blob:real-csv");
+      static revokeObjectURL = vi.fn();
+    }
+    vi.stubGlobal("URL", MockURL);
+    const downloadedFilenames: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloadedFilenames.push(this.download);
+    });
+    setV2ExportableAnalysis();
+
+    render(<ExportPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /csv data/i }));
+
+    await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
+    const blob = MockURL.createObjectURL.mock.calls[0]![0] as Blob;
+    const csv = await blob.text();
+    expect(csv).toContain("# Informe de calidad (cobertura útil)");
+    expect(csv).toContain("# Métrica del índice,Incidencia superficial");
+    expect(csv).toContain("# Cobertura útil %,20.00");
+    expect(csv).toContain("row,col,state,incidence,projection,shadowed");
+    await waitFor(() => expect(downloadedFilenames).toEqual(["coverage-data-t1.csv"]));
+  });
+
+  it("exports the projection metric when the sensitivity layer is selected", async () => {
+    class MockURL extends URL {
+      static createObjectURL = vi.fn((_blob: Blob) => "blob:projection-csv");
+      static revokeObjectURL = vi.fn();
+    }
+    vi.stubGlobal("URL", MockURL);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    useVectorStore.setState({ visualizationMode: "SENSITIVITY" });
+    setV2ExportableAnalysis();
+
+    render(<ExportPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /csv data/i }));
+
+    await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
+    const csv = await (MockURL.createObjectURL.mock.calls[0]![0] as Blob).text();
+    expect(csv).toContain("# Métrica del índice,Proyección del movimiento");
+    expect(csv).toContain("# Distribución alta %,33.33 (1)");
+    expect(csv).toContain("# Sin índice %,33.33 (1)");
+  });
+
+  it("downloads the legacy report without inventing a quality summary for unversioned results", async () => {
+    class MockURL extends URL {
+      static createObjectURL = vi.fn((_blob: Blob) => "blob:legacy-csv");
+      static revokeObjectURL = vi.fn();
+    }
+    vi.stubGlobal("URL", MockURL);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    setExportableAnalysis();
+
+    render(<ExportPanel />);
+    expect(screen.getByText(/no incluyen cobertura útil/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /csv data/i }));
+
+    await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
+    const csv = await (MockURL.createObjectURL.mock.calls[0]![0] as Blob).text();
+    expect(csv).toContain("row,col,state,quality,shadowed");
+    expect(csv).toContain("# Visibilidad (candidatos) %,100.00");
+    expect(csv).not.toContain("# Informe de calidad");
+    expect(csv).not.toContain("# Cobertura útil %");
+  });
+
+  it("tells the user the PDF/CSV reports include useful coverage for v2 results", () => {
+    setV2ExportableAnalysis();
+    render(<ExportPanel />);
+    expect(screen.getByText(/incluyen cobertura útil/i)).toBeInTheDocument();
   });
 });
