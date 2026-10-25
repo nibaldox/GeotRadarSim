@@ -28,11 +28,29 @@ vi.mock("@react-three/fiber", async () => {
   };
 });
 
-vi.mock("@react-three/drei", () => ({
-  OrbitControls: () => null,
-  GizmoHelper: () => null,
-  GizmoViewport: () => null,
-}));
+vi.mock("@react-three/drei", async () => {
+  const React = await import("react");
+  return {
+    OrbitControls: () => null,
+    GizmoHelper: () => null,
+    GizmoViewport: () => null,
+    // DOM stand-in carrying the Billboard props so tests can assert the
+    // camera-facing wrapper and its anchor placement.
+    Billboard: ({
+      children,
+      ...props
+    }: {
+      children?: import("react").ReactNode;
+      [key: string]: unknown;
+    }) => {
+      const attrs: Record<string, string> = {};
+      for (const [key, value] of Object.entries(props)) {
+        attrs[key] = Array.isArray(value) ? value.join(",") : String(value);
+      }
+      return React.createElement("billboard", attrs, children);
+    },
+  };
+});
 
 const grid = [
   [0, 0, 0, 0],
@@ -340,17 +358,34 @@ describe("TerrainViewer quality legend", () => {
 });
 
 describe("TerrainViewer radar marker visibility", () => {
-  // QA baseline case: f8_relimit.stl 217 x 274 m at 5 m, TOP auto-fit, 3 selected snapshots.
-  const qaBounds = { min_x: 93222, min_y: 2900, max_x: 93439, max_y: 3200, min_z: 21700, max_z: 21974 };
+  // QA baseline: real f8 terrain metadata — bounds and radar positions as
+  // reported by the backend (274 cols x 217 rows at 5 m resolution = 1365 m
+  // E-W x 1080 m N-S horizontal extent, 322 m elevation relief). Terrain
+  // heights come from the shared synthetic grid fixture, not from the real STL.
+  const qaBounds = {
+    min_x: 92829.5859375,
+    max_x: 94194.5859375,
+    min_y: 21521.220703125,
+    max_y: 22601.220703125,
+    min_z: 2899.84619140625,
+    max_z: 3222.44482421875,
+  };
   const qaKey = { terrain_id: "terrain-f8", epoch: 1 };
   const qaPositions = [
-    { x: 93250, y: 3018, z: 21750 },
-    { x: 93320, y: 3020, z: 21800 },
-    { x: 93400, y: 3022, z: 21850 },
+    { x: 93329.5859375, y: 21791.220703125, z: 3018.204698917729 },
+    { x: 93514.5859375, y: 21791.220703125, z: 3078.937841253482 },
+    { x: 93699.5859375, y: 21791.220703125, z: 3019.598779685979 },
   ];
 
   const api = TerrainViewerApi as unknown as {
-    radarMarkerRadii?: (bounds: typeof qaBounds) => { core: number; ring: number; outer: number };
+    radarMarkerRadii?: (bounds: {
+      min_x: number;
+      max_x: number;
+      min_y: number;
+      max_y: number;
+      min_z?: number;
+      max_z?: number;
+    }) => { core: number; ring: number; outer: number };
     createMarkerHalo?: (core: number, ring: number, outer: number) => THREE.Group;
   };
 
@@ -415,10 +450,19 @@ describe("TerrainViewer radar marker visibility", () => {
     expect(sphereRadius(placed)).toBeGreaterThanOrEqual(10);
     expect(sphereRadius(placed)).toBeLessThanOrEqual(12);
     expect(placed.querySelector("meshstandardmaterial")).toHaveAttribute("color", "white");
-    expect(placed).toHaveAttribute("position", "28,50,-118");
-    const halo = scene.querySelector('primitive[name="radar-current-marker-halo"]')!;
+    const placedAnchor = placed.getAttribute("position")!.split(",").map(Number);
+    expect(placedAnchor[0]).toBeCloseTo(qaPositions[0]!.x - qaBounds.min_x, 6);
+    expect(placedAnchor[1]).toBeCloseTo(qaPositions[0]!.z - qaBounds.min_z, 6);
+    expect(placedAnchor[2]).toBeCloseTo(qaBounds.min_y - qaPositions[0]!.y, 6);
+    const halo = scene.querySelector('billboard[name="radar-current-marker-halo"]')!;
     expect(halo).not.toBeNull();
-    expect(halo).toHaveAttribute("position", "28,50,-118");
+    expect(halo).toHaveAttribute("follow", "true");
+    expect(halo.querySelector("primitive")).not.toBeNull();
+    const haloAnchor = halo.getAttribute("position")!.split(",").map(Number);
+    expect(haloAnchor[0]).toBeCloseTo(qaPositions[0]!.x - qaBounds.min_x, 6);
+    // Lift stays along world Y so the rings clear the terrain surface in TOP.
+    expect(haloAnchor[1]).toBeCloseTo(qaPositions[0]!.z - qaBounds.min_z + 1.2, 6);
+    expect(haloAnchor[2]).toBeCloseTo(qaBounds.min_y - qaPositions[0]!.y, 6);
   });
 
   it("enlarges selected history icons like the snapshot icons", () => {
@@ -457,24 +501,35 @@ describe("TerrainViewer radar marker visibility", () => {
     });
   });
 
-  it("derives icon radii from terrain extent: QA bands, no giant icons on 200 m synthetic terrain, bounded extremes", () => {
+  it("derives icon radii from the horizontal map extent in metres, clamped to 6-40 m", () => {
     expect(api.radarMarkerRadii).toBeTypeOf("function");
     const radii = api.radarMarkerRadii!(qaBounds);
-    expect(radii.outer).toBeGreaterThanOrEqual(21);
-    expect(radii.outer).toBeLessThanOrEqual(25);
+    expect(radii.outer).toBeGreaterThanOrEqual(22);
+    expect(radii.outer).toBeLessThanOrEqual(24);
     expect(radii.core).toBeGreaterThanOrEqual(10);
     expect(radii.core).toBeLessThanOrEqual(12);
     expect(radii.core).toBeLessThan(radii.ring);
     expect(radii.ring).toBeLessThan(radii.outer);
 
-    const synthetic = api.radarMarkerRadii!({ min_x: 0, min_y: 0, max_x: 200, max_y: 100, min_z: 0, max_z: 200 });
-    expect(synthetic.outer).toBeLessThan(22);
+    // 200 m and 20 m synthetic terrains clamp to the 6 m minimum; huge
+    // terrains clamp to the 40 m maximum. No giant icons on small terrain.
+    const synthetic = api.radarMarkerRadii!({ min_x: 0, max_x: 200, min_y: 0, max_y: 100 });
+    expect(synthetic.outer).toBe(6);
+    const huge = api.radarMarkerRadii!({ min_x: 0, max_x: 5000, min_y: 0, max_y: 100 });
+    expect(huge.outer).toBe(40);
+    const tiny = api.radarMarkerRadii!({ min_x: 0, max_x: 20, min_y: 0, max_y: 100 });
+    expect(tiny.outer).toBe(6);
+  });
 
-    const huge = api.radarMarkerRadii!({ min_x: 0, min_y: 0, max_x: 5000, max_y: 100, min_z: 0, max_z: 5000 });
-    expect(huge.outer).toBeLessThanOrEqual(30);
+  it("sizes icons from horizontal spans only: elevation height never changes size, permuting X/Y spans keeps the scale", () => {
+    const northSouth = { min_x: 0, max_x: 400, min_y: 0, max_y: 1000, min_z: 0, max_z: 50 };
+    const deepCliff = { ...northSouth, min_z: -500, max_z: 5000 };
+    expect(api.radarMarkerRadii!(deepCliff)).toEqual(api.radarMarkerRadii!(northSouth));
 
-    const tiny = api.radarMarkerRadii!({ min_x: 0, min_y: 0, max_x: 20, max_y: 100, min_z: 0, max_z: 20 });
-    expect(tiny.outer).toBeGreaterThanOrEqual(12);
+    const eastWest = { min_x: 0, max_x: 1000, min_y: 0, max_y: 400, min_z: 0, max_z: 50 };
+    expect(api.radarMarkerRadii!(eastWest)).toEqual(api.radarMarkerRadii!(northSouth));
+    expect(api.radarMarkerRadii!(northSouth)!.outer).toBeGreaterThanOrEqual(16);
+    expect(api.radarMarkerRadii!(northSouth)!.outer).toBeLessThanOrEqual(18);
   });
 
   it("draws the contour as a white ring and black rim that never capture clicks", () => {
@@ -488,7 +543,7 @@ describe("TerrainViewer radar marker visibility", () => {
       const material = shell.material as THREE.MeshBasicMaterial;
       expect(material).toBeInstanceOf(THREE.MeshBasicMaterial);
       expect(material.color.getHexString()).toBe(hex);
-      expect(shell.position.y).toBeGreaterThan(0);
+      expect(material.depthTest).toBe(true);
     }
     const hits: THREE.Intersection[] = [];
     const probe = (shell: THREE.Mesh, x: number) => {
@@ -500,5 +555,36 @@ describe("TerrainViewer radar marker visibility", () => {
     probe(ring!, 14);
     probe(rim!, 20);
     expect(hits).toHaveLength(0);
+  });
+
+  it("disposes only its own halo geometry and materials when the halo is recreated and on unmount", () => {
+    activateQaTerrain();
+    useAnalysisStore.setState({ radarPosition: qaPositions[0]! });
+
+    const geometryDispose = vi.spyOn(THREE.RingGeometry.prototype, "dispose");
+    const materialDispose = vi.spyOn(THREE.MeshBasicMaterial.prototype, "dispose");
+    try {
+      const { rerender, unmount } = render(<TerrainViewer />);
+      expect(geometryDispose).not.toHaveBeenCalled();
+
+      // A wider horizontal extent changes the radii: the old halo's resources
+      // must be disposed, and nothing beyond the two halo bands (2+2 total).
+      useTerrainStore.setState({
+        metadata: {
+          ...useTerrainStore.getState().metadata!,
+          bounds: { ...qaBounds, max_x: qaBounds.max_x + 1000 },
+        },
+      });
+      rerender(<TerrainViewer />);
+      expect(geometryDispose).toHaveBeenCalledTimes(2);
+      expect(materialDispose).toHaveBeenCalledTimes(2);
+
+      unmount();
+      expect(geometryDispose).toHaveBeenCalledTimes(4);
+      expect(materialDispose).toHaveBeenCalledTimes(4);
+    } finally {
+      geometryDispose.mockRestore();
+      materialDispose.mockRestore();
+    }
   });
 });

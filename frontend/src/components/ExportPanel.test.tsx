@@ -29,11 +29,16 @@ vi.mock("@react-three/fiber", async () => {
   };
 });
 
-vi.mock("@react-three/drei", () => ({
-  OrbitControls: () => null,
-  GizmoHelper: () => null,
-  GizmoViewport: () => null,
-}));
+vi.mock("@react-three/drei", async () => {
+  const React = await import("react");
+  return {
+    OrbitControls: () => null,
+    GizmoHelper: () => null,
+    GizmoViewport: () => null,
+    Billboard: ({ children }: { children?: import("react").ReactNode }) =>
+      React.createElement(React.Fragment, null, children),
+  };
+});
 import { useAnalysisStore } from "../store/analysisStore";
 import type { HistoryEntry } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";

@@ -8,7 +8,7 @@
 
 import { Fragment, useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
+import { Billboard, OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
 import { getTerrainExtent, getMinElevation } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
@@ -204,25 +204,32 @@ export interface RadarMarkerRadii {
 }
 
 /**
- * Icon radii in local metres: proportional to the terrain extent so the icon
- * stays readable over LOS/Sensitivity overlays without becoming gigantic on
- * small synthetic terrains. QA baseline (274 m extent): core 11 m, outer 23 m.
+ * Icon radii in local metres, scaled by the horizontal map extent (the larger
+ * of the E-W and N-S spans — never the elevation range, which is relief, not
+ * map width). QA baseline f8 metadata (1365 m extent): outer ≈ 22.9 m.
+ * Clamped to 6–40 m so a 200 m synthetic terrain keeps a small readable icon
+ * (outer 6 m) and huge terrains do not get giant rings.
  */
 export function radarMarkerRadii(
-  bounds: { min_x: number; max_x: number; min_z: number; max_z: number },
+  bounds: { min_x: number; max_x: number; min_y: number; max_y: number },
 ): RadarMarkerRadii {
-  const extent = Math.max(bounds.max_x - bounds.min_x, bounds.max_z - bounds.min_z);
-  const outer = Math.min(Math.max(extent * 0.084, 14), 30);
+  const extent = Math.max(bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+  const outer = Math.min(Math.max(extent * 0.0168, 6), 40);
   return { core: outer * 0.48, ring: outer * 0.74, outer };
 }
 
-/** Rings sit slightly above the anchor, like the terrain overlay, to avoid z-fighting. */
+/**
+ * Rings sit slightly above the anchor, like the terrain overlay, to avoid
+ * z-fighting. The lift is applied along world Y on the Billboard so it stays
+ * vertical while the halo rotates to face the camera.
+ */
 const MARKER_RING_LIFT = 1.2;
 
 /**
  * Contour around the marker core: white ring + black rim so each radar color
  * stays distinct against red/green/cyan layers. Bands never capture pointer
- * events, so terrain clicks pass through.
+ * events, so terrain clicks pass through, and depth testing stays on so the
+ * terrain occludes the halo instead of the radar punching through mountains.
  */
 export function createMarkerHalo(core: number, ring: number, outer: number): THREE.Group {
   const halo = new THREE.Group();
@@ -232,15 +239,20 @@ export function createMarkerHalo(core: number, ring: number, outer: number): THR
   ] as const) {
     const band = new THREE.Mesh(
       new THREE.RingGeometry(inner, outerRadius, 48),
-      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, depthTest: true }),
     );
-    band.position.y = MARKER_RING_LIFT;
     band.raycast = () => null;
     halo.add(band);
   }
   return halo;
 }
 
+/**
+ * Camera-facing halo: a Billboard keeps the rings readable from every orbit
+ * and view (a flat ring is edge-on from TOP). The halo group is created
+ * manually, so its geometry/materials are disposed here when the radii change
+ * or the marker unmounts — only the resources createMarkerHalo owns.
+ */
 function MarkerHalo({
   name,
   radii,
@@ -254,7 +266,24 @@ function MarkerHalo({
     () => createMarkerHalo(radii.core, radii.ring, radii.outer),
     [radii.core, radii.ring, radii.outer],
   );
-  return <primitive name={name} object={halo} position={position} />;
+  useEffect(
+    () => () => {
+      halo.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return;
+        child.geometry.dispose();
+        const material = child.material;
+        if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
+        else material.dispose();
+      });
+    },
+    [halo],
+  );
+  const anchor: [number, number, number] = position ?? [0, 0, 0];
+  return (
+    <Billboard name={name} follow position={[anchor[0], anchor[1] + MARKER_RING_LIFT, anchor[2]]}>
+      <primitive object={halo} />
+    </Billboard>
+  );
 }
 
 const sameTerrainKey = (left: TerrainKey | null, right: TerrainKey | null): boolean =>
