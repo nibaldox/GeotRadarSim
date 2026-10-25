@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import * as THREE from "three";
 import { buildTerrainCameraPose, buildTerrainMeshGeometry, getTerrainMeshCenter, TerrainViewer } from "./TerrainViewer";
-import { useAnalysisStore } from "../store/analysisStore";
+import * as TerrainViewerApi from "./TerrainViewer";
+import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
 import type { HistoryEntry } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { useVectorStore } from "../store/vectorStore";
@@ -334,5 +336,169 @@ describe("TerrainViewer quality legend", () => {
       "rgb(218, 142, 11)",
       "rgb(11, 218, 80)",
     ]);
+  });
+});
+
+describe("TerrainViewer radar marker visibility", () => {
+  // QA baseline case: f8_relimit.stl 217 x 274 m at 5 m, TOP auto-fit, 3 selected snapshots.
+  const qaBounds = { min_x: 93222, min_y: 2900, max_x: 93439, max_y: 3200, min_z: 21700, max_z: 21974 };
+  const qaKey = { terrain_id: "terrain-f8", epoch: 1 };
+  const qaPositions = [
+    { x: 93250, y: 3018, z: 21750 },
+    { x: 93320, y: 3020, z: 21800 },
+    { x: 93400, y: 3022, z: 21850 },
+  ];
+
+  const api = TerrainViewerApi as unknown as {
+    radarMarkerRadii?: (bounds: typeof qaBounds) => { core: number; ring: number; outer: number };
+    createMarkerHalo?: (core: number, ring: number, outer: number) => THREE.Group;
+  };
+
+  function activateQaTerrain() {
+    useAnalysisStore.setState({ terrainKey: qaKey, terrainTransitioning: false });
+    useTerrainStore.setState({
+      grid,
+      metadata: {
+        terrain_id: qaKey.terrain_id,
+        bounds: qaBounds,
+        resolution: 5,
+        grid_rows: grid.length,
+        grid_cols: grid[0]!.length,
+      },
+      terrainKey: qaKey,
+      terrainEpoch: qaKey.epoch,
+    });
+  }
+
+  function qaSnapshot(): AnalysisSnapshot {
+    return {
+      ...multiSnapshot,
+      terrainKey: qaKey,
+      radars: qaPositions.map((position, index) => ({
+        radarId: `qa-${index}`,
+        radarModelId: "model-a",
+        position,
+        overrides: multiSnapshot.radars[0]!.overrides,
+      })),
+    };
+  }
+
+  function sphereRadius(container: Element): number {
+    return Number(container.querySelector("spheregeometry")!.getAttribute("args")!.split(",")[0]);
+  }
+
+  it("enlarges snapshot icons on the QA terrain with a contour and keeps each radar color on the core", () => {
+    activateQaTerrain();
+    useAnalysisStore.setState({ activeSnapshot: qaSnapshot(), losResult });
+
+    render(<TerrainViewer />);
+
+    const scene = screen.getByTestId("terrain-scene");
+    const groups = scene.querySelectorAll('group[name^="radar-snapshot-"]');
+    expect(groups).toHaveLength(3);
+    groups.forEach((group, index) => {
+      expect(sphereRadius(group)).toBeGreaterThanOrEqual(10);
+      expect(sphereRadius(group)).toBeLessThanOrEqual(12);
+      expect(group.querySelector("meshstandardmaterial")).toHaveAttribute("color", RADAR_COLORS[index]);
+      expect(group.querySelector("primitive")).not.toBeNull();
+    });
+  });
+
+  it("enlarges the placed icon with the same contour and keeps the real terrain anchor", () => {
+    activateQaTerrain();
+    useAnalysisStore.setState({ radarPosition: qaPositions[0]! });
+
+    render(<TerrainViewer />);
+
+    const scene = screen.getByTestId("terrain-scene");
+    const placed = scene.querySelector('mesh[name="radar-current-marker"]')!;
+    expect(sphereRadius(placed)).toBeGreaterThanOrEqual(10);
+    expect(sphereRadius(placed)).toBeLessThanOrEqual(12);
+    expect(placed.querySelector("meshstandardmaterial")).toHaveAttribute("color", "white");
+    expect(placed).toHaveAttribute("position", "28,50,-118");
+    const halo = scene.querySelector('primitive[name="radar-current-marker-halo"]')!;
+    expect(halo).not.toBeNull();
+    expect(halo).toHaveAttribute("position", "28,50,-118");
+  });
+
+  it("enlarges selected history icons like the snapshot icons", () => {
+    activateQaTerrain();
+    useAnalysisStore.setState({
+      history: [entry("qa-history-1", qaPositions[0]!, qaKey), entry("qa-history-2", qaPositions[1]!, qaKey)],
+    });
+
+    render(<TerrainViewer />);
+
+    const scene = screen.getByTestId("terrain-scene");
+    const groups = scene.querySelectorAll('group[name^="radar-history-"]');
+    expect(groups).toHaveLength(2);
+    groups.forEach((group) => {
+      expect(sphereRadius(group)).toBeGreaterThanOrEqual(10);
+      expect(sphereRadius(group)).toBeLessThanOrEqual(12);
+      expect(group.querySelector("primitive")).not.toBeNull();
+    });
+  });
+
+  it("scales the analysis marker post with the icon instead of a fixed thin mast", () => {
+    activateQaTerrain();
+    useAnalysisStore.setState({ activeSnapshot: qaSnapshot(), losResult });
+
+    render(<TerrainViewer />);
+
+    const scene = screen.getByTestId("terrain-scene");
+    const groups = scene.querySelectorAll('group[name^="radar-snapshot-"]');
+    expect(groups).toHaveLength(3);
+    groups.forEach((group) => {
+      const [postRadius, , postHeight] = group.querySelector("cylindergeometry")!
+        .getAttribute("args")!.split(",").map(Number);
+      expect(postRadius!).toBeGreaterThan(1);
+      expect(postHeight!).toBeGreaterThan(24);
+      expect(postHeight!).toBeLessThanOrEqual(40);
+    });
+  });
+
+  it("derives icon radii from terrain extent: QA bands, no giant icons on 200 m synthetic terrain, bounded extremes", () => {
+    expect(api.radarMarkerRadii).toBeTypeOf("function");
+    const radii = api.radarMarkerRadii!(qaBounds);
+    expect(radii.outer).toBeGreaterThanOrEqual(21);
+    expect(radii.outer).toBeLessThanOrEqual(25);
+    expect(radii.core).toBeGreaterThanOrEqual(10);
+    expect(radii.core).toBeLessThanOrEqual(12);
+    expect(radii.core).toBeLessThan(radii.ring);
+    expect(radii.ring).toBeLessThan(radii.outer);
+
+    const synthetic = api.radarMarkerRadii!({ min_x: 0, min_y: 0, max_x: 200, max_y: 100, min_z: 0, max_z: 200 });
+    expect(synthetic.outer).toBeLessThan(22);
+
+    const huge = api.radarMarkerRadii!({ min_x: 0, min_y: 0, max_x: 5000, max_y: 100, min_z: 0, max_z: 5000 });
+    expect(huge.outer).toBeLessThanOrEqual(30);
+
+    const tiny = api.radarMarkerRadii!({ min_x: 0, min_y: 0, max_x: 20, max_y: 100, min_z: 0, max_z: 20 });
+    expect(tiny.outer).toBeGreaterThanOrEqual(12);
+  });
+
+  it("draws the contour as a white ring and black rim that never capture clicks", () => {
+    expect(api.createMarkerHalo).toBeTypeOf("function");
+    const halo = api.createMarkerHalo!(11, 17, 23);
+    expect(halo.children).toHaveLength(2);
+    const [ring, rim] = halo.children as THREE.Mesh[];
+    for (const [shell, hex, extent] of [[ring!, "ffffff", 17], [rim!, "000000", 23]] as const) {
+      shell.geometry.computeBoundingSphere();
+      expect(shell.geometry.boundingSphere!.radius).toBeCloseTo(extent, 4);
+      const material = shell.material as THREE.MeshBasicMaterial;
+      expect(material).toBeInstanceOf(THREE.MeshBasicMaterial);
+      expect(material.color.getHexString()).toBe(hex);
+      expect(shell.position.y).toBeGreaterThan(0);
+    }
+    const hits: THREE.Intersection[] = [];
+    const probe = (shell: THREE.Mesh, x: number) => {
+      const raycaster = new THREE.Raycaster(new THREE.Vector3(x, 1.2, 5), new THREE.Vector3(0, 0, -1));
+      const shellHits: THREE.Intersection[] = [];
+      shell.raycast(raycaster, shellHits);
+      hits.push(...shellHits);
+    };
+    probe(ring!, 14);
+    probe(rim!, 20);
+    expect(hits).toHaveLength(0);
   });
 });

@@ -6,7 +6,7 @@
  * Uses OrbitControls for camera manipulation.
  */
 
-import { useRef, useMemo, useEffect, useState } from "react";
+import { Fragment, useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
@@ -197,6 +197,66 @@ interface RadarMarker {
   kind: "placed" | "analysis";
 }
 
+export interface RadarMarkerRadii {
+  core: number;
+  ring: number;
+  outer: number;
+}
+
+/**
+ * Icon radii in local metres: proportional to the terrain extent so the icon
+ * stays readable over LOS/Sensitivity overlays without becoming gigantic on
+ * small synthetic terrains. QA baseline (274 m extent): core 11 m, outer 23 m.
+ */
+export function radarMarkerRadii(
+  bounds: { min_x: number; max_x: number; min_z: number; max_z: number },
+): RadarMarkerRadii {
+  const extent = Math.max(bounds.max_x - bounds.min_x, bounds.max_z - bounds.min_z);
+  const outer = Math.min(Math.max(extent * 0.084, 14), 30);
+  return { core: outer * 0.48, ring: outer * 0.74, outer };
+}
+
+/** Rings sit slightly above the anchor, like the terrain overlay, to avoid z-fighting. */
+const MARKER_RING_LIFT = 1.2;
+
+/**
+ * Contour around the marker core: white ring + black rim so each radar color
+ * stays distinct against red/green/cyan layers. Bands never capture pointer
+ * events, so terrain clicks pass through.
+ */
+export function createMarkerHalo(core: number, ring: number, outer: number): THREE.Group {
+  const halo = new THREE.Group();
+  for (const [inner, outerRadius, color] of [
+    [core, ring, "#ffffff"],
+    [ring, outer, "#000000"],
+  ] as const) {
+    const band = new THREE.Mesh(
+      new THREE.RingGeometry(inner, outerRadius, 48),
+      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }),
+    );
+    band.position.y = MARKER_RING_LIFT;
+    band.raycast = () => null;
+    halo.add(band);
+  }
+  return halo;
+}
+
+function MarkerHalo({
+  name,
+  radii,
+  position,
+}: {
+  name: string;
+  radii: RadarMarkerRadii;
+  position?: [number, number, number];
+}) {
+  const halo = useMemo(
+    () => createMarkerHalo(radii.core, radii.ring, radii.outer),
+    [radii.core, radii.ring, radii.outer],
+  );
+  return <primitive name={name} object={halo} position={position} />;
+}
+
 const sameTerrainKey = (left: TerrainKey | null, right: TerrainKey | null): boolean =>
   !!left && !!right && left.terrain_id === right.terrain_id && left.epoch === right.epoch;
 
@@ -287,6 +347,7 @@ function RadarMarkers() {
 
   if (!metadata || markers.length === 0) return null;
   const bounds = metadata.bounds;
+  const radii = radarMarkerRadii(bounds);
   const toLocal = (position: Point3D): [number, number, number] => [
     position.x - bounds.min_x,
     position.z - bounds.min_z,
@@ -299,20 +360,24 @@ function RadarMarkers() {
         const position = toLocal(marker.position);
         if (marker.kind === "placed") {
           return (
-            <mesh key={marker.key} name={marker.name} position={position}>
-              <sphereGeometry args={[3, 16, 16]} />
-              <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
-            </mesh>
+            <Fragment key={marker.key}>
+              <mesh name={marker.name} position={position}>
+                <sphereGeometry args={[radii.core, 16, 16]} />
+                <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+              </mesh>
+              <MarkerHalo name={`${marker.name}-halo`} radii={radii} position={position} />
+            </Fragment>
           );
         }
         return (
           <group key={marker.key} name={marker.name} position={position}>
             <mesh>
-              <sphereGeometry args={[4, 16, 16]} />
+              <sphereGeometry args={[radii.core, 16, 16]} />
               <meshStandardMaterial color={marker.color} emissive={marker.color} emissiveIntensity={0.4} />
             </mesh>
-            <mesh position={[0, 6, 0]}>
-              <cylinderGeometry args={[0.5, 0.5, 12, 8]} />
+            <MarkerHalo name={`${marker.name}-halo`} radii={radii} />
+            <mesh position={[0, radii.core * 1.5, 0]}>
+              <cylinderGeometry args={[radii.core / 8, radii.core / 8, radii.core * 3, 8]} />
               <meshStandardMaterial color={marker.color} />
             </mesh>
           </group>
