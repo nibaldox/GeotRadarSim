@@ -11,6 +11,8 @@ import {
 } from "./ShadowOverlay";
 import { useAnalysisStore } from "../store/analysisStore";
 import { useVectorStore } from "../store/vectorStore";
+import { useQualityPolicyStore } from "../store/qualityPolicyStore";
+import { DEFAULT_QUALITY_POLICY } from "../utils/qualityMetrics";
 
 describe("ShadowOverlay cell-state classification", () => {
   it("classifies merged LOS states without ever treating NODATA as shadow", () => {
@@ -99,7 +101,11 @@ describe("ShadowOverlay per-cell sensitivity mask", () => {
 // are the very THREE.DataTexture uploads the component built from the LOS
 // response, so the assertions cover the real CPU→shader seam.
 
-type ShaderTexture = { image: { data: ArrayLike<number>; width: number; height: number } };
+type ShaderTexture = {
+  image: { data: ArrayLike<number>; width: number; height: number };
+  minFilter?: number;
+  magFilter?: number;
+};
 
 interface ShaderUniforms {
   qualityTexture: ShaderTexture | null;
@@ -107,6 +113,8 @@ interface ShaderUniforms {
   observerCountTexture: ShaderTexture | null;
   opacity: number;
   mapMode: number;
+  mediumMin: number;
+  highMin: number;
 }
 
 interface CapturedMaterial {
@@ -181,7 +189,7 @@ function runFragmentShader(source: string, uniforms: ShaderUniforms, vUv: [numbe
     .replace(/\breturn\s*;/g, "return glFragColor;");
   const compiled = new Function(
     "uniforms", "vUv", "sampleTexture", "vec", "mix", "floor", "DiscardSignal",
-    `const { qualityTexture, cellStateTexture, observerCountTexture, opacity, mapMode } = uniforms;
+    `const { qualityTexture, cellStateTexture, observerCountTexture, opacity, mapMode, mediumMin, highMin } = uniforms;
      let glFragColor = null;
      ${body}
      return glFragColor;`,
@@ -214,9 +222,12 @@ interface OverlayFixture {
   quality?: number[];
   observerCounts?: number[];
   sensitivity?: number[];
+  /** Score-model tag of the LOS result; undefined renders a legacy result. */
+  qualityModel?: string | undefined;
+  policy?: { mediumMin: number; highMin: number };
 }
 
-function renderOverlayMaterial(fixture: OverlayFixture): CapturedMaterial {
+function renderOverlayMaterial(fixture: OverlayFixture): CapturedMaterial | null {
   const cellCount = OVERLAY_ROWS * OVERLAY_COLS;
   const losResult: LOSResponse = {
     shadow_grid: Array.from({ length: OVERLAY_ROWS }, () => Array<boolean>(OVERLAY_COLS).fill(false)),
@@ -230,6 +241,10 @@ function renderOverlayMaterial(fixture: OverlayFixture): CapturedMaterial {
     visible_area_m2: 1,
     shadow_zones: [],
     flat_quality_grid: Float32Array.from(fixture.quality ?? Array<number>(cellCount).fill(-1)),
+    ...(fixture.qualityModel === undefined
+      ? {}
+      : { quality_model: fixture.qualityModel as "geometric-v2" }),
+    flat_projection_grid: new Float32Array(cellCount),
   };
   const activeSnapshot: AnalysisSnapshot | null = fixture.mode === "SENSITIVITY" ? snapshot : null;
   const map: SensitivityMapResponse | null = fixture.mode === "SENSITIVITY"
@@ -244,10 +259,14 @@ function renderOverlayMaterial(fixture: OverlayFixture): CapturedMaterial {
     : null;
   useAnalysisStore.setState({ losResult, activeSnapshot });
   useVectorStore.setState({ visualizationMode: fixture.mode, sensitivityMap: map });
+  useQualityPolicyStore.setState({ policy: fixture.policy ?? { ...DEFAULT_QUALITY_POLICY } });
 
   const { container, unmount } = render(<ShadowOverlay grid={OVERLAY_GRID} resolution={OVERLAY_RESOLUTION} />);
   const element = container.querySelector("shadermaterial") as HTMLElement | null;
-  if (!element) throw new Error("ShadowOverlay did not bind a shader material");
+  if (!element) {
+    unmount();
+    return null;
+  }
   const readUniform = (name: string): ShaderTexture | null =>
     (element.uniforms?.[name]?.value as ShaderTexture | undefined) ?? null;
   const captured: CapturedMaterial = {
@@ -259,6 +278,10 @@ function renderOverlayMaterial(fixture: OverlayFixture): CapturedMaterial {
       // The material's `opacity` uniform default from the component's uniforms prop.
       opacity: 0.6,
       mapMode: (element.uniforms?.mapMode?.value as number | undefined) ?? Number.NaN,
+      // GPU samplers/uniforms are float32: round like WebGL uploads to keep
+      // exact-threshold boundaries faithful to the real shader.
+      mediumMin: Math.fround((element.uniforms?.mediumMin?.value as number | undefined) ?? Number.NaN),
+      highMin: Math.fround((element.uniforms?.highMin?.value as number | undefined) ?? Number.NaN),
     },
   };
   unmount();
@@ -284,9 +307,10 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
   it("paints only VISIBLE cells; SHADOW and every unobserved state leave the base terrain", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "QUALITY",
+      qualityModel: "geometric-v2",
       cellStates: [0, 1, 2, 3, 4, 5, 5, 5],
       quality: [-1, -1, -1, -1, -1, 0, 0.5, 1],
-    });
+    })!;
 
     expect(sampleCell(fragmentShader, uniforms, 0), "NODATA (state 0) must stay transparent").toBeNull();
     expect(sampleCell(fragmentShader, uniforms, 1), "OUT_OF_RANGE (state 1) must stay transparent").toBeNull();
@@ -298,45 +322,133 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
   it("keeps a VISIBLE cell with a measured quality of exactly zero painted red", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "QUALITY",
+      qualityModel: "geometric-v2",
       cellStates: [0, 0, 0, 0, 0, 5, 0, 0],
       quality: [-1, -1, -1, -1, -1, 0, -1, -1],
-    });
+    })!;
 
-    // Low end of the VISIBLE index ramp: a measured 0.0 is data, not absence.
+    // Low band of the VISIBLE index: a measured 0.0 is data, not absence.
     expectColor(sampleCell(fragmentShader, uniforms, 5), [0.9, 0.1, 0.1, 0.6]);
   });
 
-  it("colors the VISIBLE index ramp red, yellow and green across 0-1", () => {
+  it("shades the three configured categories red, yellow and green with strict policy boundaries", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "QUALITY",
-      cellStates: [0, 0, 0, 0, 5, 5, 5, 0],
-      quality: [-1, -1, -1, -1, 0, 0.5, 1, -1],
-    });
+      qualityModel: "geometric-v2",
+      cellStates: [5, 5, 5, 5, 5, 5, 5, 5],
+      quality: [0, 0.2999, 0.3, 0.6999, 0.7, 1, 0.5, 0.5],
+    })!;
+    expect(uniforms.mediumMin).toBe(Math.fround(DEFAULT_QUALITY_POLICY.mediumMin));
+    expect(uniforms.highMin).toBe(Math.fround(DEFAULT_QUALITY_POLICY.highMin));
 
-    expectColor(sampleCell(fragmentShader, uniforms, 4), [0.9, 0.1, 0.1, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 5), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 6), [0, 0.9, 0.2, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 0), [0.9, 0.1, 0.1, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 1), [0.9, 0.1, 0.1, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 2), [1, 0.8, 0, 0.6]);   // exactly mediumMin → medium
+    expectColor(sampleCell(fragmentShader, uniforms, 3), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 4), [0, 0.9, 0.2, 0.6]); // exactly highMin → high
+    expectColor(sampleCell(fragmentShader, uniforms, 5), [0, 0.9, 0.2, 0.6]);
   });
 
-  it("keeps the 3D sensitivity mode keyed on observer counts, not merged states", () => {
+  it("follows the editable policy in both color layers without recomputing LOS", () => {
+    const policy = { mediumMin: 0.25, highMin: 0.75 };
+    const quality = renderOverlayMaterial({
+      mode: "QUALITY",
+      qualityModel: "geometric-v2",
+      cellStates: [5, 5, 5, 5, 0, 0, 0, 0],
+      quality: [0.24, 0.25, 0.74, 0.75, -1, -1, -1, -1],
+      policy,
+    })!;
+    expect(quality.uniforms.mediumMin).toBe(0.25);
+    expect(quality.uniforms.highMin).toBe(0.75);
+    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 0), [0.9, 0.1, 0.1, 0.6]);
+    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 1), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 2), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 3), [0, 0.9, 0.2, 0.6]);
+
+    const movement = renderOverlayMaterial({
+      mode: "SENSITIVITY",
+      cellStates: [5, 5, 5, 5, 5, 5, 5, 5],
+      observerCounts: [1, 1, 1, 1, 1, 1, 1, 1],
+      sensitivity: [0.24, 0.25, 0.74, 0.75, 0, 1, 0.5, 0.5],
+      policy,
+    })!;
+    expect(movement.uniforms.mediumMin).toBe(0.25);
+    expect(movement.uniforms.highMin).toBe(0.75);
+    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 0), [0.9, 0.1, 0.1, 0.6]);
+    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 1), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 2), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 3), [0, 0.9, 0.2, 0.6]);
+  });
+
+  it("uploads quality values with nearest filtering so excluded texels cannot bleed into visible cells", () => {
+    for (const mode of ["QUALITY", "SENSITIVITY"] as const) {
+      const captured = renderOverlayMaterial({
+        mode,
+        qualityModel: "geometric-v2",
+        cellStates: [5, 5, 5, 5, 5, 5, 5, 5],
+        quality: [1, -1, -1, -1, -1, -1, -1, -1],
+        observerCounts: [1, 0, 0, 0, 0, 0, 0, 0],
+        sensitivity: [1, 0, 0, 0, 0, 0, 0, 0],
+      })!;
+      expect(captured.uniforms.qualityTexture!.minFilter, `${mode} minFilter`).toBe(THREE.NearestFilter);
+      expect(captured.uniforms.qualityTexture!.magFilter, `${mode} magFilter`).toBe(THREE.NearestFilter);
+    }
+  });
+
+  it("discards invalid or missing indices as transparent while keeping measured zeros painted", () => {
+    const { fragmentShader, uniforms } = renderOverlayMaterial({
+      mode: "QUALITY",
+      qualityModel: "geometric-v2",
+      // VISIBLE cells with sentinel -1 (invalid) and NaN (missing index) must not be painted.
+      cellStates: [5, 5, 5, 5, 0, 0, 0, 0],
+      quality: [-1, Number.NaN, 0, 0.5, -1, -1, -1, -1],
+    })!;
+
+    expect(sampleCell(fragmentShader, uniforms, 0), "invalid sentinel must stay transparent").toBeNull();
+    expect(sampleCell(fragmentShader, uniforms, 1), "missing index must stay transparent").toBeNull();
+    expectColor(sampleCell(fragmentShader, uniforms, 2), [0.9, 0.1, 0.1, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 3), [1, 0.8, 0, 0.6]);
+  });
+
+  it("refuses to draw legacy unversioned quality under the v2 incidence legend", () => {
+    const legacy = renderOverlayMaterial({
+      mode: "QUALITY",
+      qualityModel: undefined,
+      cellStates: [5, 5, 5, 5, 5, 5, 5, 5],
+      quality: [1, 1, 1, 1, 1, 1, 1, 1],
+    });
+    expect(legacy).toBeNull();
+
+    // The projection layer is version-independent: its own worker provenance gates it.
+    const movement = renderOverlayMaterial({
+      mode: "SENSITIVITY",
+      qualityModel: undefined,
+      cellStates: [5, 5, 5, 5, 5, 5, 5, 5],
+      observerCounts: [1, 1, 1, 1, 1, 1, 1, 1],
+      sensitivity: [1, 1, 1, 1, 1, 1, 1, 1],
+    });
+    expect(movement).not.toBeNull();
+  });
+
+  it("keeps the 3D movement-projection mode keyed on observer counts, not merged states", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "SENSITIVITY",
       cellStates: [5, 5, 5, 5, 4, 4, 0, 2],
       observerCounts: [0, 1, 2, 3, 2, 1, 1, 1],
       sensitivity: [0.75, 0, 1, 0.5, 0.5, 0.5, 0.5, 0.5],
-    });
+    })!;
 
     // No contributors means no measurement, not a zero value.
     expect(sampleCell(fragmentShader, uniforms, 0), "zero observers must stay transparent").toBeNull();
-    // A measured zero with a contributor stays painted.
-    expectColor(sampleCell(fragmentShader, uniforms, 1), [0.5, 0.0, 0.5, 0.6]);
+    // A measured zero with a contributor stays painted (low band).
+    expectColor(sampleCell(fragmentShader, uniforms, 1), [0.9, 0.1, 0.1, 0.6]);
     expectColor(sampleCell(fragmentShader, uniforms, 2), [0, 0.9, 0.2, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 3), [0.025, 0.65, 0.8, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 3), [1, 0.8, 0, 0.6]);
     // The merged LOS state is not a visibility proxy here: SHADOW/NODATA/
-    // OUTSIDE_FOV cells with contributors still show their sensitivity.
-    expectColor(sampleCell(fragmentShader, uniforms, 4), [0.025, 0.65, 0.8, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 5), [0.025, 0.65, 0.8, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 6), [0.025, 0.65, 0.8, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 7), [0.025, 0.65, 0.8, 0.6]);
+    // OUTSIDE_FOV cells with contributors still show their projection.
+    expectColor(sampleCell(fragmentShader, uniforms, 4), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 5), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 6), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 7), [1, 0.8, 0, 0.6]);
   });
 });

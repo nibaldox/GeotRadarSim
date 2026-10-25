@@ -14,6 +14,9 @@ import { getTerrainExtent, getMinElevation } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
 import { useVectorStore } from "../store/vectorStore";
+import { useQualityPolicyStore } from "../store/qualityPolicyStore";
+import { formatBandRange } from "../utils/qualityMetrics";
+import type { QualityBand, QualityPolicy } from "../utils/qualityMetrics";
 import { ShadowOverlay } from "./ShadowOverlay";
 import type { Point3D } from "../types/api";
 import type { TerrainKey } from "../store/analysisStore";
@@ -24,6 +27,42 @@ interface TerrainMeshProps {
   showShadowOverlay: boolean;
   onTerrainClick?: (point: { x: number; y: number; z: number }) => void;
   activeTool: "PAN" | "ADD_RADAR";
+}
+
+/** Band swatch colors shared by both layers: low/red, medium/yellow, high/green. */
+const BAND_SWATCH: Record<QualityBand, string> = {
+  low: "hsl(351, 80%, 50%)",
+  medium: "hsl(38, 90%, 45%)",
+  high: "hsl(140, 90%, 45%)",
+};
+
+/** One configured category row shared by the incidence and projection legends. */
+function legendBandRow(
+  band: QualityBand,
+  policy: QualityPolicy,
+  labelEn: string,
+  labelEs: string,
+  descEn: string,
+  descEs: string,
+) {
+  const range = formatBandRange(band, policy);
+  return (
+    <div className="hud-legend-row" key={band}>
+      <div className="hud-legend-color" style={{ background: BAND_SWATCH[band] }} />
+      <div>
+        <span className="hud-legend-label">
+          <span lang="en">{labelEn} ({range})</span>
+          {" / "}
+          <span lang="es">{labelEs} ({range})</span>
+        </span>
+        <div className="hud-legend-desc">
+          <span lang="en">{descEn}</span>
+          {" / "}
+          <span lang="es">{descEs}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Local X/Z of a DEM node: (col * resolution, -row * resolution). */
@@ -450,6 +489,7 @@ export function TerrainViewer({
   const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR">("PAN");
   const [cameraView, setCameraView] = useState<"HOME" | "TOP" | "FRONT" | "SIDE" | null>(null);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
+  const policy = useQualityPolicyStore((s) => s.policy);
 
   // Tool explanations mapping
   const toolExplanations = {
@@ -600,15 +640,15 @@ export function TerrainViewer({
           <div className="hud-legend-title">
             {visualizationMode === "SENSITIVITY" ? (
               <>
-                <span lang="en">Geometric projection index</span>
+                <span lang="en">Movement projection</span>
                 {" / "}
-                <span lang="es">Índice de proyección geométrica</span>
+                <span lang="es">Proyección del movimiento</span>
               </>
             ) : (
               <>
-                <span lang="en">Geometric line-of-sight (LOS) index</span>
+                <span lang="en">Surface incidence index (geometric v2)</span>
                 {" / "}
-                <span lang="es">Índice geométrico de línea de vista (LOS)</span>
+                <span lang="es">Índice de incidencia superficial (geométrico v2)</span>
               </>
             )}
           </div>
@@ -633,55 +673,39 @@ export function TerrainViewer({
                   </div>
                 </div>
               </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(300, 100%, 25%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">Low geometric projection (0.0 - 0.2)</span>
-                    {" / "}
-                    <span lang="es">Proyección geométrica baja (0.0 - 0.2)</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Lower geometric projection magnitude.</span>
-                    {" / "}
-                    <span lang="es">Menor magnitud de proyección geométrica.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(220, 80%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">Intermediate geometric projection (0.2 - 0.6)</span>
-                    {" / "}
-                    <span lang="es">Proyección geométrica intermedia (0.2 - 0.6)</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Intermediate geometric projection magnitude.</span>
-                    {" / "}
-                    <span lang="es">Magnitud de proyección geométrica intermedia.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">High geometric projection (0.6 - 1.0)</span>
-                    {" / "}
-                    <span lang="es">Proyección geométrica alta (0.6 - 1.0)</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Higher geometric projection magnitude.</span>
-                    {" / "}
-                    <span lang="es">Mayor magnitud de proyección geométrica.</span>
-                  </div>
-                </div>
-              </div>
+              {legendBandRow(
+                "low",
+                policy,
+                "Low projection",
+                "Proyección baja",
+                "Lower movement-projection magnitude.",
+                "Menor magnitud de proyección del movimiento.",
+              )}
+              {legendBandRow(
+                "medium",
+                policy,
+                "Medium projection",
+                "Proyección media",
+                "Intermediate movement-projection magnitude.",
+                "Magnitud intermedia de proyección del movimiento.",
+              )}
+              {legendBandRow(
+                "high",
+                policy,
+                "High projection",
+                "Proyección alta",
+                "Higher movement-projection magnitude.",
+                "Mayor magnitud de proyección del movimiento.",
+              )}
               <div className="hud-legend-desc">
                 <span lang="en">One contributor: |dot| between the maximum-slope direction and radar line of sight (LOS); multiple contributors: RMS(dotᵢ) across contributors. A measured zero has at least one contributor; no contributors means no data, not zero. These are geometric-index ranges, not detection thresholds or RF/SNR performance.</span>
                 {" / "}
                 <span lang="es">Con un contribuyente: |dot| entre la dirección de máxima pendiente y la línea de vista (LOS) del radar; con varios contribuyentes: RMS(dotᵢ) entre ellos. Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. Son intervalos de un índice geométrico, no umbrales de detección ni rendimiento RF/SNR.</span>
+              </div>
+              <div className="hud-legend-desc">
+                <span lang="en">The 3D layer paints a scalar projection on the terrain surface under the assumed maximum-slope motion; it is not a volumetric reconstruction nor a full 3-axis displacement inversion.</span>
+                {" / "}
+                <span lang="es">La capa 3D pinta una proyección escalar sobre la superficie del terreno bajo el movimiento supuesto de máxima pendiente; no es una reconstrucción volumétrica ni una inversión completa de desplazamiento en 3 ejes.</span>
               </div>
             </>
           ) : (
@@ -709,63 +733,48 @@ export function TerrainViewer({
                   </div>
                 </div>
               </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(351, 80%, 50%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">Low geometric index (0.0 - 0.3)</span>
-                    {" / "}
-                    <span lang="es">Índice geométrico bajo (0.0 - 0.3)</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Lower band of the geometric index.</span>
-                    {" / "}
-                    <span lang="es">Intervalo bajo del índice geométrico.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(38, 90%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">Intermediate geometric index (0.3 - 0.7)</span>
-                    {" / "}
-                    <span lang="es">Índice geométrico intermedio (0.3 - 0.7)</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Intermediate band of the geometric index.</span>
-                    {" / "}
-                    <span lang="es">Intervalo intermedio del índice geométrico.</span>
-                  </div>
-                </div>
-              </div>
-              <div className="hud-legend-row">
-                <div className="hud-legend-color" style={{ background: "hsl(140, 90%, 45%)" }} />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">High geometric index (0.7 - 1.0)</span>
-                    {" / "}
-                    <span lang="es">Índice geométrico alto (0.7 - 1.0)</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Higher band of the geometric index.</span>
-                    {" / "}
-                    <span lang="es">Intervalo alto del índice geométrico.</span>
-                  </div>
-                </div>
-              </div>
+              {legendBandRow(
+                "low",
+                policy,
+                "Low incidence",
+                "Incidencia baja",
+                "Lower band of the surface incidence index.",
+                "Intervalo bajo del índice de incidencia superficial.",
+              )}
+              {legendBandRow(
+                "medium",
+                policy,
+                "Medium incidence",
+                "Incidencia media",
+                "Intermediate band of the surface incidence index.",
+                "Intervalo intermedio del índice de incidencia superficial.",
+              )}
+              {legendBandRow(
+                "high",
+                policy,
+                "High incidence",
+                "Incidencia alta",
+                "Higher band of the surface incidence index.",
+                "Intervalo alto del índice de incidencia superficial.",
+              )}
               <div className="hud-legend-desc">
                 <span lang="en">Only VISIBLE cells have this geometric index. A displayed value of 0.0 is measured; missing data is transparent.</span>
                 {" / "}
                 <span lang="es">El índice geométrico se calcula solo para celdas VISIBLE. Un valor mostrado de 0.0 es medido; los datos ausentes son transparentes.</span>
               </div>
               <div className="hud-legend-desc">
-                <span lang="en">For VISIBLE cells, the 0–1 score combines terrain-normal/LOS alignment with distance relative to the configured maximum range; it is a geometric index, not an estimate of sensor signal or data reliability.</span>
+                <span lang="en">For VISIBLE cells, the 0-1 score is the alignment of the terrain surface normal with the LOS direction from terrain to radar. Distance is not a multiplier: the configured maximum range only gates which cells are eligible for LOS and cannot change the score of a cell that stays VISIBLE. It is a geometric index, not an estimate of sensor signal or data reliability.</span>
                 {" / "}
-                <span lang="es">Para celdas VISIBLE, el valor de 0–1 combina la orientación de la normal del terreno respecto al LOS con la distancia relativa al alcance máximo configurado; es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.</span>
+                <span lang="es">Para celdas VISIBLE, el valor de 0-1 es la alineación de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia no es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo VISIBLE. Es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.</span>
               </div>
             </>
           )}
+
+          <div className="hud-legend-desc">
+            <span lang="en">The bands are a configurable shared policy copied from the legacy legend (provisional); they are not equipment-certified detection thresholds.</span>
+            {" / "}
+            <span lang="es">Las bandas son una política compartida configurable copiada de la leyenda anterior (provisional); no son umbrales de detección certificados por equipo.</span>
+          </div>
 
           {/* Active Tool Help Box */}
           <div className="hud-tool-info">

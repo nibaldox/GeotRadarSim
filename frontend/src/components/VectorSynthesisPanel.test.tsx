@@ -72,7 +72,28 @@ describe("VectorSynthesisPanel", () => {
     useVectorStore.setState({ sensitivityMap: sensitivityMap(0, 1) });
 
     render(<VectorSynthesisPanel />);
-
     expect(screen.getByRole("status")).toHaveTextContent(/1 celda con observación/i);
+  });
+
+  it("labels the layer modes by physical meaning and switches layers without recomputing", () => {
+    const compute = vi.fn();
+    useVectorStore.setState({ computeSensitivityMap: compute, sensitivityMap: sensitivityMap(0.5, 1) });
+
+    render(<VectorSynthesisPanel />);
+
+    const incidence = screen.getByRole("button", { name: "Incidencia superficial" });
+    const projection = screen.getByRole("button", { name: "Proyección del movimiento" });
+    expect(incidence).toBeInTheDocument();
+    expect(projection).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Calidad LOS \(1D\)/i })).not.toBeInTheDocument();
+
+    fireEvent.click(projection);
+    expect(useVectorStore.getState().visualizationMode).toBe("SENSITIVITY");
+    fireEvent.click(incidence);
+    expect(useVectorStore.getState().visualizationMode).toBe("QUALITY");
+    expect(compute).not.toHaveBeenCalled();
+    // Movement projection is the geotechnical movement view, not generic quality.
+    expect(screen.getByText(/vista geotécnica del movimiento/i)).toBeInTheDocument();
+    expect(screen.getByText(/proyección escalar/i)).toBeInTheDocument();
   });
 });

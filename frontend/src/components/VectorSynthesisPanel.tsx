@@ -144,7 +144,7 @@ export function VectorSynthesisPanel() {
                       boxShadow: visualizationMode === "QUALITY" ? "0 0 10px hsla(125, 85%, 45%, 0.3)" : "none"
                     }}
                   >
-                    Calidad LOS (1D)
+                    Incidencia superficial
                   </button>
                   <button
                     onClick={() => setVisualizationMode("SENSITIVITY")}
@@ -154,14 +154,20 @@ export function VectorSynthesisPanel() {
                       padding: "8px",
                       fontSize: "11px",
                       background: visualizationMode === "SENSITIVITY"
-                        ? "linear-gradient(135deg, hsl(271, 76%, 53%), hsl(271, 76%, 40%))" 
+                        ? "linear-gradient(135deg, hsl(271, 76%, 53%), hsl(271, 76%, 40%))"
                         : "hsla(0, 0%, 100%, 0.03)",
                       border: visualizationMode === "SENSITIVITY" ? "none" : "1px solid var(--panel-border)",
                       boxShadow: visualizationMode === "SENSITIVITY" ? "0 0 10px hsla(271, 76%, 53%, 0.3)" : "none"
                     }}
                   >
-                    Sensibilidad (3D)
+                    Proyección del movimiento
                   </button>
+                </div>
+                <div style={{ fontSize: "10px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  <strong>Incidencia superficial</strong> (CALIDAD): alineación de la normal del terreno con el LOS;
+                  la distancia no multiplica el índice. <strong>Proyección del movimiento</strong> (SENSIBILIDAD):
+                  vista geotécnica del movimiento — proyección escalar sobre la dirección de máxima pendiente
+                  (movimiento supuesto de máxima pendiente; no es una inversión de desplazamiento en 3 ejes).
                 </div>
               </div>
 

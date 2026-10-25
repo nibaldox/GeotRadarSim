@@ -14,6 +14,7 @@ import { useMemo, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useAnalysisStore } from "../store/analysisStore";
 import { useVectorStore } from "../store/vectorStore";
+import { useQualityPolicyStore } from "../store/qualityPolicyStore";
 import { getMinElevation } from "../utils/terrain";
 import { LOSCellState } from "../types/api";
 import type { AnalysisSnapshot, SensitivityMapResponse } from "../types/api";
@@ -78,37 +79,38 @@ const fragmentShader = `
   uniform sampler2D cellStateTexture;
   uniform sampler2D observerCountTexture;
   uniform float opacity;
-  uniform float mapMode; // 0.0 = LOS, 1.0 = per-cell geometric sensitivity
+  uniform float mapMode; // 0.0 = surface incidence, 1.0 = slope-motion projection
+  uniform float mediumMin;
+  uniform float highMin;
   varying vec2 vUv;
 
   void main() {
     vec3 finalColor;
+    float q;
     if (mapMode < 0.5) {
       float cellState = floor(texture2D(cellStateTexture, vUv).r * 255.0 + 0.5);
       // Only observed (VISIBLE) cells are painted. SHADOW and every other
       // unobserved state leaves the base terrain unchanged.
       if (cellState != 5.0) discard;
-
-      float q = texture2D(qualityTexture, vUv).r;
-      vec3 colorLow  = vec3(0.9, 0.1, 0.1);
-      vec3 colorMid  = vec3(1.0, 0.8, 0.0);
-      vec3 colorHigh = vec3(0.0, 0.9, 0.2);
-      if (q < 0.5) finalColor = mix(colorLow, colorMid, q / 0.5);
-      else finalColor = mix(colorMid, colorHigh, (q - 0.5) / 0.5);
+      q = texture2D(qualityTexture, vUv).r;
     } else {
       // The selected individual LOS masks are reduced to observer_count per cell.
       // Do not use the merged LOS cell state as a sensitivity visibility proxy.
       float observerCount = texture2D(observerCountTexture, vUv).r;
       if (observerCount <= 0.0) discard;
-      float q = texture2D(qualityTexture, vUv).r;
-      vec3 colorBlind = vec3(0.5, 0.0, 0.5);
-      vec3 colorLow   = vec3(0.1, 0.2, 0.8);
-      vec3 colorMid   = vec3(0.0, 0.8, 0.8);
-      vec3 colorHigh  = vec3(0.0, 0.9, 0.2);
-      if (q < 0.2) finalColor = mix(colorBlind, colorLow, q / 0.2);
-      else if (q < 0.6) finalColor = mix(colorLow, colorMid, (q - 0.2) / 0.4);
-      else finalColor = mix(colorMid, colorHigh, (q - 0.6) / 0.4);
+      q = texture2D(qualityTexture, vUv).r;
     }
+    // Missing or invalid indices are transparent (NaN-safe test); an exact
+    // measured zero is data and stays painted in the low category.
+    if (!(q >= 0.0)) discard;
+    vec3 colorLow  = vec3(0.9, 0.1, 0.1);
+    vec3 colorMid  = vec3(1.0, 0.8, 0.0);
+    vec3 colorHigh = vec3(0.0, 0.9, 0.2);
+    // Strict category boundaries shared with classification, legends and export:
+    // low q < mediumMin; medium mediumMin <= q < highMin; high q >= highMin.
+    if (q < mediumMin) finalColor = colorLow;
+    else if (q < highMin) finalColor = colorMid;
+    else finalColor = colorHigh;
     gl_FragColor = vec4(finalColor, opacity);
   }
 `;
@@ -123,6 +125,7 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
   const activeSnapshot = useAnalysisStore((s) => s.activeSnapshot);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
   const sensitivityMap = useVectorStore((s) => s.sensitivityMap);
+  const policy = useQualityPolicyStore((s) => s.policy);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const rows = grid.length;
   const cols = grid[0]?.length ?? 0;
@@ -210,8 +213,14 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
         losResult.resolution !== resolution || losResult.cell_states.length !== rows * cols) return null;
 
     const isSensitivity = visualizationMode === "SENSITIVITY";
-    if (isSensitivity && (!sensitivityMapIsCurrent || !sensitivityMap)) return null;
+    if (isSensitivity) {
+      if (!sensitivityMapIsCurrent || !sensitivityMap) return null;
+    } else if (losResult.quality_model !== "geometric-v2") {
+      // Legacy unversioned quality must not be drawn under the v2 incidence legend.
+      return null;
+    }
     const data = new Float32Array(rows * cols);
+    data.fill(-1);
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const idx = row * cols + col;
@@ -223,14 +232,19 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
         }
         if (classifyOverlayCellState(losResult.cell_states[idx]!) !== "visible") continue;
         const rawValue = losResult.flat_quality_grid?.[idx] ?? losResult.quality_grid?.[row]?.[col];
-        const safeValue = rawValue !== undefined && Number.isFinite(rawValue) ? rawValue : 0;
-        data[idx] = Math.max(0, Math.min(1, safeValue));
+        // Missing or invalid indices (NaN, non-finite, sentinel negatives) keep
+        // the transparent sentinel; measured zeros paint.
+        if (rawValue === undefined || !Number.isFinite(rawValue) || rawValue < 0) continue;
+        data[idx] = Math.max(0, Math.min(1, rawValue));
       }
     }
 
+    // Nearest filtering keeps excluded zero/sentinel texels from diluting
+    // neighbouring VISIBLE pixels at category boundaries.
     const texture = new THREE.DataTexture(data, cols, rows, THREE.RedFormat, THREE.FloatType);
-    texture.minFilter = isSensitivity ? THREE.NearestFilter : THREE.LinearFilter;
-    texture.magFilter = isSensitivity ? THREE.NearestFilter : THREE.LinearFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
     texture.needsUpdate = true;
     return texture;
   }, [losResult, rows, cols, resolution, visualizationMode, sensitivityMapIsCurrent, sensitivityMap]);
@@ -242,9 +256,11 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
       if (cellStateTexture) uniforms.cellStateTexture.value = cellStateTexture;
       if (observerCountTexture) uniforms.observerCountTexture.value = observerCountTexture;
       uniforms.mapMode.value = visualizationMode === "SENSITIVITY" ? 1.0 : 0.0;
+      uniforms.mediumMin.value = policy.mediumMin;
+      uniforms.highMin.value = policy.highMin;
       materialRef.current.needsUpdate = true;
     }
-  }, [qualityTexture, cellStateTexture, observerCountTexture, visualizationMode]);
+  }, [qualityTexture, cellStateTexture, observerCountTexture, visualizationMode, policy]);
 
   // Unique react key for overlay re-mount
   const overlayKey = useMemo(() => {
@@ -271,7 +287,9 @@ export function ShadowOverlay({ grid, resolution }: ShadowOverlayProps) {
           cellStateTexture: { value: cellStateTexture },
           observerCountTexture: { value: observerCountTexture },
           opacity: { value: 0.6 },
-          mapMode: { value: visualizationMode === "SENSITIVITY" ? 1.0 : 0.0 }
+          mapMode: { value: visualizationMode === "SENSITIVITY" ? 1.0 : 0.0 },
+          mediumMin: { value: policy.mediumMin },
+          highMin: { value: policy.highMin }
         }}
       />
     </mesh>
