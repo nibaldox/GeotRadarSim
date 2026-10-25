@@ -6,9 +6,9 @@
  * Uses OrbitControls for camera manipulation.
  */
 
-import { Fragment, useRef, useMemo, useEffect, useState } from "react";
+import { useRef, useMemo, useEffect, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Billboard, OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
+import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
 import { getTerrainExtent, getMinElevation } from "../utils/terrain";
 import { useTerrainStore } from "../store/terrainStore";
@@ -199,91 +199,20 @@ interface RadarMarker {
 
 export interface RadarMarkerRadii {
   core: number;
-  ring: number;
-  outer: number;
 }
 
 /**
- * Icon radii in local metres, scaled by the horizontal map extent (the larger
- * of the E-W and N-S spans — never the elevation range, which is relief, not
- * map width). QA baseline f8 metadata (1365 m extent): outer ≈ 22.9 m.
- * Clamped to 6–40 m so a 200 m synthetic terrain keeps a small readable icon
- * (outer 6 m) and huge terrains do not get giant rings.
+ * Core icon radius in local metres, scaled by the horizontal map extent (the
+ * larger of the E-W and N-S spans — never the elevation range, which is
+ * relief, not map width). QA baseline f8 metadata (1365 m extent): core ≈
+ * 11.0 m. Clamped to 6–40 m so a 200 m synthetic terrain keeps a small
+ * readable icon and huge terrains do not get giant icons.
  */
 export function radarMarkerRadii(
   bounds: { min_x: number; max_x: number; min_y: number; max_y: number },
 ): RadarMarkerRadii {
   const extent = Math.max(bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
-  const outer = Math.min(Math.max(extent * 0.0168, 6), 40);
-  return { core: outer * 0.48, ring: outer * 0.74, outer };
-}
-
-/**
- * Rings sit slightly above the anchor, like the terrain overlay, to avoid
- * z-fighting. The lift is applied along world Y on the Billboard so it stays
- * vertical while the halo rotates to face the camera.
- */
-const MARKER_RING_LIFT = 1.2;
-
-/**
- * Contour around the marker core: white ring + black rim so each radar color
- * stays distinct against red/green/cyan layers. Bands never capture pointer
- * events, so terrain clicks pass through, and depth testing stays on so the
- * terrain occludes the halo instead of the radar punching through mountains.
- */
-export function createMarkerHalo(core: number, ring: number, outer: number): THREE.Group {
-  const halo = new THREE.Group();
-  for (const [inner, outerRadius, color] of [
-    [core, ring, "#ffffff"],
-    [ring, outer, "#000000"],
-  ] as const) {
-    const band = new THREE.Mesh(
-      new THREE.RingGeometry(inner, outerRadius, 48),
-      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, depthTest: true }),
-    );
-    band.raycast = () => null;
-    halo.add(band);
-  }
-  return halo;
-}
-
-/**
- * Camera-facing halo: a Billboard keeps the rings readable from every orbit
- * and view (a flat ring is edge-on from TOP). The halo group is created
- * manually, so its geometry/materials are disposed here when the radii change
- * or the marker unmounts — only the resources createMarkerHalo owns.
- */
-function MarkerHalo({
-  name,
-  radii,
-  position,
-}: {
-  name: string;
-  radii: RadarMarkerRadii;
-  position?: [number, number, number];
-}) {
-  const halo = useMemo(
-    () => createMarkerHalo(radii.core, radii.ring, radii.outer),
-    [radii.core, radii.ring, radii.outer],
-  );
-  useEffect(
-    () => () => {
-      halo.traverse((child) => {
-        if (!(child instanceof THREE.Mesh)) return;
-        child.geometry.dispose();
-        const material = child.material;
-        if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
-        else material.dispose();
-      });
-    },
-    [halo],
-  );
-  const anchor: [number, number, number] = position ?? [0, 0, 0];
-  return (
-    <Billboard name={name} follow position={[anchor[0], anchor[1] + MARKER_RING_LIFT, anchor[2]]}>
-      <primitive object={halo} />
-    </Billboard>
-  );
+  return { core: Math.min(Math.max(extent * 0.0168, 6), 40) * 0.48 };
 }
 
 const sameTerrainKey = (left: TerrainKey | null, right: TerrainKey | null): boolean =>
@@ -389,13 +318,10 @@ function RadarMarkers() {
         const position = toLocal(marker.position);
         if (marker.kind === "placed") {
           return (
-            <Fragment key={marker.key}>
-              <mesh name={marker.name} position={position}>
-                <sphereGeometry args={[radii.core, 16, 16]} />
-                <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
-              </mesh>
-              <MarkerHalo name={`${marker.name}-halo`} radii={radii} position={position} />
-            </Fragment>
+            <mesh key={marker.key} name={marker.name} position={position}>
+              <sphereGeometry args={[radii.core, 16, 16]} />
+              <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+            </mesh>
           );
         }
         return (
@@ -404,7 +330,6 @@ function RadarMarkers() {
               <sphereGeometry args={[radii.core, 16, 16]} />
               <meshStandardMaterial color={marker.color} emissive={marker.color} emissiveIntensity={0.4} />
             </mesh>
-            <MarkerHalo name={`${marker.name}-halo`} radii={radii} />
             <mesh position={[0, radii.core * 1.5, 0]}>
               <cylinderGeometry args={[radii.core / 8, radii.core / 8, radii.core * 3, 8]} />
               <meshStandardMaterial color={marker.color} />
