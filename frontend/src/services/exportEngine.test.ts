@@ -266,9 +266,9 @@ describe("exportEngine per-cell incidence/projection columns", () => {
 
     expect(csv).toContain("# Cell States (row,col,state,incidence,projection,shadowed)");
     expect(csv).toContain("row,col,state,incidence,projection,shadowed");
-    expect(csv).toContain("0,0,VISIBLE,0.0000,,0");
-    expect(csv).toContain("0,1,VISIBLE,0.5000,0.8000,0");
-    expect(csv).toContain("0,2,VISIBLE,,0.2500,0");
+    expect(csv).toContain("0,0,VISIBLE,0,,0");
+    expect(csv).toContain("0,1,VISIBLE,0.5,0.8,0");
+    expect(csv).toContain("0,2,VISIBLE,,0.25,0");
     expect(csv).toContain("1,0,SHADOW,,,1");
     expect(csv).toContain("1,1,NODATA,,,0");
     expect(csv).toContain("1,2,OUT_OF_RANGE,,,0");
@@ -280,8 +280,8 @@ describe("exportEngine per-cell incidence/projection columns", () => {
     const csv = await generateCSVBlob(qualitySnapshot, losResult, buildContext("INCIDENCE", losResult)).text();
 
     // measured incidence zero is exported as zero, not as blank
-    expect(csv).toMatch(/0,0,VISIBLE,0\.0000,,0/);
-    // non-visible and no-gradient cells never become 0.0000
+    expect(csv).toMatch(/0,0,VISIBLE,0,,0/);
+    // non-visible and no-gradient cells never become a fabricated zero
     expect(csv).not.toMatch(/SHADOW,0/);
     expect(csv).not.toMatch(/NODATA,0/);
     expect(csv).not.toMatch(/OUT_OF_RANGE,0/);
@@ -290,7 +290,7 @@ describe("exportEngine per-cell incidence/projection columns", () => {
   it("keeps incidence/projection columns for a v2 result exported without context", async () => {
     const csv = await generateCSVBlob(qualitySnapshot, v2Result()).text();
     expect(csv).toContain("row,col,state,incidence,projection,shadowed");
-    expect(csv).toContain("0,1,VISIBLE,0.5000,0.8000,0");
+    expect(csv).toContain("0,1,VISIBLE,0.5,0.8,0");
     expect(csv).not.toContain("row,col,state,quality,shadowed");
   });
 
@@ -298,6 +298,50 @@ describe("exportEngine per-cell incidence/projection columns", () => {
     const csv = await generateCSVBlob(request, resultWithUnknownCells).text();
     expect(csv).toContain("row,col,state,quality,shadowed");
     expect(csv).not.toContain("row,col,state,incidence,projection,shadowed");
+  });
+});
+
+describe("exportEngine v2 value precision", () => {
+  it("writes Float32 round-trip values whose recounted bands match the reported distribution", async () => {
+    const losResult = v2Result();
+    losResult.cell_states = new Uint8Array([5, 5, 5, 5, 0, 5]);
+    losResult.flat_quality_grid = new Float32Array([
+      Math.fround(0.29998), Math.fround(0.69998), 0.9, 0, -1, Number.NaN,
+    ]);
+    losResult.flat_projection_grid = new Float32Array(6).fill(Number.NaN);
+    const csv = await generateCSVBlob(qualitySnapshot, losResult, buildContext("INCIDENCE", losResult)).text();
+
+    // Round-trip Float32 tokens: toFixed(4) would round these across the thresholds.
+    expect(csv).toContain("0,0,VISIBLE,0.29998,,0");
+    expect(csv).toContain("0,1,VISIBLE,0.69998,,0");
+    expect(csv).toContain("1,0,VISIBLE,0,,0");
+    expect(csv).not.toContain("0.3000");
+    expect(csv).not.toContain("0.7000");
+    expect(csv).toContain("# Precisión de clasificación,Float32 (índices y umbrales");
+
+    // Recounting the exported rows with the policy reproduces the reported counts.
+    const counts = { low: 0, medium: 0, high: 0, noIndex: 0 };
+    for (const line of csv.split("\n")) {
+      const match = /^\d+,\d+,VISIBLE,([^,]*),/.exec(line);
+      if (!match) continue;
+      const raw = match[1]!;
+      if (raw === "") {
+        counts.noIndex++;
+        continue;
+      }
+      const value = Math.fround(Number(raw));
+      if (value < Math.fround(0.3)) counts.low++;
+      else if (value < Math.fround(0.7)) counts.medium++;
+      else counts.high++;
+    }
+    const headerCount = (label: string): number => {
+      const line = csv.split("\n").find((row) => row.startsWith(label));
+      return Number(/\((\d+)\)$/.exec(line!)![1]);
+    };
+    expect(counts.low).toBe(headerCount("# Distribución baja %"));
+    expect(counts.medium).toBe(headerCount("# Distribución media %"));
+    expect(counts.high).toBe(headerCount("# Distribución alta %"));
+    expect(counts.noIndex).toBe(headerCount("# Sin índice %"));
   });
 });
 

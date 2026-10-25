@@ -71,9 +71,21 @@ function verifiedContext(
   return context === undefined ? null : validateQualityExportContext(context, snapshot, losResult);
 }
 
-/** Measured v2 index cell value (0..1); blank for non-visible or missing indices. */
+/**
+ * Measured v2 index cell value (0..1) as a Float32 round-trip token: the
+ * shortest decimal that parses back to the same Float32, so per-cell rows
+ * reproduce the summary band counts exactly. Measured zero prints as 0;
+ * non-visible or missing indices stay blank. No 4-decimal rounding: it can
+ * round a value across a threshold (0.29998 → "0.3000").
+ */
 function measuredIndex(value: number | undefined): string {
-  return value !== undefined && Number.isFinite(value) && value >= 0 && value <= 1 ? value.toFixed(4) : "";
+  if (value === undefined || !Number.isFinite(value) || value < 0 || value > 1) return "";
+  if (value === 0) return "0";
+  for (let digits = 1; digits <= 9; digits++) {
+    const token = value.toPrecision(digits);
+    if (Math.fround(Number(token)) === value) return token;
+  }
+  return String(value);
 }
 
 function qualityDistributionRows(context: QualityExportContext, losResult: LOSResponse): string[][] {
@@ -84,6 +96,7 @@ function qualityDistributionRows(context: QualityExportContext, losResult: LOSRe
     ["Modelo de calidad", qualityModel],
     ["Métrica del índice", metricLabel(metric)],
     ["Umbrales de clasificación", `media >= ${policy.mediumMin}; alta >= ${policy.highMin} (provisional; no certificado)`],
+    ["Precisión de clasificación", "Índices y umbrales en Float32"],
     ["Objetivo común", target.label],
     ["Celdas objetivo", String(target.cellCount)],
     ["Área nominal (planar)", `${formatFinite(target.nominalAreaM2, 2)} m²`],
@@ -251,6 +264,7 @@ export function generateCSVBlob(
     rows.push(`# Modelo de calidad,${qualityModel}`);
     rows.push(`# Métrica del índice,${metricLabel(metric)}`);
     rows.push(`# Umbrales de clasificación,media >= ${policy.mediumMin}; alta >= ${policy.highMin} (provisional; no certificado)`);
+    rows.push("# Precisión de clasificación,Float32 (índices y umbrales; comparar en Float32 para reproducir)");
     rows.push(`# Objetivo común,${target.label}`);
     rows.push(`# Celdas objetivo,${target.cellCount}`);
     rows.push(`# Área nominal m2,${formatFinite(target.nominalAreaM2, 2)}`);
@@ -269,7 +283,7 @@ export function generateCSVBlob(
   const v2Columns = losResult.quality_model === "geometric-v2";
   if (v2Columns) {
     rows.push("# Cell States (row,col,state,incidence,projection,shadowed)");
-    rows.push("# incidence/projection: solo celdas VISIBLE con índice medido; vacío = no visible o sin índice");
+    rows.push("# incidence/projection: solo celdas VISIBLE con índice medido; vacío = no visible o sin índice; valores Float32 de precisión completa");
     rows.push("row,col,state,incidence,projection,shadowed");
   } else {
     rows.push("# Cell States (row,col,state,quality,shadowed)");
