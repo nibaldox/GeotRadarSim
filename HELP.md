@@ -74,7 +74,18 @@ The displayed percentages use only candidate states `VISIBLE`, `SHADOW`, and `UN
 - `NODATA`, `OUT_OF_RANGE`, and `OUTSIDE_FOV` are not included. If there are no candidate samples, both percentages are `null`/no data, not 0%.
 - **Visible area** is the visible sample count multiplied by grid resolution squared. It is a planimetric grid estimate, not an exact 3D slope area.
 
-The **Quality LOS (1D) / Calidad LOS (1D)** score is geometric: it combines LOS orientation relative to the local terrain normal with a distance taper to the configured maximum range. When several analyses are selected, the merged overlay uses the maximum individual score among those classified as `VISIBLE` at each cell. It is not SNR, received signal power, or validated signal quality.
+The terrain-layer quality display is geometric and offers two modes:
+
+- **Surface incidence (Incidencia superficial)** — for `VISIBLE` cells, the 0–1 alignment of the terrain surface normal with the LOS direction from terrain to radar. Distance is not a multiplier: the configured maximum range only gates which cells are eligible for LOS and cannot change the score of a cell that stays `VISIBLE`.
+- **Movement projection (Proyección del movimiento)** — the |dot| projection of the LOS onto the terrain's maximum-slope direction. One contributor scores `|dot|`; several contributors use `sqrt(sum(dot_i²) / observer_count)` (RMS).
+
+Neither index is SNR, received signal power, or validated signal quality.
+
+The **Bandas de calidad** panel holds the shared classification bands: provisional defaults `media ≥ 0.3`, `alta ≥ 0.7`, editable between 0 and 1. Editing them reclassifies existing results without rerunning LOS; invalid thresholds are rejected with a visible message instead of being reordered silently. Classification runs in Float32 so the summary counts always match the painted colors (strict half-open bands: low `[0, media)`, medium `[media, alta)`, high `[alta, 1]`). These bands are not equipment-certified detection thresholds.
+
+Unobserved states (`NODATA`, `OUT_OF_RANGE`, `OUTSIDE_FOV`, `UNKNOWN_RAY`, `SHADOW`) and cells without an available index are transparent and show the base terrain; a measured `0.0` is data and stays colored in the low band. Transparency alone does not identify its cause — for example, it does not identify shadow.
+
+The quality summary (global panel and per-entry history cards) reports **useful coverage** over the shared target **Topografía válida completa** — every finite terrain node, independent of the radar footprint — with its nominal planar useful area, and separately the low/medium/high/no-index **distribution** over visible cells plus the medium+high share of what is visible. When the result is from an earlier run or another terrain, the summary states that the geometric index is not available and asks you to recalculate instead of showing zeros.
 
 ---
 
@@ -83,17 +94,18 @@ The **Quality LOS (1D) / Calidad LOS (1D)** score is geometric: it combines LOS 
 1. Run separate analyses from different positions and/or with different configured limits.
 2. In **History**, select the entries to include. Their states are combined on the same terrain grid; for finite terrain samples, a cell is `VISIBLE` if at least one selected individual analysis marks it `VISIBLE`.
 3. The merged coverage overlay and metrics update from the selected per-cell results. This is a geometric union; it does not add or combine radar signals.
+4. The merged quality layers combine the individual values per cell: surface incidence takes the maximum individual finite value and movement projection uses the RMS across contributing analyses. Missing values are excluded, not counted as zeros.
 
 ---
 
 ## Step 6 — Geometric sensitivity (optional)
 
 1. Select one or more individual analysis entries in **History**.
-2. In **Sensibilidad Geométrica 3D**, select **Sensibilidad (3D)** and click **🗺️ Calcular Mapa de Sensibilidad 3D**.
+2. In **Sensibilidad Geométrica 3D**, choose the layer mode **Proyección del movimiento** (or **Incidencia superficial**) and click **🗺️ Calcular Mapa de Sensibilidad 3D**.
 3. The calculation uses a selected analysis at a cell only when that analysis's own LOS state is `VISIBLE` there. One visible viewpoint produces `|dot|`, the absolute projection of the LOS direction onto the terrain's maximum-slope direction. Multiple visible viewpoints produce `sqrt(sum(dot_i²) / observer_count)` (RMS).
 4. Cells without an eligible visible viewpoint/finite terrain gradient are no-data and transparent. A valid computed zero remains a value, not no-data.
 
-The **1D/3D** labels refer to the geometric projection and one-/multi-viewpoint presentation. This index is dimensionless and is not an SNR value, a pseudoinverse/eigenvalue calculation, or a physical RF sensitivity model.
+The layer-mode labels refer to the two geometric indices and their one-/multi-viewpoint presentation on the 3D terrain. This index is dimensionless and is not an SNR value, a pseudoinverse/eigenvalue calculation, or a physical RF sensitivity model.
 
 ---
 
@@ -101,11 +113,13 @@ The **1D/3D** labels refer to the geometric projection and one-/multi-viewpoint 
 
 | Button | Output |
 |---|---|
-| **PDF Report** | Summary metrics and shadow-zone information for the active compatible analysis |
-| **CSV Data** | Per-cell `row,col,state,quality,shadowed` values plus analysis metadata |
+| **PDF Report** | Summary metrics and shadow-zone information for the active compatible analysis; for current geometric-v2 results it adds a useful-coverage/quality table with the classification policy and provenance |
+| **CSV Data** | Per-cell `row,col,state,incidence,projection,shadowed` values (geometric-v2; legacy results keep `row,col,state,quality,shadowed`) plus analysis metadata and the quality-report header |
 | **Image (PNG)** | Screenshot of the current 3D canvas |
 
 The export controls are enabled when a compatible active analysis is available. A CSV quality value is a geometric display score, not a signal measurement.
+
+For geometric-v2 results the export click captures a quality-report context (metric identity, band thresholds, shared target and summary) that the export engine verifies again against the exact snapshot and result before writing; every reported number is re-derived from the exported result, and a context that does not match is rejected instead of being reported. Without a verified context (legacy results) the report is generated without the quality section rather than inventing one. The quality header states the thresholds as provisional (no certified accuracy), the Float32 classification precision, and the provenance (terrain id/epoch, analysis ids, quality model). CSV per-cell `incidence`/`projection` values are Float32 round-trip tokens written only for `VISIBLE` cells with a measured index (a measured zero prints `0`; blank means not visible or no index), so per-cell rows reproduce the summary band counts exactly.
 
 ---
 
@@ -113,6 +127,7 @@ The export controls are enabled when a compatible active analysis is available. 
 
 - Toggle a history entry to include or exclude it from the merged geometric overlay and sensitivity selection.
 - Use the **X** on an entry to remove it, or **Clear All** to clear the history.
+- Radar markers are simple core-and-post icons (a white sphere for the placed viewpoint, colored spheres with a post for analyses) rendered without halo rings or billboards.
 - Rotate the terrain with left-click and drag, zoom with the scroll wheel, and pan with right-click and drag.
 - Use the compass gizmo to reset the view.
 
@@ -121,7 +136,7 @@ The export controls are enabled when a compatible active analysis is available. 
 ## Limits and troubleshooting
 
 - The terrain grid is limited to **16,384 nodes per axis** and **1,000,000 row × column entries total**.
-- LOS also rejects work estimates above **5,000,000 traversal intervals**. A small-looking grid can still exceed this work limit depending on configured range and geometry.
+- Each LOS compute runs under a monotonic runtime deadline of **120 seconds** (a 125-second watchdog cancels the worker). A small-looking grid can still exceed this deadline depending on configured range and geometry.
 - Browser memory and WebGL/GPU capabilities vary by device.
 - If a target is all no-data, check the input elevations and grid coverage. `NODATA` is not the same as terrain shadow.
 - If coverage is `0%`, candidate cells exist but none are classified `VISIBLE`. If coverage displays no data, there were no `VISIBLE`, `SHADOW`, or `UNKNOWN_RAY` candidate samples (for example, all cells may be out of range/FOV or have no terrain data).

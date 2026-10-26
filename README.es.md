@@ -31,11 +31,12 @@ No permite determinar si un radar real recibirá una señal adecuada a una dista
 | 🗺️ **Entrada de terreno** | Carga datos DXF de puntos/líneas/polilíneas o una superficie STL y conviértelos a una cuadrícula regular de elevaciones |
 | 🏗️ **Terreno sintético** | Genera una superficie de ejemplo tipo cuenco para probar la interfaz y la geometría |
 | 📡 **LOS geométrica** | Clasifica muestras como visibles, en sombra, fuera de límites configurados, sin datos o con rayo desconocido |
+| ✅ **Capas de calidad geométrica (v2)** | Pinta el índice de incidencia superficial o la proyección del movimiento solo sobre celdas observadas, con bandas provisionales compartidas configurables |
 | 🎯 **Límites configurables** | Selecciona un perfil local incluido y modifica límites de rango, elevación y azimut |
 | 🔴 **Múltiples análisis** | Selecciona entradas compatibles del historial para combinar su visibilidad geométrica por celda |
-| 🧮 **Sensibilidad geométrica** | Proyecta la dirección de máxima pendiente del terreno sobre una o más direcciones LOS visibles individualmente |
-| 📊 **Métricas de cuadrícula** | Muestra cobertura de celdas candidatas, completitud, área visible de cuadrícula, componentes de sombra y sensibilidad |
-| 📄 **Exportación PDF / CSV** | Exporta el análisis compatible activo, incluidos los estados LOS por celda en el CSV |
+| 🧮 **Sensibilidad geométrica** | Proyecta la dirección de máxima pendiente del terreno sobre una o más direcciones LOS visibles individualmente (un contribuyente: \|dot\|; varios: RMS) |
+| 📊 **Métricas de cuadrícula** | Muestra cobertura de celdas candidatas, completitud, área visible de cuadrícula, componentes de sombra, cobertura útil sobre toda la topografía válida y la distribución de calidad de lo visible |
+| 📄 **Exportación PDF / CSV** | Exporta el análisis compatible activo, incluidos los estados LOS por celda y columnas de índice en el CSV, más un informe de cobertura útil con política y procedencia |
 | 🖼️ **Captura PNG** | Captura la vista 3D actual |
 | 🌐 **Procesamiento local** | El terreno y LOS se calculan en Web Workers del navegador; no hay un backend de análisis |
 
@@ -78,11 +79,11 @@ Abre [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/) 
 ### Sensibilidad geométrica
 
 1. Selecciona uno o más análisis individuales compatibles en **History/Historial**.
-2. En **Geometric Sensitivity 3D / Sensibilidad Geométrica 3D**, elige **Sensitivity (3D) / Sensibilidad (3D)** y calcula el mapa. **Quality LOS (1D) / Calidad LOS (1D)** muestra el puntaje geométrico LOS individual.
+2. En **Sensibilidad Geométrica 3D / Geometric Sensitivity 3D**, elige el modo de capa del terreno — **Incidencia superficial** o **Proyección del movimiento** — y haz clic en **🗺️ Calcular Mapa de Sensibilidad 3D**. Al seleccionar varios análisis, la capa de incidencia combinada toma por celda el mayor valor finito de incidencia individual y la proyección de movimiento combinada usa la RMS entre los análisis contribuyentes.
 3. En cada celda finita donde ambos ejes del gradiente se calculan con vecinos centrales o unilaterales disponibles, solo contribuyen los análisis seleccionados cuyo estado LOS **individual** sea `VISIBLE`. `observer_count` es el número de análisis contribuyentes por celda; un contribuyente aporta `|dot|` y varios usan `sqrt(sum(dot_i²) / observer_count)` (RMS). El resultado es una proyección geométrica adimensional, no SNR, sensibilidad RF ni un modelo físico 3D del radar.
 4. Un estado LOS `VISIBLE` por sí solo no basta: si falta cualquiera de los dos ejes del gradiente del terreno, ese análisis no contribuye. Las celdas con `observer_count = 0` quedan sin datos/transparentes (`NaN`); un valor finito igual a cero con `observer_count > 0` es un resultado medido.
 
-Las etiquetas **1D** y **3D** de la interfaz describen el puntaje geométrico y su agregación/visualización para varias posiciones. No representan modos físicos distintos del radar.
+Las etiquetas de los modos de capa describen dos índices geométricos y su agregación/visualización para varias posiciones sobre el terreno 3D. No representan modos físicos distintos del radar.
 
 ---
 
@@ -109,7 +110,17 @@ Las métricas LOS usan muestras candidatas en estado `VISIBLE`, `SHADOW` o `UNKN
 - **Área visible** = `cantidad de muestras VISIBLE × resolución de cuadrícula²`; es una estimación planimétrica de cuadrícula, no un área medida de superficie inclinada 3D.
 - Las **zonas de sombra** son componentes conectados de muestras `SHADOW` usando vecindad de cuatro direcciones.
 
-La capa **Quality LOS (1D) / Calidad LOS (1D)** también es geométrica: su valor combina la orientación de la línea de visión respecto de la normal local del terreno con una atenuación basada en la distancia al rango máximo configurado. Cuando se combinan varios análisis, la capa usa por celda el puntaje máximo entre los análisis individuales clasificados como `VISIBLE`. No es SNR, potencia recibida, un modelo de propagación ni calidad de radar validada.
+### Capas de calidad geométrica (geometric-v2)
+
+Las capas de calidad son índices geométricos que se pintan solo sobre celdas `VISIBLE`. No son SNR, potencia recibida, un modelo de propagación ni calidad de radar validada.
+
+- **Incidencia superficial** — para celdas `VISIBLE`, la alineación de 0–1 de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia **no** es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo `VISIBLE`.
+- **Proyección del movimiento** — la proyección de movimiento de pendiente del LOS sobre la dirección de máxima pendiente del terreno (la tangente normalizada descendente, con alternativa vertical hacia abajo en terreno plano): con un contribuyente vale `|dot|` y con varios se usa `sqrt(sum(dot_i²) / observer_count)` (RMS). Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. La capa 3D pinta una proyección escalar sobre la superficie del terreno bajo el movimiento supuesto de máxima pendiente; no es una reconstrucción volumétrica ni una inversión completa de desplazamiento en 3 ejes.
+- **Cobertura útil frente a la distribución de lo visible** — las celdas útiles son celdas `VISIBLE` cuyo índice seleccionado está medido (finito, 0–1) y se clasifica como medio o alto. La **cobertura útil** es esa cantidad sobre el objetivo común **Topografía válida completa** (todos los nodos finitos de la cuadrícula del terreno, con independencia de la huella del radar), y el área del objetivo informada es un área nominal planar (`celdas × resolución²`), no un área de superficie inclinada 3D. La **distribución** baja/media/alta/sin índice y la proporción media+alta se calculan solo sobre celdas `VISIBLE`. El resumen se calcula por métrica y queda ligado a la procedencia del resultado (época del terreno y análisis); si el resultado es antiguo, sin versión o de otro terreno/época, el índice se informa como no disponible y se solicita recalcular — los datos faltantes nunca se informan como cero.
+- **Bandas provisionales configurables** — la política de bandas compartida usa por defecto `media ≥ 0.3`, `alta ≥ 0.7`, copiada de la leyenda anterior y editable en el panel **Bandas de calidad**. Editar los umbrales reclasifica los resultados existentes sin recalcular el LOS; los umbrales no válidos (`0 ≤ media mínima < alta mínima ≤ 1`, distintos a precisión Float32) se rechazan de forma visible en vez de reordenarse en silencio. La clasificación se ejecuta en Float32 — valores y umbrales se comparan tras redondear a Float32, de modo que los conteos del resumen siempre coinciden con los colores pintados por la GPU — con intervalos estrictos semicerrados: baja `[0, media)`, media `[media, alta)`, alta `[alta, 1]`. Son intervalos de un índice geométrico, no umbrales de detección certificados por equipo.
+- **Transparencia y cero medido** — `NODATA`, `OUT_OF_RANGE`, `OUTSIDE_FOV`, `UNKNOWN_RAY` y `SHADOW` son estados sin observación y no se pintan: dejan el terreno base sin cambios. Un índice ausente o no disponible (por ejemplo una celda `VISIBLE` sin gradiente calculable) también es transparente. Un `0.0` medido es dato y se mantiene coloreado en la banda baja. La transparencia por sí sola no identifica su causa; por ejemplo, no identifica la sombra. Los marcadores de radar/observador en la vista 3D son iconos simples de núcleo y mástil, sin anillos de halo ni carteles (billboards).
+- **Análisis combinados** — al seleccionar varios análisis, la capa de incidencia combinada toma por celda el mayor valor finito de incidencia individual entre los análisis que la reportan `VISIBLE`, y la proyección de movimiento combinada es la RMS entre los análisis contribuyentes; los valores ausentes se excluyen en vez de contarse como ceros.
+- **Exportaciones** — el informe PDF y el archivo CSV llevan la misma política de clasificación y procedencia que el resumen en pantalla: umbrales marcados como provisionales (sin precisión certificada), la precisión de clasificación en Float32, la identidad de la métrica, el modelo de calidad `geometric-v2`, el id y la época del terreno y los ids de análisis. Para resultados geometric-v2 las columnas por celda del CSV son `row,col,state,incidence,projection,shadowed` (los resultados antiguos conservan `row,col,state,quality,shadowed`); `incidence`/`projection` se escriben solo para celdas `VISIBLE` con índice medido, como tokens de ida y vuelta en Float32 (el decimal más corto que vuelve a parsear al mismo Float32, con un cero medido impreso como `0` y en blanco para celdas no visibles o sin índice) en vez de un redondeo a 4 decimales que podría mover un valor de banda. El informe de calidad solo se agrega a partir de un contexto capturado al hacer clic en exportar que sigue coincidiendo con el snapshot y el resultado exportados — cada número informado se recalcula desde el resultado exportado, y un contexto que no coincide se rechaza en vez de informarse. Los resultados antiguos o sin versión se exportan sin informe de calidad en vez de inventarlo.
 
 ---
 
@@ -160,7 +171,7 @@ Los cálculos de terreno, LOS y sensibilidad se realizan en Workers del navegado
 ## Limitaciones
 
 - Las dimensiones de la cuadrícula se limitan a **16.384 nodos por eje** y **1.000.000 de entradas fila × columna en total**. Se aplican ambas restricciones.
-- LOS también impone un límite conservador de trabajo estimado de **5.000.000 de intervalos de recorrido**; un análisis puede rechazarse aunque la cuadrícula no supere el máximo de tamaño.
+- Cada cálculo LOS se ejecuta bajo un plazo monótono de ejecución de **120 segundos** (más un vigilante de 125 segundos sobre el worker); un análisis puede rechazarse si excede el plazo aunque su cuadrícula no supere el máximo de tamaño.
 - Las entradas STL con más de 500.000 caras se muestrean antes de generar la cuadrícula. La interpolación IDW y la resolución de la cuadrícula afectan la superficie resultante y las clasificaciones LOS.
 - LOS es un trazado geométrico recto sobre la cuadrícula muestreada. No modela propagación RF, atenuación, SNR, probabilidad de detección, resolución de radar ni desempeño en terreno.
 - Los valores de los perfiles locales no son especificaciones del fabricante validadas. Define y verifica los límites operacionales por separado.

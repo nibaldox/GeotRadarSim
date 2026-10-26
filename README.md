@@ -31,11 +31,12 @@ It cannot answer whether a real radar will receive an adequate signal at a given
 | 🗺️ **Terrain input** | Load DXF point/line/polyline data or an STL surface and convert it to a regular elevation grid |
 | 🏗️ **Synthetic terrain** | Generate a simple bowl-shaped example surface for testing the interface and geometry |
 | 📡 **Geometric LOS** | Classify grid samples as visible, shadowed, outside configured limits, no-data, or unknown-ray |
+| ✅ **Geometric quality layers (v2)** | Paint the surface-incidence index or the slope-motion projection on observed cells only, under shared configurable provisional bands |
 | 🎯 **Configurable limits** | Choose a bundled software profile and override range, elevation, and azimuth constraints |
 | 🔴 **Multiple analyses** | Select compatible history entries to combine their cell-level geometric visibility |
-| 🧮 **Geometric sensitivity** | Project the terrain's maximum-slope direction onto one or more individually visible LOS directions |
-| 📊 **Grid metrics** | Show candidate-cell coverage, completeness, visible grid area, shadow components, and sensitivity |
-| 📄 **PDF / CSV export** | Export the active compatible analysis, including per-cell LOS states in CSV |
+| 🧮 **Geometric sensitivity** | Project the terrain's maximum-slope direction onto one or more individually visible LOS directions (one contributor: \|dot\|; several: RMS) |
+| 📊 **Grid metrics** | Show candidate-cell coverage, completeness, visible grid area, shadow components, useful coverage over the full valid topography, and the visible-cell quality distribution |
+| 📄 **PDF / CSV export** | Export the active compatible analysis, including per-cell LOS states and index columns in CSV and a useful-coverage report with policy and provenance |
 | 🖼️ **PNG snapshot** | Capture the current 3D view |
 | 🌐 **Client-side processing** | Terrain and LOS calculations run in browser workers; there is no analysis backend |
 
@@ -78,11 +79,11 @@ Open [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/) 
 ### Geometric sensitivity
 
 1. Select one or more compatible individual analyses in **History**.
-2. In **Geometric Sensitivity 3D / Sensibilidad Geométrica 3D**, choose **Sensitivity (3D) / Sensibilidad (3D)** and calculate the map. **Quality LOS (1D) / Calidad LOS (1D)** shows the geometric score; when several analyses are selected, the merged overlay takes the maximum individual score at each visible cell.
+2. In **Sensibilidad Geométrica 3D / Geometric Sensitivity 3D**, choose the terrain-layer mode — **Incidencia superficial / Surface incidence** or **Proyección del movimiento / Movement projection** — and click **🗺️ Calcular Mapa de Sensibilidad 3D**. With several analyses selected, the merged incidence layer takes the maximum individual finite incidence value at each visible cell, and the merged movement projection uses the RMS across the contributing analyses.
 3. At each finite terrain cell where both gradient axes can be computed from central or available one-sided neighbors, only selected analyses with an individual LOS state of `VISIBLE` contribute. `observer_count` is this per-cell contributor count; one contributor scores `|dot|`, while multiple contributors use `sqrt(sum(dot_i²) / observer_count)` (RMS). The result is a dimensionless geometric projection, not SNR, RF sensitivity, or a physical 3D radar model.
 4. A `VISIBLE` LOS mask alone is not enough: if either terrain-gradient axis is unavailable, that observation does not contribute. Cells with `observer_count = 0` are no-data/transparent (`NaN`); a finite value of zero with `observer_count > 0` is a measured result.
 
-The UI's **1D** and **3D** labels describe the geometric score and its multi-viewpoint aggregation/visualization. They do not indicate separate physical radar modes.
+The layer-mode labels describe two geometric indices and their multi-viewpoint aggregation/visualization on the 3D terrain. They do not indicate separate physical radar modes.
 
 ---
 
@@ -109,7 +110,17 @@ The LOS metrics use candidate samples in states `VISIBLE`, `SHADOW`, or `UNKNOWN
 - **Visible area** is `VISIBLE sample count × grid resolution²`; it is a planimetric grid estimate, not a measured 3D slope-surface area.
 - **Shadow zones** are connected components of `SHADOW` grid samples using four-neighbor connectivity.
 
-The **Quality LOS (1D) / Calidad LOS (1D)** display is also geometric: its scalar combines line-of-sight orientation relative to the local terrain normal with a taper based on distance to the configured maximum range. With multiple analyses selected, the merged overlay uses the maximum individual score among analyses classified as `VISIBLE` at each cell. It is not SNR, received power, a propagation model, or validated radar quality.
+### Geometric quality layers (geometric-v2)
+
+The quality layers are geometric indices painted only on `VISIBLE` cells. They are not SNR, received power, a propagation model, or validated radar quality.
+
+- **Surface incidence (Incidencia superficial)** — for `VISIBLE` cells, the 0–1 alignment of the terrain surface normal with the LOS direction from terrain to radar. Distance is **not** a multiplier: the configured maximum range only gates which cells are eligible for LOS and cannot change the score of a cell that stays `VISIBLE`.
+- **Movement projection (Proyección del movimiento)** — the slope-motion projection of the LOS against the terrain's maximum-slope direction (the normalized downhill tangent, with a downward-vertical fallback on flat terrain): one contributor scores `|dot|`, several contributors use `sqrt(sum(dot_i²) / observer_count)` (RMS). A measured zero has at least one contributor; no contributors means no data, not zero. The 3D layer paints a scalar projection on the terrain surface under the assumed maximum-slope motion; it is not a volumetric reconstruction nor a full 3-axis displacement inversion.
+- **Useful coverage vs visible distribution** — useful cells are `VISIBLE` cells whose selected index is measured (finite, 0–1) and classified medium or high. **Useful coverage** is that count over the shared target **Topografía válida completa** ("full valid topography": every finite terrain-grid node, independent of the radar footprint), and the reported target area is nominal planar area (`cells × resolution²`), not inclined 3D surface area. The low/medium/high/no-index **distribution** and the medium+high share are computed over `VISIBLE` cells only. The summary is computed per selected metric and is bound to the result's terrain epoch and analysis provenance; when the result is legacy/unversioned or from another terrain or epoch, the index is reported as not available and a rerun is requested — missing data is never reported as zero.
+- **Provisional configurable bands** — the shared band policy defaults to `media ≥ 0.3`, `alta ≥ 0.7`, copied from the legacy legend and editable in the **Bandas de calidad** panel. Editing the thresholds reclassifies existing scores without rerunning LOS; invalid thresholds (`0 ≤ media mínima < alta mínima ≤ 1`, distinct at Float32 precision) are rejected visibly instead of being silently reordered. Classification runs in Float32 — values and thresholds are compared after rounding to Float32, so the summary counts always agree with the colors painted by the GPU — with strict half-open intervals: low `[0, media)`, medium `[media, alta)`, high `[alta, 1]`. These are geometric-index ranges, not equipment-certified detection thresholds.
+- **Transparency and measured zero** — `NODATA`, `OUT_OF_RANGE`, `OUTSIDE_FOV`, `UNKNOWN_RAY` and `SHADOW` are unobserved states and are not painted: they leave the base terrain unchanged. A missing or unavailable index (for example a `VISIBLE` cell without a computable gradient) is transparent too. A measured `0.0` is data and stays colored in the low band. Transparency alone does not identify its cause; for example, it does not identify shadow. The radar/viewpoint markers in the 3D view are plain core-and-post icons without halo rings or billboards.
+- **Merged analyses** — when several analyses are selected, the merged incidence layer takes the maximum individual finite incidence value at each merged `VISIBLE` cell and the merged movement projection is the RMS across the contributing analyses; missing values are excluded instead of being counted as zeros.
+- **Exports** — the PDF report and the CSV file carry the same classification policy and provenance as the on-screen summary: thresholds marked provisional (no certified accuracy), the Float32 classification precision, the metric identity, the quality model `geometric-v2`, the terrain id/epoch and the analysis ids. For geometric-v2 results the CSV per-cell columns are `row,col,state,incidence,projection,shadowed` (legacy results keep `row,col,state,quality,shadowed`); `incidence`/`projection` are written only for `VISIBLE` cells with a measured index, as Float32 round-trip tokens (the shortest decimal that parses back to the same Float32, with a measured zero printed as `0` and blank for not-visible or no-index cells) instead of a 4-decimal rounding that could move a value across a threshold. The quality report is only added from a context captured at the export click that still matches the exported snapshot and result — every reported number is re-derived from the result being exported, and a context that does not match is rejected instead of being reported. Legacy or unversioned results export without a quality report rather than inventing one.
 
 ---
 
@@ -160,7 +171,7 @@ Workers keep terrain, LOS, and sensitivity calculations in the browser. No RF pr
 ## Limitations
 
 - Grid dimensions are limited to **16,384 nodes per axis** and **1,000,000 row × column entries total**. Both constraints apply.
-- LOS also enforces a conservative estimated traversal-work limit of **5,000,000 intervals**; an analysis can be rejected even when its grid is under the grid-size cap.
+- Each LOS compute runs under a monotonic runtime deadline of **120 seconds** (plus a 125-second worker watchdog); an analysis can be rejected when it exceeds the deadline even when its grid is under the grid-size cap.
 - STL input above 500,000 facets is sampled before gridding. IDW resampling and grid resolution affect the resulting surface and LOS classifications.
 - LOS is a straight geometric ray test over the sampled grid. It does not model RF propagation, attenuation, SNR, detection probability, radar resolution, or field performance.
 - Local profile values are not validated manufacturer specifications. Choose and verify operational radar limits independently.
