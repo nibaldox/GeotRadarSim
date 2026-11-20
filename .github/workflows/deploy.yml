@@ -24,36 +24,107 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-
-      - name: Install pinned Rust and wasm-bindgen
+      - name: Read pinned versions
+        id: versions
         run: |
-          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
-          version=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')
-          cargo +1.97.1 install wasm-bindgen-cli --version "$version" --locked
-
+          echo "toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust/rust-toolchain.toml", "rb"))["toolchain"]["channel"])')" >> "$GITHUB_OUTPUT"
+          echo "bindgen=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')" >> "$GITHUB_OUTPUT"
+      - name: Install pinned Rust
+        run: rustup toolchain install "${{ steps.versions.outputs.toolchain }}" --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+      - name: Cache wasm-bindgen
+        id: bindgen-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/wasm-bindgen/bin
+          key: wasm-bindgen-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.toolchain }}-${{ steps.versions.outputs.bindgen }}
+      - name: Install wasm-bindgen
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo +${{ steps.versions.outputs.toolchain }} install wasm-bindgen-cli --version "${{ steps.versions.outputs.bindgen }}" --locked --root "$RUNNER_TEMP/wasm-bindgen"
+      - name: Add wasm-bindgen to PATH
+        run: echo "$RUNNER_TEMP/wasm-bindgen/bin" >> "$GITHUB_PATH"
+      - name: Check Rust formatting
+        run: cargo fmt --check
+        working-directory: rust
+      - name: Lint Rust
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: rust
+      - name: Test Rust
+        run: cargo test --locked
+        working-directory: rust
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
-
       - name: Run tests
         run: npm test
         working-directory: frontend
-
       - name: Build
         run: npm run build
         working-directory: frontend
 
-  deploy:
+  build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Read pinned versions
+        id: versions
+        run: |
+          echo "toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust/rust-toolchain.toml", "rb"))["toolchain"]["channel"])')" >> "$GITHUB_OUTPUT"
+          echo "bindgen=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')" >> "$GITHUB_OUTPUT"
+      - name: Install pinned Rust
+        run: rustup toolchain install "${{ steps.versions.outputs.toolchain }}" --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+      - name: Cache wasm-bindgen
+        id: bindgen-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/wasm-bindgen/bin
+          key: wasm-bindgen-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.toolchain }}-${{ steps.versions.outputs.bindgen }}
+      - name: Install wasm-bindgen
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo +${{ steps.versions.outputs.toolchain }} install wasm-bindgen-cli --version "${{ steps.versions.outputs.bindgen }}" --locked --root "$RUNNER_TEMP/wasm-bindgen"
+      - name: Add wasm-bindgen to PATH
+        run: echo "$RUNNER_TEMP/wasm-bindgen/bin" >> "$GITHUB_PATH"
+      - name: Check Rust formatting
+        run: cargo fmt --check
+        working-directory: rust
+      - name: Lint Rust
+        run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: rust
+      - name: Test Rust
+        run: cargo test --locked
+        working-directory: rust
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Run tests
+        run: npm test
+        working-directory: frontend
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './frontend/dist'
+
+  deploy:
+    needs: build
+    permissions:
       pages: write
       id-token: write
     environment:
@@ -61,42 +132,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v6
-
-      - name: Install pinned Rust and wasm-bindgen
-        run: |
-          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
-          version=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')
-          cargo +1.97.1 install wasm-bindgen-cli --version "$version" --locked
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: frontend
-
-      - name: Run tests
-        run: npm test
-        working-directory: frontend
-
-      - name: Build
-        run: npm run build
-        working-directory: frontend
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: './frontend/dist'
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

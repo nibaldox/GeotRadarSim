@@ -12,7 +12,7 @@ function run(command, args, capture = false) {
   if (result.status !== 0) { if (capture) console.error(result.stderr); process.exit(result.status ?? 1); }
   return result.stdout;
 }
-run('cargo', ['build', '-p', 'radar-wasm', '--release', '--target', 'wasm32-unknown-unknown']);
+run('cargo', ['build', '-p', 'radar-wasm', '--release', '--locked', '--target', 'wasm32-unknown-unknown']);
 const lock = readFileSync(resolve(rust, 'Cargo.lock'), 'utf8');
 const version = lock.match(/\[\[package\]\]\s+name = "wasm-bindgen"\s+version = "([^"]+)"/)?.[1];
 const cli = run('wasm-bindgen', ['--version'], true).trim();
