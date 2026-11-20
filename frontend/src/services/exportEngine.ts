@@ -16,6 +16,17 @@ import { metricLabel } from "../utils/qualityMetrics";
 import { validateQualityExportContext } from "../utils/qualityReport";
 import type { QualityExportContext } from "../utils/qualityReport";
 
+function csvText(value: string): string {
+  const dangerous = /^[=+@\-\t\r]/.test(value);
+  const safe = dangerous ? "'" + value : value;
+  return dangerous || /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+function pdfText(value: string): string {
+  const singleLine = value.replace(/[\r\n]+/g, " ");
+  return singleLine.length > 70 ? singleLine.slice(0, 69) + "…" : singleLine;
+}
+
 function formatNullablePercent(value: number | null): string {
   return value !== null && Number.isFinite(value) ? `${value.toFixed(2)} %` : "Sin datos";
 }
@@ -97,7 +108,7 @@ function qualityDistributionRows(context: QualityExportContext, losResult: LOSRe
     ["Métrica del índice", metricLabel(metric)],
     ["Umbrales de clasificación", `media >= ${policy.mediumMin}; alta >= ${policy.highMin} (provisional; no certificado)`],
     ["Precisión de clasificación", "Índices y umbrales en Float32"],
-    ["Objetivo común", target.label],
+    ["Objetivo común", pdfText(target.label)],
     ["Celdas objetivo", String(target.cellCount)],
     ["Área nominal (planar)", `${formatFinite(target.nominalAreaM2, 2)} m²`],
     ["Cobertura útil", formatNullablePercent(summary.usefulCoveragePct)],
@@ -128,24 +139,24 @@ export function generatePDFBlob(
   let metadataY = 28;
   doc.text(`Generated: ${new Date().toLocaleString()}`, 14, metadataY);
   metadataY += 6;
-  doc.text(`Terrain ID: ${snapshot.terrainKey.terrain_id}`, 14, metadataY);
+  doc.text(`Terrain ID: ${pdfText(snapshot.terrainKey.terrain_id)}`, 14, metadataY);
   metadataY += 6;
   doc.text(`Terrain Epoch: ${snapshot.terrainKey.epoch}`, 14, metadataY);
   metadataY += 6;
-  doc.text(`Analysis ID${snapshot.sourceAnalysisIds.length === 1 ? "" : "s"}: ${analysisIdsLabel(snapshot)}`, 14, metadataY);
+  doc.text(`Analysis ID${snapshot.sourceAnalysisIds.length === 1 ? "" : "s"}: ${pdfText(analysisIdsLabel(snapshot))}`, 14, metadataY);
   metadataY += 6;
   doc.text(`Analysis Generation: ${snapshot.generation}`, 14, metadataY);
   metadataY += 6;
   if (losResult.quality_model) {
-    doc.text(`Quality Model: ${losResult.quality_model}`, 14, metadataY);
+    doc.text(`Quality Model: ${pdfText(losResult.quality_model)}`, 14, metadataY);
     metadataY += 6;
   }
 
   for (const [index, radar] of snapshot.radars.entries()) {
     const prefix = snapshot.radars.length > 1 ? `Radar ${index + 1}` : "Radar";
-    doc.text(`${prefix} ID: ${radar.radarId}`, 14, metadataY);
+    doc.text(`${prefix} ID: ${pdfText(radar.radarId)}`, 14, metadataY);
     metadataY += 6;
-    doc.text(`${prefix} Model: ${radar.radarModelId}`, 14, metadataY);
+    doc.text(`${prefix} Model: ${pdfText(radar.radarModelId)}`, 14, metadataY);
     metadataY += 6;
     doc.text(
       `${prefix} Position: X=${formatFinite(radar.position.x, 1)}  Y=${formatFinite(radar.position.y, 1)}  Z=${formatFinite(radar.position.z, 1)}`,
@@ -155,7 +166,7 @@ export function generatePDFBlob(
     metadataY += 6;
     const overrides = formatRadarOverrides(radar.overrides);
     if (overrides) {
-      doc.text(`${prefix} Overrides: ${overrides}`, 14, metadataY);
+      doc.text(`${prefix} Overrides: ${pdfText(overrides)}`, 14, metadataY);
       metadataY += 6;
     }
   }
@@ -232,20 +243,20 @@ export function generateCSVBlob(
   const qualityContext = verifiedContext(context, snapshot, losResult);
   const rows: string[] = [];
   rows.push("# GeotRadarSim — Coverage Analysis");
-  rows.push(`# Generated,${new Date().toLocaleString()}`);
-  rows.push(`# Terrain ID,${snapshot.terrainKey.terrain_id}`);
+  rows.push(`# Generated,${csvText(new Date().toLocaleString())}`);
+  rows.push(`# Terrain ID,${csvText(snapshot.terrainKey.terrain_id)}`);
   rows.push(`# Terrain Epoch,${snapshot.terrainKey.epoch}`);
-  rows.push(`# Analysis ID${snapshot.sourceAnalysisIds.length === 1 ? "" : "s"},${analysisIdsLabel(snapshot)}`);
+  rows.push(`# Analysis ID${snapshot.sourceAnalysisIds.length === 1 ? "" : "s"},${csvText(analysisIdsLabel(snapshot))}`);
   rows.push(`# Analysis Generation,${snapshot.generation}`);
   snapshot.radars.forEach((radar, index) => {
     const prefix = snapshot.radars.length > 1 ? `Radar ${index + 1}` : "Radar";
-    rows.push(`# ${prefix} ID,${radar.radarId}`);
-    rows.push(`# ${prefix} Model,${radar.radarModelId}`);
+    rows.push(`# ${prefix} ID,${csvText(radar.radarId)}`);
+    rows.push(`# ${prefix} Model,${csvText(radar.radarModelId)}`);
     rows.push(`# ${prefix} Position X,${formatFinite(radar.position.x, 3)}`);
     rows.push(`# ${prefix} Position Y,${formatFinite(radar.position.y, 3)}`);
     rows.push(`# ${prefix} Position Z,${formatFinite(radar.position.z, 3)}`);
     const overrides = formatRadarOverrides(radar.overrides);
-    if (overrides) rows.push(`# ${prefix} Overrides,${overrides}`);
+    if (overrides) rows.push(`# ${prefix} Overrides,${csvText(overrides)}`);
   });
   rows.push(`# Visibilidad (candidatos) %,${formatPercentValue(losResult.coverage_pct)}`);
   rows.push(`# Completitud %,${formatPercentValue(losResult.completeness_pct)}`);
@@ -253,7 +264,7 @@ export function generateCSVBlob(
   rows.push(`# Resolution m,${formatFinite(losResult.resolution, 3)}`);
   rows.push(`# Grid Dimensions,${losResult.grid_rows}x${losResult.grid_cols}`);
   rows.push(`# Shadow Zones,${losResult.shadow_zones.length}`);
-  if (losResult.quality_model) rows.push(`# Quality Model,${losResult.quality_model}`);
+  if (losResult.quality_model) rows.push(`# Quality Model,${csvText(losResult.quality_model)}`);
 
   if (qualityContext) {
     const { summary, target, policy, metric, qualityModel } = qualityContext;
@@ -261,11 +272,11 @@ export function generateCSVBlob(
     const distShare = (pct: number, count: number): string => `${pct.toFixed(2)} (${count})`;
     rows.push("");
     rows.push("# Informe de calidad (cobertura útil)");
-    rows.push(`# Modelo de calidad,${qualityModel}`);
-    rows.push(`# Métrica del índice,${metricLabel(metric)}`);
+    rows.push(`# Modelo de calidad,${csvText(qualityModel)}`);
+    rows.push(`# Métrica del índice,${csvText(metricLabel(metric))}`);
     rows.push(`# Umbrales de clasificación,media >= ${policy.mediumMin}; alta >= ${policy.highMin} (provisional; no certificado)`);
     rows.push("# Precisión de clasificación,Float32 (índices y umbrales; comparar en Float32 para reproducir)");
-    rows.push(`# Objetivo común,${target.label}`);
+    rows.push(`# Objetivo común,${csvText(target.label)}`);
     rows.push(`# Celdas objetivo,${target.cellCount}`);
     rows.push(`# Área nominal m2,${formatFinite(target.nominalAreaM2, 2)}`);
     rows.push(`# Cobertura útil %,${formatPercentValue(summary.usefulCoveragePct)}`);
