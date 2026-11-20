@@ -2,6 +2,7 @@
 
 pub mod jsmath;
 pub mod los;
+pub mod los_summary;
 pub mod sensitivity;
 
 #[derive(Debug, PartialEq, Eq)]

@@ -1,6 +1,8 @@
 mod sensitivity;
 
-use js_sys::{Error, Float32Array, Float64Array, Object, RangeError, Reflect, Uint8Array};
+use js_sys::{
+    Error, Float32Array, Float64Array, Object, RangeError, Reflect, Uint8Array, Uint32Array,
+};
 use radar_core::los::{self, GridView, LosError, LosRadarParams};
 use wasm_bindgen::prelude::*;
 
@@ -65,6 +67,59 @@ fn los_error(error: LosError, deadline_ms: f64) -> JsValue {
     coded_error(error.code(), &message, error.is_range_error())
 }
 
+/// Builds the core LOS request from the frozen WASM argument list.
+#[allow(clippy::too_many_arguments)]
+fn los_request<'a>(
+    values: &'a [f64],
+    rows: u32,
+    cols: u32,
+    min_x: f64,
+    min_y: f64,
+    resolution: f64,
+    min_range_m: f64,
+    max_range_m: f64,
+    elevation_min_deg: f64,
+    elevation_max_deg: f64,
+    azimuth_limited: bool,
+    azimuth_start_deg: f64,
+    azimuth_end_deg: f64,
+) -> (GridView<'a>, LosRadarParams) {
+    let grid = GridView {
+        values,
+        rows,
+        cols,
+        min_x,
+        min_y,
+        resolution,
+    };
+    let radar = LosRadarParams {
+        min_range_m,
+        max_range_m,
+        elevation_min_deg,
+        elevation_max_deg,
+        azimuth_range_deg: azimuth_limited.then_some([azimuth_start_deg, azimuth_end_deg]),
+    };
+    (grid, radar)
+}
+
+/// Validates like `computeLOS`, then the deadline budget.
+fn validate_los_request(
+    grid: &GridView<'_>,
+    position: [f64; 3],
+    radar: &LosRadarParams,
+    deadline_ms: f64,
+) -> Result<(), JsValue> {
+    los::validate_los_input(grid, position, radar).map_err(|e| los_error(e, deadline_ms))?;
+    if !(0.0..=los::MAX_DEADLINE_MS).contains(&deadline_ms) {
+        return Err(coded_error(
+            "LOS_INVALID_DEADLINE",
+            "LOS runtime deadline must be a finite number of milliseconds within [0, 2^53)",
+            true,
+        ));
+    }
+    Ok(())
+}
+
 /// Per-cell LOS (`cell_states`, incidence `quality`, slope `projection`) of `losWorker.ts`.
 ///
 /// `values` is the row-major DEM (`rows * cols`). `min_range_m` is `radar_config.min_range_m ?? 0`.
@@ -94,30 +149,23 @@ pub fn compute_los(
     azimuth_end_deg: f64,
     deadline_ms: f64,
 ) -> Result<JsValue, JsValue> {
-    let grid = GridView {
+    let (grid, radar) = los_request(
         values,
         rows,
         cols,
         min_x,
         min_y,
         resolution,
-    };
-    let radar = LosRadarParams {
         min_range_m,
         max_range_m,
         elevation_min_deg,
         elevation_max_deg,
-        azimuth_range_deg: azimuth_limited.then_some([azimuth_start_deg, azimuth_end_deg]),
-    };
+        azimuth_limited,
+        azimuth_start_deg,
+        azimuth_end_deg,
+    );
     let position = [rx, ry, rz];
-    los::validate_los_input(&grid, position, &radar).map_err(|e| los_error(e, deadline_ms))?;
-    if !(0.0..=los::MAX_DEADLINE_MS).contains(&deadline_ms) {
-        return Err(coded_error(
-            "LOS_INVALID_DEADLINE",
-            "LOS runtime deadline must be a finite number of milliseconds within [0, 2^53)",
-            true,
-        ));
-    }
+    validate_los_request(&grid, position, &radar, deadline_ms)?;
 
     // Same clock reads as createLOSRuntimeDeadline(): start after validation, then one read
     // per check point.
@@ -133,6 +181,113 @@ pub fn compute_los(
     Reflect::set(&object, &JsValue::from_str("cell_states"), &cell_states)?;
     Reflect::set(&object, &JsValue::from_str("quality"), &quality)?;
     Reflect::set(&object, &JsValue::from_str("projection"), &projection)?;
+    Ok(object.into())
+}
+
+/// The whole `computeLOS` of `losWorker.ts` under **one** deadline window: the per-cell phase
+/// of [`compute_los`] plus the cell-state reductions (counts, coverage points and the
+/// shadow-zone BFS) of `radar_core::los_summary`. Same arguments and errors as
+/// [`compute_los`]. The clock is read once after validation (the window start) and then at
+/// every TS `deadline.check()` point of both phases, in the TS order.
+///
+/// Returns an object with:
+/// - `cell_states: Uint8Array`, `quality: Float32Array`, `projection: Float32Array` (as
+///   [`compute_los`]);
+/// - `incidence: Float64Array`: the row-major f64 `quality_grid` (`0` off VISIBLE, `NaN` for
+///   VISIBLE without gradient, else the incidence before its f32 store);
+/// - `visible_count`, `shadow_count`, `unknown_ray_count`: numbers;
+/// - `coverage_points: Float64Array`: `[x0, y0, x1, y1, …]`, at most 100 points;
+/// - `shadow_zone_cell_counts: Uint32Array`: zone `i` has `zone_id = i + 1`.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn compute_los_analysis(
+    values: &[f64],
+    rows: u32,
+    cols: u32,
+    min_x: f64,
+    min_y: f64,
+    resolution: f64,
+    rx: f64,
+    ry: f64,
+    rz: f64,
+    min_range_m: f64,
+    max_range_m: f64,
+    elevation_min_deg: f64,
+    elevation_max_deg: f64,
+    azimuth_limited: bool,
+    azimuth_start_deg: f64,
+    azimuth_end_deg: f64,
+    deadline_ms: f64,
+) -> Result<JsValue, JsValue> {
+    let (grid, radar) = los_request(
+        values,
+        rows,
+        cols,
+        min_x,
+        min_y,
+        resolution,
+        min_range_m,
+        max_range_m,
+        elevation_min_deg,
+        elevation_max_deg,
+        azimuth_limited,
+        azimuth_start_deg,
+        azimuth_end_deg,
+    );
+    let position = [rx, ry, rz];
+    validate_los_request(&grid, position, &radar, deadline_ms)?;
+
+    // One window for both phases: a single start read, shared by every check point.
+    let started_at = performance_now();
+    let mut should_abort = || performance_now() - started_at > deadline_ms;
+    let analysis = los::compute_los_analysis(&grid, position, &radar, &mut should_abort)
+        .map_err(|e| los_error(e, deadline_ms))?;
+
+    let summary = &analysis.summary;
+    let coverage: Vec<f64> = summary.coverage_points.iter().flatten().copied().collect();
+    let object = Object::new();
+    for (key, value) in [
+        (
+            "cell_states",
+            JsValue::from(Uint8Array::from(analysis.buffers.cell_states.as_slice())),
+        ),
+        (
+            "quality",
+            JsValue::from(Float32Array::from(analysis.buffers.quality.as_slice())),
+        ),
+        (
+            "projection",
+            JsValue::from(Float32Array::from(analysis.buffers.projection.as_slice())),
+        ),
+        (
+            "incidence",
+            JsValue::from(Float64Array::from(analysis.incidence.as_slice())),
+        ),
+        (
+            "visible_count",
+            JsValue::from_f64(f64::from(summary.visible_count)),
+        ),
+        (
+            "shadow_count",
+            JsValue::from_f64(f64::from(summary.shadow_count)),
+        ),
+        (
+            "unknown_ray_count",
+            JsValue::from_f64(f64::from(summary.unknown_ray_count)),
+        ),
+        (
+            "coverage_points",
+            JsValue::from(Float64Array::from(coverage.as_slice())),
+        ),
+        (
+            "shadow_zone_cell_counts",
+            JsValue::from(Uint32Array::from(
+                summary.shadow_zone_cell_counts.as_slice(),
+            )),
+        ),
+    ] {
+        Reflect::set(&object, &JsValue::from_str(key), &value)?;
+    }
     Ok(object.into())
 }
 

@@ -2,6 +2,8 @@
 
 import type { BoundingBox, Point3D, SensitivityMapResponse, SensitivityObservation } from "../types/api";
 import { LOSCellState } from "../types/api";
+import { resolveWorkerComputeEngine, type ComputeEngine } from "../services/computeEngine";
+import { flattenGridForWasm, loadRadarWasm } from "../wasm/loader";
 import { terrainGradientAt } from "../utils/sensitivity";
 
 interface SensitivityTerrainKey {
@@ -18,21 +20,55 @@ export interface SensitivityWorkerInput {
   resolution: number;
   bounds: BoundingBox;
   observations: readonly SensitivityObservation[];
+  /** Compute engine; missing means "ts". Any other value is rejected. */
+  engine?: ComputeEngine;
 }
 
 export interface SensitivityWorkerOutput extends SensitivityMapResponse {
   error?: string;
 }
 
-self.onmessage = (event: MessageEvent<SensitivityWorkerInput>) => {
+function postSensitivityResult(result: SensitivityWorkerOutput): void {
+  // Same Transferables for both engines, so an A/B measures only the engine.
+  self.postMessage(result, [result.flat_sensitivity_grid.buffer, result.observer_count.buffer]);
+}
+
+function postSensitivityError(error: unknown, engine?: ComputeEngine): void {
+  const message = error instanceof Error ? error.message : String(error);
+  self.postMessage(engine === undefined ? { error: message } : { error: message, engine_used: engine });
+}
+
+function assertSensitivityJob(input: SensitivityWorkerInput): void {
+  if (input.type !== "SENSITIVITY") {
+    throw new Error(`Unknown job type '${(input as { type?: unknown }).type}'`);
+  }
+}
+
+/**
+ * The "ts" engine posts synchronously, exactly as before. The "wasm" engine returns the
+ * promise of its asynchronous run, which resolves once the result or the error was posted.
+ */
+self.onmessage = (event: MessageEvent<SensitivityWorkerInput>): void | Promise<void> => {
+  let engine: ComputeEngine;
   try {
-    if (event.data.type !== "SENSITIVITY") {
-      throw new Error(`Unknown job type '${(event.data as { type?: unknown }).type}'`);
-    }
-    const result = computeSensitivityMap(event.data);
-    self.postMessage(result, [result.flat_sensitivity_grid.buffer, result.observer_count.buffer]);
+    engine = resolveWorkerComputeEngine(
+      (event.data as { engine?: unknown } | null | undefined)?.engine, "sensitivity",
+    );
   } catch (error) {
-    self.postMessage({ error: error instanceof Error ? error.message : String(error) });
+    postSensitivityError(error);
+    return;
+  }
+  if (engine === "wasm") {
+    // Like the "ts" try/catch, a failure while posting the result is also reported as an error.
+    return computeSensitivityMapWithWasm(event.data)
+      .then(postSensitivityResult)
+      .catch((error: unknown) => postSensitivityError(error, "wasm"));
+  }
+  try {
+    assertSensitivityJob(event.data);
+    postSensitivityResult(computeSensitivityMap(event.data));
+  } catch (error) {
+    postSensitivityError(error, "ts");
   }
 };
 
@@ -155,5 +191,85 @@ function computeSensitivityMap(input: SensitivityWorkerInput): SensitivityWorker
     resolution: input.resolution,
     flat_sensitivity_grid,
     observer_count,
+    engine_used: "ts",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "wasm" engine: radar_core::sensitivity through rust/radar-wasm.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Messages for the Rust boundary codes. After validateInput only inputs outside the API
+ * domain reach them: cell states other than the LOSCellState codes 0-5, more than 65535
+ * observations, or a grid beyond the global terrain limits (the API rejects the last two).
+ */
+const SENSITIVITY_WASM_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  INVALID_STATE: "Sensitivity observation cell states must be LOS cell-state codes 0-5",
+  INVALID_OBSERVATIONS: "Sensitivity requires between 1 and 65535 individual radar observations",
+  LIMIT_EXCEEDED: "Sensitivity terrain grid exceeds the 16,384-node axis or 1,000,000-cell limit",
+};
+
+function sensitivityWasmError(error: unknown): Error {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code !== "string") return error instanceof Error ? error : new Error(String(error));
+  return new RangeError(SENSITIVITY_WASM_ERROR_MESSAGES[code] ?? `Sensitivity WASM engine rejected the input (${code})`);
+}
+
+/** No silent fallback to "ts" on an initialisation failure (see losWorker.ts). */
+async function loadSensitivityWasm(): Promise<Awaited<ReturnType<typeof loadRadarWasm>>> {
+  try {
+    return await loadRadarWasm();
+  } catch (error) {
+    throw new Error(`Sensitivity WASM engine failed to initialize: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function computeSensitivityMapWithWasm(input: SensitivityWorkerInput): Promise<SensitivityWorkerOutput> {
+  assertSensitivityJob(input);
+  const { rows, cols, size, positions } = validateInput(input);
+  const wasm = await loadSensitivityWasm();
+
+  const observations = input.observations;
+  let flat_sensitivity_grid: Float32Array;
+  let observer_count: Uint16Array;
+  if (observations.length === 0) {
+    // The handler accepts an empty list (the API does not); the Rust boundary requires at least
+    // one observation, and the TS result is fully determined: no contributors anywhere.
+    flat_sensitivity_grid = new Float32Array(size);
+    flat_sensitivity_grid.fill(Number.NaN);
+    observer_count = new Uint16Array(size);
+  } else {
+    // W3 API: positions [x0, y0, z0, x1, …] and the masks concatenated in observation order.
+    const flatPositions = new Float64Array(positions.length * 3);
+    positions.forEach((position, index) => {
+      flatPositions[index * 3] = position.x;
+      flatPositions[index * 3 + 1] = position.y;
+      flatPositions[index * 3 + 2] = position.z;
+    });
+    const masks = new Uint8Array(observations.length * size);
+    observations.forEach((observation, index) => masks.set(observation.cell_states, index * size));
+    let result: { flat_sensitivity_grid: Float32Array; observer_count: Uint16Array };
+    try {
+      result = wasm.sensitivity(
+        flattenGridForWasm(input.grid), rows, cols, input.bounds.min_x, input.bounds.min_y,
+        input.resolution, flatPositions, masks,
+      ) as typeof result;
+    } catch (error) {
+      throw sensitivityWasmError(error);
+    }
+    flat_sensitivity_grid = result.flat_sensitivity_grid;
+    observer_count = result.observer_count;
+  }
+
+  return {
+    terrainKey: { ...input.terrainKey },
+    sourceAnalysisIds: input.observations.map((observation) => observation.analysisId),
+    grid_rows: rows,
+    grid_cols: cols,
+    resolution: input.resolution,
+    flat_sensitivity_grid,
+    observer_count,
+    engine_used: "wasm",
   };
 }

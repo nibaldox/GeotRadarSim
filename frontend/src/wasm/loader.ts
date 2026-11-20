@@ -23,3 +23,26 @@ export function loadRadarWasm(): Promise<typeof radar> {
     return radar;
   })();
 }
+
+/**
+ * Flatten a `number[][]` DEM row-major into the `Float64Array` the Rust core expects.
+ *
+ * The length is the real sum of the row lengths, so a ragged grid that bypassed the TS guard
+ * still fails the Rust `rows * cols` length check ("LOS grid must be rectangular") instead of
+ * being padded. Any entry that is not a `number` becomes `NaN`: the TS workers read every DEM
+ * value through `Number.isFinite`, which is false for all non-numbers, while a typed-array
+ * store would coerce `null`, booleans and numeric strings to finite values.
+ */
+export function flattenGridForWasm(grid: readonly (readonly unknown[])[]): Float64Array {
+  let total = 0;
+  for (const row of grid) total += row.length;
+  const values = new Float64Array(total);
+  let offset = 0;
+  for (const row of grid) {
+    for (let col = 0; col < row.length; col++) {
+      const value = row[col];
+      values[offset++] = typeof value === "number" ? value : Number.NaN;
+    }
+  }
+  return values;
+}

@@ -32,6 +32,7 @@ import {
 import type { TerrainWorkerInput, TerrainWorkerMessage, TerrainWorkerOutput, TerrainBoundsWorkerOutput } from "../workers/terrainWorker";
 import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
 import type { SensitivityWorkerInput, SensitivityWorkerOutput } from "../workers/vectorWorker";
+import { getComputeEngine } from "./computeEngine";
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
 import type { LOSResponse } from "../types/api";
 import type { QualityExportContext } from "../utils/qualityReport";
@@ -390,7 +391,8 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     bounds: terrain.metadata.bounds,
     resolution: terrain.metadata.resolution,
     radar_position: [req.radar_position.x, req.radar_position.y, req.radar_position.z],
-    radar_config: effectiveRadar
+    radar_config: effectiveRadar,
+    engine: getComputeEngine(),
   };
   jobTerrainLeaseReleases.set(jobId, acquireLocalTerrainLease(req.terrain_id));
   const markFailed = (error: string) => {
@@ -680,6 +682,7 @@ function prepareSensitivityWorkerInput(
       resolution: terrain.metadata.resolution,
       bounds: terrain.metadata.bounds,
       observations: req.observations,
+      engine: getComputeEngine(),
     },
   };
 }

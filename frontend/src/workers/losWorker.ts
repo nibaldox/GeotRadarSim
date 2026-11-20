@@ -2,6 +2,8 @@
 
 import { LOSCellState } from "../types/api";
 import type { LOSResponse, RadarConfig } from "../types/api";
+import { resolveWorkerComputeEngine, type ComputeEngine } from "../services/computeEngine";
+import { flattenGridForWasm, loadRadarWasm } from "../wasm/loader";
 import { terrainGradientAt } from "../utils/sensitivity";
 import { validateTerrainGridDimensions, validateTerrainResolution, validateTerrainTotalArea } from "../utils/terrainLimits";
 
@@ -16,18 +18,45 @@ export interface LOSWorkerInput {
   resolution: number;
   radar_position: [number, number, number];
   radar_config: RadarConfig;
+  /** Compute engine; missing means "ts". Any other value is rejected. */
+  engine?: ComputeEngine;
 }
 
 export interface LOSWorkerOutput extends LOSResponse {
   error?: string;
 }
 
-self.onmessage = (e: MessageEvent<LOSWorkerInput>) => {
+function postLOSResult(result: LOSWorkerOutput): void {
+  // Same Transferables for both engines, so an A/B measures only the engine.
+  self.postMessage(result, [result.flat_quality_grid!.buffer, result.flat_projection_grid!.buffer]);
+}
+
+function postLOSError(err: unknown, engine?: ComputeEngine): void {
+  const message = err instanceof Error ? err.message : String(err);
+  self.postMessage(engine === undefined ? { error: message } : { error: message, engine_used: engine });
+}
+
+/**
+ * The "ts" engine posts synchronously, exactly as before. The "wasm" engine returns the
+ * promise of its asynchronous run (WASM initialisation is asynchronous), which resolves once
+ * the result or the error has been posted.
+ */
+self.onmessage = (e: MessageEvent<LOSWorkerInput>): void | Promise<void> => {
+  let engine: ComputeEngine;
   try {
-    const result = computeLOS(e.data);
-    self.postMessage(result, [result.flat_quality_grid!.buffer, result.flat_projection_grid!.buffer]);
+    engine = resolveWorkerComputeEngine((e.data as { engine?: unknown } | null | undefined)?.engine, "LOS");
   } catch (err) {
-    self.postMessage({ error: err instanceof Error ? err.message : String(err) });
+    postLOSError(err);
+    return;
+  }
+  if (engine === "wasm") {
+    // Like the "ts" try/catch, a failure while posting the result is also reported as an error.
+    return computeLOSWithWasm(e.data).then(postLOSResult).catch((err: unknown) => postLOSError(err, "wasm"));
+  }
+  try {
+    postLOSResult(computeLOS(e.data));
+  } catch (err) {
+    postLOSError(err, "ts");
   }
 };
 
@@ -378,7 +407,26 @@ export function sampleTerrainAtCoordinates(
   return height;
 }
 
-function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
+interface ValidatedLOSInput {
+  grid: number[][];
+  bounds: LOSWorkerInput["bounds"];
+  resolution: number;
+  rx: number;
+  ry: number;
+  rz: number;
+  radar_config: RadarConfig;
+  rows: number;
+  cols: number;
+  cellCount: number;
+  cellArea: number;
+  minRange: number;
+  maxRange: number;
+  minElevation: number;
+  maxElevation: number;
+}
+
+/** Every guard of computeLOS, in its original order; shared by both engines. */
+function validateLOSInput(input: LOSWorkerInput): ValidatedLOSInput {
   const { grid, bounds, resolution, radar_position: [rx, ry, rz], radar_config } = input;
   if (!Array.isArray(grid) || grid.length === 0 || !Array.isArray(grid[0]) || grid[0].length === 0) {
     throw new Error("LOS grid must be non-empty and rectangular");
@@ -406,6 +454,31 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       minElevation < -90 || maxElevation > 90 || minElevation > maxElevation) {
     throw new RangeError("LOS elevation limits must be finite, within [-90, 90], and ordered");
   }
+  return {
+    grid, bounds, resolution, rx, ry, rz, radar_config, rows, cols, cellCount, cellArea,
+    minRange, maxRange, minElevation, maxElevation,
+  };
+}
+
+/** Coverage and completeness percentages from the candidate counts (shared by both engines). */
+function coveragePercentages(
+  visibleCount: number,
+  shadowCount: number,
+  unknownRayCount: number,
+): { coverage_pct: number | null; completeness_pct: number | null } {
+  const candidateCount = visibleCount + shadowCount + unknownRayCount;
+  const coverage_pct = candidateCount > 0 ? Number(((visibleCount / candidateCount) * 100).toFixed(2)) : null;
+  const completeness_pct = candidateCount > 0
+    ? Number((((visibleCount + shadowCount) / candidateCount) * 100).toFixed(2))
+    : null;
+  return { coverage_pct, completeness_pct };
+}
+
+function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
+  const {
+    grid, bounds, resolution, rx, ry, rz, radar_config, rows, cols, cellCount, cellArea,
+    minRange, maxRange, minElevation, maxElevation,
+  } = validateLOSInput(input);
 
   // Every compute owns a fresh monotonic deadline. Start timing before allocating the
   // memory-bounded result buffers; feasibility is checked during execution, not estimated.
@@ -561,11 +634,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
     }
   }
 
-  const candidateCount = visibleCount + shadowCount + unknownRayCount;
-  const coverage_pct = candidateCount > 0 ? Number(((visibleCount / candidateCount) * 100).toFixed(2)) : null;
-  const completeness_pct = candidateCount > 0
-    ? Number((((visibleCount + shadowCount) / candidateCount) * 100).toFixed(2))
-    : null;
+  const { coverage_pct, completeness_pct } = coveragePercentages(visibleCount, shadowCount, unknownRayCount);
 
   return {
     shadow_grid,
@@ -582,5 +651,123 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
     visible_area_m2: visibleCount * cellArea,
     shadow_zones,
     coverage_polygon: coverage_polygon.slice(0, 100),
+    engine_used: "ts",
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "wasm" engine: the Rust core (rust/radar-core, binding rust/radar-wasm).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Shape returned by `compute_los_analysis` in rust/radar-wasm/src/lib.rs. */
+interface WasmLOSAnalysis {
+  cell_states: Uint8Array;
+  quality: Float32Array;
+  projection: Float32Array;
+  incidence: Float64Array;
+  visible_count: number;
+  shadow_count: number;
+  unknown_ray_count: number;
+  coverage_points: Float64Array;
+  shadow_zone_cell_counts: Uint32Array;
+}
+
+/**
+ * A WASM initialisation failure is reported as an error of this job. It deliberately does
+ * NOT fall back to the TypeScript engine: a silent fallback would mix both engines in an A/B
+ * and hide a broken deployment. End-user protection is decided when the default changes.
+ */
+async function loadLOSWasm(): Promise<Awaited<ReturnType<typeof loadRadarWasm>>> {
+  try {
+    return await loadRadarWasm();
+  } catch (err) {
+    throw new Error(`LOS WASM engine failed to initialize: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+function isNumberOrMissing(value: unknown): value is number | undefined {
+  return value === undefined || typeof value === "number";
+}
+
+/**
+ * computeLOS through the Rust core. The validation is the same TS code as the "ts" engine
+ * (same messages and order); Rust revalidates everything at its boundary. The single 120 s
+ * deadline window lives in Rust and covers the per-cell phase and the shadow-zone BFS with the
+ * same clock reads as createLOSRuntimeDeadline(). Only the O(1) percentage formatting and the
+ * nested boolean[][]/number[][] views are built here, from the Rust buffers.
+ */
+async function computeLOSWithWasm(input: LOSWorkerInput): Promise<LOSWorkerOutput> {
+  const {
+    grid, bounds, resolution, rx, ry, rz, radar_config, rows, cols, cellArea,
+    minRange, maxRange, minElevation, maxElevation,
+  } = validateLOSInput(input);
+
+  // azimuth_limited = scan_pattern !== "SAR360" && !!azimuth_range_deg (isInsideAzimuth).
+  const range = radar_config.azimuth_range_deg;
+  const azimuthLimited = radar_config.scan_pattern !== "SAR360" && !!range;
+  let azimuthStart = Number.NaN;
+  let azimuthEnd = Number.NaN;
+  if (azimuthLimited) {
+    // The TS destructures `[start, end]` and compares with JS coercion (string pairs compare
+    // lexicographically); the f64 boundary cannot reproduce that, so non-numeric ranges are
+    // rejected instead of silently diverging. Missing entries behave as NaN in both engines.
+    if (!Array.isArray(range) || !isNumberOrMissing(range[0]) || !isNumberOrMissing(range[1])) {
+      throw new RangeError("LOS azimuth range must be null or a [start, end] pair of numbers for the WASM engine");
+    }
+    azimuthStart = range[0] ?? Number.NaN;
+    azimuthEnd = range[1] ?? Number.NaN;
+  }
+
+  const wasm = await loadLOSWasm();
+  const values = flattenGridForWasm(grid);
+  const out = wasm.compute_los_analysis(
+    values, rows, cols, bounds.min_x, bounds.min_y, resolution, rx, ry, rz,
+    minRange, maxRange, minElevation, maxElevation,
+    azimuthLimited, azimuthStart, azimuthEnd, LOS_RUNTIME_DEADLINE_MS,
+  ) as WasmLOSAnalysis;
+
+  const { cell_states, incidence } = out;
+  // Same construction as computeLOS: false/0 everywhere, then SHADOW and VISIBLE cells.
+  const shadow_grid: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false));
+  const quality_grid: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
+  for (let r = 0; r < rows; r++) {
+    const shadowRow = shadow_grid[r]!;
+    const qualityRow = quality_grid[r]!;
+    const rowOffset = r * cols;
+    for (let c = 0; c < cols; c++) {
+      const state = cell_states[rowOffset + c];
+      if (state === LOSCellState.SHADOW) shadowRow[c] = true;
+      else if (state === LOSCellState.VISIBLE) qualityRow[c] = incidence[rowOffset + c]!;
+    }
+  }
+
+  const shadow_zones = Array.from(out.shadow_zone_cell_counts, (cell_count, index) => ({
+    zone_id: index + 1,
+    cell_count,
+  }));
+  const coverage_polygon: Array<[number, number]> = [];
+  for (let i = 0; i + 1 < out.coverage_points.length; i += 2) {
+    coverage_polygon.push([out.coverage_points[i]!, out.coverage_points[i + 1]!]);
+  }
+  const { coverage_pct, completeness_pct } = coveragePercentages(
+    out.visible_count, out.shadow_count, out.unknown_ray_count,
+  );
+
+  return {
+    shadow_grid,
+    cell_states,
+    grid_rows: rows,
+    grid_cols: cols,
+    resolution,
+    quality_grid,
+    flat_quality_grid: out.quality,
+    quality_model: "geometric-v2",
+    flat_projection_grid: out.projection,
+    coverage_pct,
+    completeness_pct,
+    visible_area_m2: out.visible_count * cellArea,
+    shadow_zones,
+    coverage_polygon: coverage_polygon.slice(0, 100),
+    engine_used: "wasm",
   };
 }

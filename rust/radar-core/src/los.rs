@@ -4,9 +4,11 @@
 //! restricted to the three flat buffers (`cell_states`, `flat_quality_grid`,
 //! `flat_projection_grid`). Expression order, `Math.*` semantics (see [`crate::jsmath`]),
 //! the `Number.EPSILON` snapping tolerance and the `Float32Array` store points are kept
-//! identical so the output is bit-for-bit equal to the TypeScript worker. Shadow-zone BFS,
-//! percentages, area, coverage points and the nested `boolean[][]`/`number[][]` grids stay
-//! in TypeScript.
+//! identical so the output is bit-for-bit equal to the TypeScript worker.
+//! [`compute_los_analysis`] adds the f64 incidence grid and the cell-state reductions of
+//! [`crate::los_summary`] (shadow-zone BFS, counts, coverage points) under the same deadline.
+//! Percentage formatting (`toFixed(2)`), area and the nested `boolean[][]`/`number[][]` grids
+//! stay in TypeScript.
 
 // Comparisons are written in the literal TS form so NaN behaves identically.
 #![allow(clippy::manual_range_contains)]
@@ -702,7 +704,67 @@ pub fn compute_los(
     radar: &LosRadarParams,
     should_abort: &mut dyn FnMut() -> bool,
 ) -> Result<LosBuffers, LosError> {
+    compute_cells(grid, radar_position, radar, should_abort, None)
+}
+
+/// Everything `computeLOS` derives from the DEM, under one deadline window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LosAnalysis {
+    pub buffers: LosBuffers,
+    /// Row-major f64 `quality_grid` of the TS worker: `0` when not VISIBLE, `NaN` when
+    /// VISIBLE without a gradient, otherwise the f64 incidence before its f32 store.
+    pub incidence: Vec<f64>,
+    pub summary: crate::los_summary::LosSummary,
+}
+
+/// The whole `computeLOS` loop structure: the per-cell phase of [`compute_los`] followed by
+/// the cell-state reductions of [`crate::los_summary::summarize_los`] (counts, coverage
+/// points and the shadow-zone BFS), all polling the **same** `should_abort` at exactly the
+/// TS `deadline.check()` points of both phases, in the same order. The caller reads the
+/// clock once before calling, so there is a single deadline window, as in the TS worker.
+pub fn compute_los_analysis(
+    grid: &GridView<'_>,
+    radar_position: [f64; 3],
+    radar: &LosRadarParams,
+    should_abort: &mut dyn FnMut() -> bool,
+) -> Result<LosAnalysis, LosError> {
+    let mut incidence = Vec::new();
+    let buffers = compute_cells(
+        grid,
+        radar_position,
+        radar,
+        should_abort,
+        Some(&mut incidence),
+    )?;
+    let summary = crate::los_summary::summarize_los(
+        &buffers.cell_states,
+        grid.rows,
+        grid.cols,
+        grid.min_x,
+        grid.min_y,
+        grid.resolution,
+        should_abort,
+    )?;
+    Ok(LosAnalysis {
+        buffers,
+        incidence,
+        summary,
+    })
+}
+
+/// Shared per-cell loop. When `incidence_out` is given it receives the f64 `quality_grid`.
+fn compute_cells(
+    grid: &GridView<'_>,
+    radar_position: [f64; 3],
+    radar: &LosRadarParams,
+    should_abort: &mut dyn FnMut() -> bool,
+    mut incidence_out: Option<&mut Vec<f64>>,
+) -> Result<LosBuffers, LosError> {
     let cell_count = validate_los_input(grid, radar_position, radar)?;
+    if let Some(incidence) = incidence_out.as_deref_mut() {
+        incidence.clear();
+        incidence.resize(cell_count, 0.0);
+    }
     let [rx, ry, rz] = radar_position;
     let rows = grid.rows as usize;
     let cols = grid.cols as usize;
@@ -771,6 +833,9 @@ pub fn compute_los(
             cell_states[idx] = cell_state::VISIBLE;
             let Some((grad_x, grad_y)) = terrain_gradient_at(dem, r, c, resolution) else {
                 quality[idx] = f32::NAN;
+                if let Some(incidence) = incidence_out.as_deref_mut() {
+                    incidence[idx] = f64::NAN;
+                }
                 continue;
             };
             let normal_length = js_hypot3(grad_x, grad_y, 1.0);
@@ -790,6 +855,9 @@ pub fn compute_los(
             let uz = dz / distance3d;
             let incidence = js_max(0.0, js_min(1.0, -(ux * nx + uy * ny + uz * nz)));
             quality[idx] = incidence as f32;
+            if let Some(incidence_grid) = incidence_out.as_deref_mut() {
+                incidence_grid[idx] = incidence;
+            }
 
             let mut tx = -grad_x;
             let mut ty = -grad_y;

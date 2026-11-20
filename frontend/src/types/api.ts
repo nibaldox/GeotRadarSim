@@ -74,6 +74,8 @@ export interface LOSResponse {
   quality_model?: "geometric-v2";
   /** Flat slope-motion projection per cell; NaN = unavailable (non-visible or no computable gradient). */
   flat_projection_grid?: Float32Array;
+  /** Engine that computed this result in the LOS Worker (A/B provenance). */
+  engine_used?: "ts" | "wasm";
 }
 
 export interface TerrainGridResponse {
@@ -167,6 +169,8 @@ export interface SensitivityMapResponse {
   flat_sensitivity_grid: Float32Array;
   /** Contributing individual observations per cell: LOS is VISIBLE and both gradient axes are finite from central or one-sided neighbors. */
   observer_count: Uint16Array;
+  /** Engine that computed this map in the sensitivity Worker (A/B provenance). */
+  engine_used?: "ts" | "wasm";
 }
 
 
