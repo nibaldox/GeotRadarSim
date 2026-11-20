@@ -564,6 +564,7 @@ describe("LOS worker: one 120 s deadline window in both engines", () => {
     }
   });
 
+  // Exhaustive: ~10 aborts × 2 engines × every input; ~4.5 s alone, so it needs more than vitest's 5 s default.
   it("aborts with the identical TS message at every sampled check point of both phases", async () => {
     for (const [label, input] of inputs) {
       const counter = countingClock();
@@ -582,7 +583,7 @@ describe("LOS worker: one 120 s deadline window in both engines", () => {
         expect(ts.message.error, `${label} abort after ${allowed}`).toMatch(/^El cálculo de visibilidad LOS excedió el tiempo máximo de ejecución \(120 segundos\)\. /);
       }
     }
-  });
+  }, 60_000);
 
   it("measures the BFS against the single window start (no second window)", async () => {
     for (const [label, input] of inputs) {
