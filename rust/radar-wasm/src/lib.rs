@@ -1,3 +1,5 @@
+mod sensitivity;
+
 use js_sys::{Error, Float32Array, Float64Array, Object, RangeError, Reflect, Uint8Array};
 use radar_core::los::{self, GridView, LosError, LosRadarParams};
 use wasm_bindgen::prelude::*;

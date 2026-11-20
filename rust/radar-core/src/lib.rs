@@ -2,6 +2,7 @@
 
 pub mod jsmath;
 pub mod los;
+pub mod sensitivity;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum GridError {
