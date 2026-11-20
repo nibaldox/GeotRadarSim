@@ -11,6 +11,7 @@ declare module 'node:fs' {
 declare module 'node:os' {
   export function cpus(): { model: string }[];
   export function endianness(): string;
+  export function loadavg(): number[];
 }
 declare module 'node:child_process' {
   export function execFileSync(command: string, args: string[], options: { encoding: 'utf8' }): string;
