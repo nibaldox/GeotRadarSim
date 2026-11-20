@@ -12,6 +12,8 @@ build/
 node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/src/wasm/pkg/
+rust/target/
 
 # IDE
 .vscode/

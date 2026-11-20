@@ -1,0 +1,12 @@
+[workspace]
+members = ["radar-core", "radar-wasm"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

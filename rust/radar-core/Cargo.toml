@@ -1,0 +1,4 @@
+[package]
+name = "radar-core"
+version.workspace = true
+edition.workspace = true

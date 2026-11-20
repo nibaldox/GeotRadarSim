@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run build:wasm",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build": "npm run build:wasm && tsc -b && vite build",
+    "pretest": "npm run build:wasm",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -1,0 +1,12 @@
+[package]
+name = "radar-wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+radar-core = { path = "../radar-core" }
+wasm-bindgen = "0.2.130"
+js-sys = "0.3"

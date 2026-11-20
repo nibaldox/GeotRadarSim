@@ -32,6 +32,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install pinned Rust and wasm-bindgen
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+          version=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')
+          cargo +1.97.1 install wasm-bindgen-cli --version "$version" --locked
+
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
@@ -67,6 +73,12 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
+
+      - name: Install pinned Rust and wasm-bindgen
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+          version=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')
+          cargo +1.97.1 install wasm-bindgen-cli --version "$version" --locked
 
       - name: Install dependencies
         run: npm ci
