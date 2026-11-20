@@ -19,7 +19,9 @@ import type { QualityExportContext } from "../utils/qualityReport";
 function csvText(value: string): string {
   const dangerous = /^[=+@\-\t\r]/.test(value);
   const safe = dangerous ? "'" + value : value;
-  return dangerous || /[",;\t\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  // A standalone -90 segment can be a formula; azCenter=-90 starts with a name and is safe.
+  const dangerousSegment = value.split(/[;\t]/).some((segment) => /^[=+@-]/.test(segment.trimStart()));
+  return dangerous || dangerousSegment || /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 function pdfText(value: string): string {

@@ -7,8 +7,12 @@ const result = { cell_states: new Uint8Array([5]), grid_rows: 1, grid_cols: 1, r
   completeness_pct: 100, visible_area_m2: 1, shadow_zones: [] } as unknown as LOSResponse;
 
 describe("CSV text hardening", () => {
-  it.each([["a;b", '"a;b"'], ["a\tb", '"a\tb"'], ["x;=1+1", '"x;=1+1"'],
-    ["simple", "simple"], ["=1+1", '"\'=1+1"'], ["\tstart", '"\'\tstart"']])
+  it.each([["a;b", "a;b"], ["a\tb", "a\tb"], ["x;=1+1", '"x;=1+1"'],
+    ["a;\t+1", '"a;\t+1"'], ["a; -1", '"a; -1"'], ["a; @SUM(1)", '"a; @SUM(1)"'],
+    ["rangeMin=25; azCenter=90; azWidth=45", "rangeMin=25; azCenter=90; azWidth=45"],
+    ["azCenter=-90; azWidth=45", "azCenter=-90; azWidth=45"], ["a;-90", '"a;-90"'],
+    ["simple", "simple"], ["=1+1", '"\'=1+1"'], ["\tstart", '"\'\tstart"'],
+    ['a;=1+"2"', '"a;=1+""2"""']])
   ("quotes and protects %j", async (terrainId, expected) => {
     const snapshot = { terrainKey: { terrain_id: terrainId, epoch: 1 }, analysisId: "a",
       sourceAnalysisIds: ["a"], generation: 1, radars: [] } as AnalysisSnapshot;
