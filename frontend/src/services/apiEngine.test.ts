@@ -7,6 +7,7 @@ import { cancelLOSAnalysis, cancelSensitivityAnalysis, generateSynthetic, releas
 import { COMPUTE_ENGINE_STORAGE_KEY } from "./computeEngine";
 import { clearLocalTerrainCache, saveLocalTerrain } from "./localDataStore";
 import { LOSCellState, type SensitivityObservation } from "../types/api";
+import { workerBootstrapImport } from "./workerBootstrap.testSupport";
 
 class CapturingWorker {
   static instances: CapturingWorker[] = [];
@@ -41,7 +42,8 @@ async function postedLOSEngine(): Promise<unknown> {
   const terrain = await generateSynthetic({ size_x: 20, size_y: 20, depth: 1, resolution: 1 });
   const job = await runLOSAnalysis({ terrain_id: terrain.terrain_id, radar_position: { x: 10, y: 10, z: 5 }, radar_model_id: "groundprobe-ssr-fx" });
   const worker = CapturingWorker.instances[CapturingWorker.instances.length - 1]!;
-  expect(String(worker.url)).toContain("losWorker");
+  expect(String(worker.url)).toMatch(/^blob:/);
+  expect(await workerBootstrapImport(worker.url)).toContain("/src/workers/losWorker.ts");
   const message = worker.posted[0] as { engine?: unknown; radar_position: unknown };
   expect(message.radar_position).toEqual([10, 10, 5]);
   cancelLOSAnalysis(job.job_id);
@@ -78,7 +80,8 @@ async function postedSensitivityEngine(): Promise<unknown> {
   };
   const job = await runSensitivityAnalysis({ terrainKey, observations: [observation] });
   const worker = CapturingWorker.instances[CapturingWorker.instances.length - 1]!;
-  expect(String(worker.url)).toContain("vectorWorker");
+  expect(String(worker.url)).toMatch(/^blob:/);
+  expect(await workerBootstrapImport(worker.url)).toContain("/src/workers/vectorWorker.ts");
   const message = worker.posted[0] as { engine?: unknown; type: unknown };
   expect(message.type).toBe("SENSITIVITY");
   cancelSensitivityAnalysis(job.job_id);

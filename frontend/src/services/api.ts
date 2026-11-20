@@ -32,8 +32,11 @@ import {
 import type { TerrainWorkerInput, TerrainWorkerMessage, TerrainWorkerOutput, TerrainBoundsWorkerOutput } from "../workers/terrainWorker";
 import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
 import type { SensitivityWorkerInput, SensitivityWorkerOutput } from "../workers/vectorWorker";
-import { getComputeEngine } from "./computeEngine";
 import { getComputeEngineSelection } from "./computeEngine";
+import { createModuleWorker } from "./moduleWorker";
+import terrainWorkerUrl from "../workers/terrainWorker.ts?worker&url";
+import losWorkerUrl from "../workers/losWorker.ts?worker&url";
+import vectorWorkerUrl from "../workers/vectorWorker.ts?worker&url";
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
 import type { LOSResponse } from "../types/api";
 import type { QualityExportContext } from "../utils/qualityReport";
@@ -182,7 +185,7 @@ async function runTerrainWorkerFull(input: TerrainWorkerInput): Promise<DTMMetad
     };
 
     try {
-      worker = new Worker(new URL('../workers/terrainWorker.ts', import.meta.url), { type: 'module' });
+      worker = createModuleWorker(terrainWorkerUrl);
       worker.onmessage = (e: MessageEvent<TerrainWorkerOutput>) => {
         if (!claimTerminal()) return;
         try {
@@ -201,7 +204,9 @@ async function runTerrainWorkerFull(input: TerrainWorkerInput): Promise<DTMMetad
         if (!claimTerminal()) return;
         reject(new Error("Worker error: " + e.message));
       };
-      worker.postMessage(input);
+      // Transfer, not copy, the file bytes: this ArrayBuffer is detached here and never read again
+      // on the main thread (each upload or preview reads the File into its own buffer).
+      worker.postMessage(input, [input.fileData]);
     } catch (error) {
       if (claimTerminal()) reject(error);
     }
@@ -232,7 +237,7 @@ async function runTerrainWorkerBounds(input: TerrainWorkerInput): Promise<Terrai
     };
 
     try {
-      worker = new Worker(new URL('../workers/terrainWorker.ts', import.meta.url), { type: 'module' });
+      worker = createModuleWorker(terrainWorkerUrl);
       worker.onmessage = (e: MessageEvent<TerrainWorkerMessage>) => {
         if (!claimTerminal()) return;
         try {
@@ -253,7 +258,9 @@ async function runTerrainWorkerBounds(input: TerrainWorkerInput): Promise<Terrai
         if (!claimTerminal()) return;
         reject(new Error("Worker error: " + e.message));
       };
-      worker.postMessage(input);
+      // Transfer, not copy, the file bytes: this ArrayBuffer is detached here and never read again
+      // on the main thread (each upload or preview reads the File into its own buffer).
+      worker.postMessage(input, [input.fileData]);
     } catch (error) {
       if (claimTerminal()) reject(error);
     }
@@ -390,14 +397,15 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
   losJobIds.add(jobId);
   jobStore.set(jobId, { job_id: jobId, status: "PENDING", created_at: createdAt });
 
+  const selection = getComputeEngineSelection();
   const workerInput: LOSWorkerInput = {
     grid: terrain.grid,
     bounds: terrain.metadata.bounds,
     resolution: terrain.metadata.resolution,
     radar_position: [req.radar_position.x, req.radar_position.y, req.radar_position.z],
     radar_config: effectiveRadar,
-    engine: getComputeEngine(),
-    engine_explicit: getComputeEngineSelection().explicit,
+    engine: selection.engine,
+    engine_explicit: selection.explicit,
   };
   jobTerrainLeaseReleases.set(jobId, acquireLocalTerrainLease(req.terrain_id));
   const markFailed = (error: string) => {
@@ -429,7 +437,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
   let worker: Worker | undefined;
   let synchronousFailure = false;
   try {
-    worker = new Worker(new URL('../workers/losWorker.ts', import.meta.url), { type: 'module' });
+    worker = createModuleWorker(losWorkerUrl);
     const activeWorker = worker;
     activeLOSWorkers.set(jobId, activeWorker);
     const cleanup = () => {
@@ -676,6 +684,7 @@ function prepareSensitivityWorkerInput(
     }
   }
 
+  const selection = getComputeEngineSelection();
   return {
     terrain,
     input: {
@@ -687,8 +696,8 @@ function prepareSensitivityWorkerInput(
       resolution: terrain.metadata.resolution,
       bounds: terrain.metadata.bounds,
       observations: req.observations,
-      engine: getComputeEngine(),
-      engine_explicit: getComputeEngineSelection().explicit,
+      engine: selection.engine,
+      engine_explicit: selection.explicit,
     },
   };
 }
@@ -745,7 +754,7 @@ export async function runSensitivityAnalysis(req: SensitivityMapRequest): Promis
   let synchronousFailure = false;
 
   try {
-    worker = new Worker(new URL("../workers/vectorWorker.ts", import.meta.url), { type: "module" });
+    worker = createModuleWorker(vectorWorkerUrl);
     const activeWorker = worker;
     activeSensitivityWorkers.set(jobId, activeWorker);
     let workerCleaned = false;
