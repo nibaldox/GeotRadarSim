@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+pub mod jsmath;
+pub mod los;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum GridError {
     InvalidDimensions,
