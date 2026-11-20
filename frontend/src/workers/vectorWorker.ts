@@ -5,6 +5,7 @@ import { LOSCellState } from "../types/api";
 import { resolveWorkerComputeEngine, type ComputeEngine } from "../services/computeEngine";
 import { flattenGridForWasm, loadRadarWasm } from "../wasm/loader";
 import { terrainGradientAt } from "../utils/sensitivity";
+import { WASM_SENSITIVITY_MASK_BUDGET_BYTES } from "../utils/terrainLimits";
 
 interface SensitivityTerrainKey {
   terrain_id: string;
@@ -64,9 +65,9 @@ self.onmessage = (event: MessageEvent<SensitivityWorkerInput>): void | Promise<v
     return computeSensitivityMapWithWasm(event.data)
       .then(postSensitivityResult)
       .catch((error: unknown) => {
-        if (!(error instanceof WasmInitError) || event.data.engine_explicit === true) return postSensitivityError(error, "wasm");
-        if (!warnedWasmFallback) { warnedWasmFallback = true; console.warn(error.message); }
-        try { postSensitivityResult({ ...computeSensitivityMap(event.data), engine_fallback: error.message }); }
+        if (event.data.engine_explicit === true || !(error instanceof WasmInitError || error instanceof MaskBudgetError)) return postSensitivityError(error, "wasm");
+        if (error instanceof WasmInitError && !warnedWasmFallback) { warnedWasmFallback = true; console.warn(error.message); }
+        try { postSensitivityResult({ ...computeSensitivityMap(event.data), engine_fallback: error instanceof MaskBudgetError ? "mask-budget" : error.message }); }
         catch (fallbackError) { postSensitivityError(fallbackError, "ts"); }
       });
   }
@@ -217,13 +218,17 @@ const SENSITIVITY_WASM_ERROR_MESSAGES: Readonly<Record<string, string>> = {
 };
 
 function sensitivityWasmError(error: unknown): Error {
+  if (error instanceof WebAssembly.RuntimeError) {
+    return new Error("El motor WebAssembly se quedó sin memoria o falló internamente. Vuelva a intentarlo con un terreno más pequeño.");
+  }
   const code = (error as { code?: unknown } | null)?.code;
   if (typeof code !== "string") return error instanceof Error ? error : new Error(String(error));
   return new RangeError(SENSITIVITY_WASM_ERROR_MESSAGES[code] ?? `Sensitivity WASM engine rejected the input (${code})`);
 }
 
-/** Only loader failures are eligible for an implicit-engine fallback. */
+/** Loader failures and oversized masks are eligible for an implicit-engine fallback. */
 class WasmInitError extends Error {}
+class MaskBudgetError extends RangeError {}
 let warnedWasmFallback = false;
 
 async function loadSensitivityWasm(): Promise<Awaited<ReturnType<typeof loadRadarWasm>>> {
@@ -237,6 +242,10 @@ async function loadSensitivityWasm(): Promise<Awaited<ReturnType<typeof loadRada
 async function computeSensitivityMapWithWasm(input: SensitivityWorkerInput): Promise<SensitivityWorkerOutput> {
   assertSensitivityJob(input);
   const { rows, cols, size, positions } = validateInput(input);
+  const maskBytes = input.observations.length * size;
+  if (!Number.isSafeInteger(maskBytes) || maskBytes > WASM_SENSITIVITY_MASK_BUDGET_BYTES) {
+    throw new MaskBudgetError(`Las máscaras de sensibilidad requieren ${maskBytes} bytes; el límite es ${WASM_SENSITIVITY_MASK_BUDGET_BYTES} bytes.`);
+  }
   const wasm = await loadSensitivityWasm();
 
   const observations = input.observations;

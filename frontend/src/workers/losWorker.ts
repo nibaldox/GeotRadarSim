@@ -725,11 +725,19 @@ async function computeLOSWithWasm(input: LOSWorkerInput): Promise<LOSWorkerOutpu
 
   const wasm = await loadLOSWasm();
   const values = flattenGridForWasm(grid);
-  const out = wasm.compute_los_analysis(
-    values, rows, cols, bounds.min_x, bounds.min_y, resolution, rx, ry, rz,
-    minRange, maxRange, minElevation, maxElevation,
-    azimuthLimited, azimuthStart, azimuthEnd, LOS_RUNTIME_DEADLINE_MS,
-  ) as WasmLOSAnalysis;
+  let out: WasmLOSAnalysis;
+  try {
+    out = wasm.compute_los_analysis(
+      values, rows, cols, bounds.min_x, bounds.min_y, resolution, rx, ry, rz,
+      minRange, maxRange, minElevation, maxElevation,
+      azimuthLimited, azimuthStart, azimuthEnd, LOS_RUNTIME_DEADLINE_MS,
+    ) as WasmLOSAnalysis;
+  } catch (error) {
+    if (error instanceof WebAssembly.RuntimeError) {
+      throw new Error("El motor WebAssembly se quedó sin memoria o falló internamente. Vuelva a intentarlo con un terreno más pequeño.");
+    }
+    throw error;
+  }
 
   const { cell_states, incidence } = out;
   // Same construction as computeLOS: false/0 everywhere, then SHADOW and VISIBLE cells.

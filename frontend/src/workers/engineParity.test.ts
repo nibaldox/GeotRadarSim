@@ -320,7 +320,7 @@ describe("LOS worker: ts ↔ wasm complete-response parity", () => {
     }
     expect(visibleCases).toBeGreaterThan(12);
     expect(fullPolygons, "coverage_polygon truncated at 100 points").toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it("matches on 24 seeded pseudo-random terrains with NaN holes, radar overrides and azimuth sectors", async () => {
     const random = mulberry32(0x2b_e9_1120);

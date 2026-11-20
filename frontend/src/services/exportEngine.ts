@@ -19,7 +19,7 @@ import type { QualityExportContext } from "../utils/qualityReport";
 function csvText(value: string): string {
   const dangerous = /^[=+@\-\t\r]/.test(value);
   const safe = dangerous ? "'" + value : value;
-  return dangerous || /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  return dangerous || /[",;\t\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 function pdfText(value: string): string {

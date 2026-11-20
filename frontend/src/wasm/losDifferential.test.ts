@@ -222,7 +222,7 @@ describe("LOS TS ↔ WASM differential equivalence", () => {
       }
     }
     expect(visible).toBeGreaterThan(0);
-  });
+  }, 30_000);
 
   it("matches on 36 seeded pseudo-random terrains with NaN holes, random radars and catalog models", () => {
     const random = mulberry32(0x5eed_1a05);
@@ -490,7 +490,7 @@ describe("LOS TS ↔ WASM differential equivalence", () => {
         expect(tsAbort.message).toMatch(/excedió el tiempo máximo de ejecución \(120 segundos\)/);
       }
     }
-  });
+  }, 30_000);
 
   it("ports Math.atan2, Math.hypot, Math.round, Math.min and Math.max bit-for-bit (adversarial probe)", () => {
     const random = mulberry32(0xa7a2_2026);

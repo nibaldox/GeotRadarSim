@@ -19,6 +19,8 @@ export function validateDxfComplexity(entities: number, vertices: number): void 
 
 export const MAX_TERRAIN_GRID_DIMENSION = 16_384;
 export const MAX_TERRAIN_GRID_CELLS = 1_000_000;
+// Cap the additional concatenated masks at 512 MiB; WASM and other buffers need separate headroom.
+export const WASM_SENSITIVITY_MASK_BUDGET_BYTES = 512 * 1024 * 1024;
 
 /**
  * Coarse-friendly resolution steps the UI uses when snapping a computed
