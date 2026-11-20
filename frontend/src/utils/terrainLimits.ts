@@ -1,3 +1,22 @@
+// 256 MiB leaves ample room for the 33 MB reference STL while bounding reads.
+export const MAX_TERRAIN_FILE_BYTES = 256 * 1024 * 1024;
+// DXF parsing expands text into objects; cap it more tightly than binary STL.
+export const MAX_DXF_TEXT_BYTES = 64 * 1024 * 1024;
+export const MAX_DXF_ENTITIES = 250_000;
+export const MAX_DXF_VERTICES = 1_500_000; // matches the STL point budget
+
+export function validateTerrainFileSize(bytes: number): void {
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > MAX_TERRAIN_FILE_BYTES) {
+    const actual = (bytes / 1024 / 1024).toFixed(2);
+    throw new RangeError(`El archivo de terreno mide ${actual} MB (${bytes} bytes); el límite es ${MAX_TERRAIN_FILE_BYTES / 1024 / 1024} MB (${MAX_TERRAIN_FILE_BYTES} bytes).`);
+  }
+}
+
+export function validateDxfComplexity(entities: number, vertices: number): void {
+  if (entities > MAX_DXF_ENTITIES) throw new RangeError(`El DXF supera el límite de ${MAX_DXF_ENTITIES} entidades.`);
+  if (vertices > MAX_DXF_VERTICES) throw new RangeError(`El DXF supera el límite de ${MAX_DXF_VERTICES} vértices.`);
+}
+
 export const MAX_TERRAIN_GRID_DIMENSION = 16_384;
 export const MAX_TERRAIN_GRID_CELLS = 1_000_000;
 

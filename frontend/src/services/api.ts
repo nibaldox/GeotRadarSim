@@ -37,7 +37,7 @@ import { getComputeEngineSelection } from "./computeEngine";
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
 import type { LOSResponse } from "../types/api";
 import type { QualityExportContext } from "../utils/qualityReport";
-import { validateTerrainGridDimensions, validateTerrainResolution } from "../utils/terrainLimits";
+import { validateTerrainFileSize, validateTerrainGridDimensions, validateTerrainResolution } from "../utils/terrainLimits";
 import { terrainGradientAt } from "../utils/sensitivity";
 
 // Simulated Job Store for long-running worker tasks
@@ -278,12 +278,14 @@ export interface TerrainBoundsPreview {
 
 /** Imports a DXF grid provisionally; service callers must activate or release its terrain ID. */
 export async function uploadDXF(file: File, resolution?: number): Promise<DTMMetadata> {
+  validateTerrainFileSize(file.size);
   const fileData = await file.arrayBuffer();
   return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 });
 }
 
 /** Imports an STL grid provisionally; service callers must activate or release its terrain ID. */
 export async function uploadSTL(file: File, resolution?: number): Promise<DTMMetadata> {
+  validateTerrainFileSize(file.size);
   const fileData = await file.arrayBuffer();
   return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 });
 }
@@ -293,6 +295,7 @@ export async function uploadSTL(file: File, resolution?: number): Promise<DTMMet
  * to compute a per-file resolution that stays under the 1M-cell cap.
  */
 export async function previewTerrainBounds(file: File): Promise<TerrainBoundsPreview> {
+  validateTerrainFileSize(file.size);
   const fileData = await file.arrayBuffer();
   const result = await runTerrainWorkerBounds({
     fileData,

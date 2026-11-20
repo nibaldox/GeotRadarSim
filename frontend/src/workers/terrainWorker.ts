@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import DxfParser from 'dxf-parser';
 import type { DTMMetadata } from '../types/api';
-import { gridNodeCountForSpan, MAX_TERRAIN_GRID_CELLS, validateTerrainGridDimensions, validateTerrainResolution } from '../utils/terrainLimits';
+import { gridNodeCountForSpan, MAX_DXF_TEXT_BYTES, MAX_TERRAIN_GRID_CELLS, validateDxfComplexity, validateTerrainFileSize, validateTerrainGridDimensions, validateTerrainResolution } from '../utils/terrainLimits';
 
 export interface TerrainWorkerInput {
   fileData: ArrayBuffer;
@@ -47,7 +47,11 @@ export type TerrainWorkerMessage = TerrainWorkerOutput | TerrainBoundsWorkerOutp
 self.onmessage = async (e: MessageEvent<TerrainWorkerInput>) => {
   try {
     const { fileData, filename, resolution, mode = 'full' } = e.data;
+    validateTerrainFileSize(fileData.byteLength);
     const isStl = filename.toLowerCase().endsWith('.stl');
+    if (!isStl && fileData.byteLength > MAX_DXF_TEXT_BYTES) {
+      throw new RangeError(`El DXF supera el límite de ${MAX_DXF_TEXT_BYTES / 1024 / 1024} MB de texto.`);
+    }
     const source: 'STL' | 'DXF' = isStl ? 'STL' : 'DXF';
 
     let points: Array<[number, number, number]> = [];
@@ -279,6 +283,18 @@ function parseDXF(text: string): TerrainPoint[] {
   const points: TerrainPoint[] = [];
 
   if (!dxf || !dxf.entities) return points;
+
+  // Check the entire parsed entity set before allocating coordinate arrays.
+  let vertices = 0;
+  validateDxfComplexity(dxf.entities.length, 0);
+  for (const entity of dxf.entities) {
+    const ent = entity as unknown as DxfEntity;
+    if (ent.type === 'POINT') vertices++;
+    else if (ent.type === '3DFACE' || ent.type === 'LINE' || ent.type === 'POLYLINE' || ent.type === 'LWPOLYLINE') {
+      vertices += ent.vertices?.length ?? 0;
+    }
+    validateDxfComplexity(dxf.entities.length, vertices);
+  }
 
   const appendCoordinate = (
     coordinate: DxfCoordinate | undefined,
