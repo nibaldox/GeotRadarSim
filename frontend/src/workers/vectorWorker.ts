@@ -22,6 +22,7 @@ export interface SensitivityWorkerInput {
   observations: readonly SensitivityObservation[];
   /** Compute engine; missing means "ts". Any other value is rejected. */
   engine?: ComputeEngine;
+  engine_explicit?: boolean;
 }
 
 export interface SensitivityWorkerOutput extends SensitivityMapResponse {
@@ -62,7 +63,12 @@ self.onmessage = (event: MessageEvent<SensitivityWorkerInput>): void | Promise<v
     // Like the "ts" try/catch, a failure while posting the result is also reported as an error.
     return computeSensitivityMapWithWasm(event.data)
       .then(postSensitivityResult)
-      .catch((error: unknown) => postSensitivityError(error, "wasm"));
+      .catch((error: unknown) => {
+        if (!(error instanceof WasmInitError) || event.data.engine_explicit === true) return postSensitivityError(error, "wasm");
+        if (!warnedWasmFallback) { warnedWasmFallback = true; console.warn(error.message); }
+        try { postSensitivityResult({ ...computeSensitivityMap(event.data), engine_fallback: error.message }); }
+        catch (fallbackError) { postSensitivityError(fallbackError, "ts"); }
+      });
   }
   try {
     assertSensitivityJob(event.data);
@@ -216,12 +222,15 @@ function sensitivityWasmError(error: unknown): Error {
   return new RangeError(SENSITIVITY_WASM_ERROR_MESSAGES[code] ?? `Sensitivity WASM engine rejected the input (${code})`);
 }
 
-/** No silent fallback to "ts" on an initialisation failure (see losWorker.ts). */
+/** Only loader failures are eligible for an implicit-engine fallback. */
+class WasmInitError extends Error {}
+let warnedWasmFallback = false;
+
 async function loadSensitivityWasm(): Promise<Awaited<ReturnType<typeof loadRadarWasm>>> {
   try {
     return await loadRadarWasm();
   } catch (error) {
-    throw new Error(`Sensitivity WASM engine failed to initialize: ${error instanceof Error ? error.message : String(error)}`);
+    throw new WasmInitError(`Sensitivity WASM engine failed to initialize: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

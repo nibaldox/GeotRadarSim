@@ -1,8 +1,8 @@
 /**
  * Compute-engine flag for the LOS and sensitivity Workers.
  *
- * - `ts`: the TypeScript implementation (default).
- * - `wasm`: the Rust core compiled to WebAssembly, opt-in for the A/B and the browser checks.
+ * - `ts`: the TypeScript implementation.
+ * - `wasm`: the Rust core compiled to WebAssembly (default).
  *
  * Precedence: the URL parameter `?engine=ts|wasm`, then `localStorage["geotradarsim.engine"]`,
  * then {@link DEFAULT_COMPUTE_ENGINE}. Only the exact values `ts` and `wasm` are honoured;
@@ -13,7 +13,7 @@
  */
 export type ComputeEngine = "ts" | "wasm";
 
-export const DEFAULT_COMPUTE_ENGINE: ComputeEngine = "ts";
+export const DEFAULT_COMPUTE_ENGINE: ComputeEngine = "wasm";
 export const COMPUTE_ENGINE_URL_PARAM = "engine";
 export const COMPUTE_ENGINE_STORAGE_KEY = "geotradarsim.engine";
 
@@ -40,9 +40,15 @@ function engineFromStorage(): ComputeEngine | null {
   }
 }
 
+/** The engine and whether a valid URL or storage override selected it. */
+export function getComputeEngineSelection(): { engine: ComputeEngine; explicit: boolean } {
+  const engine = engineFromUrl() ?? engineFromStorage();
+  return engine === null ? { engine: DEFAULT_COMPUTE_ENGINE, explicit: false } : { engine, explicit: true };
+}
+
 /** The engine for the next LOS or sensitivity job. */
 export function getComputeEngine(): ComputeEngine {
-  return engineFromUrl() ?? engineFromStorage() ?? DEFAULT_COMPUTE_ENGINE;
+  return getComputeEngineSelection().engine;
 }
 
 function describeEngineValue(value: unknown): string {
@@ -56,7 +62,7 @@ function describeEngineValue(value: unknown): string {
  * other engine during an A/B.
  */
 export function resolveWorkerComputeEngine(value: unknown, label: string): ComputeEngine {
-  if (value === undefined) return DEFAULT_COMPUTE_ENGINE;
+  if (value === undefined) return "ts";
   const engine = parseComputeEngine(value);
   if (engine === null) {
     throw new RangeError(`Unknown ${label} compute engine: ${describeEngineValue(value)}`);

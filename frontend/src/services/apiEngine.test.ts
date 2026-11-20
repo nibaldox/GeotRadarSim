@@ -86,9 +86,9 @@ async function postedSensitivityEngine(): Promise<unknown> {
 }
 
 describe("api.ts compute-engine connection", () => {
-  it("sends engine 'ts' by default to both workers", async () => {
-    expect(await postedLOSEngine()).toBe("ts");
-    expect(await postedSensitivityEngine()).toBe("ts");
+  it("sends engine 'wasm' by default to both workers", async () => {
+    expect(await postedLOSEngine()).toBe("wasm");
+    expect(await postedSensitivityEngine()).toBe("wasm");
   });
 
   it("sends engine 'wasm' when localStorage selects it", async () => {

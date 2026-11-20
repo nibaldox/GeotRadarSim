@@ -76,6 +76,7 @@ export interface LOSResponse {
   flat_projection_grid?: Float32Array;
   /** Engine that computed this result in the LOS Worker (A/B provenance). */
   engine_used?: "ts" | "wasm";
+  engine_fallback?: string;
 }
 
 export interface TerrainGridResponse {
@@ -171,6 +172,7 @@ export interface SensitivityMapResponse {
   observer_count: Uint16Array;
   /** Engine that computed this map in the sensitivity Worker (A/B provenance). */
   engine_used?: "ts" | "wasm";
+  engine_fallback?: string;
 }
 
 

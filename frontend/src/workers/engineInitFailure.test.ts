@@ -76,7 +76,7 @@ const sensitivityInput = {
 describe("WASM initialisation failure", () => {
   it("fails the LOS job clearly instead of falling back to TS", async () => {
     const handler = await handlerOf("./losWorker");
-    const posted = await run(handler, { ...losInput, engine: "wasm" });
+    const posted = await run(handler, { ...losInput, engine: "wasm", engine_explicit: true });
     expect(posted).toEqual([{
       message: {
         error: "LOS WASM engine failed to initialize: CompileError: WebAssembly.instantiate(): expected magic word",
@@ -99,7 +99,7 @@ describe("WASM initialisation failure", () => {
 
   it("fails the sensitivity job clearly instead of falling back to TS", async () => {
     const handler = await handlerOf("./vectorWorker");
-    const posted = await run(handler, { ...sensitivityInput, engine: "wasm" });
+    const posted = await run(handler, { ...sensitivityInput, engine: "wasm", engine_explicit: true });
     expect(posted).toEqual([{
       message: {
         error: "Sensitivity WASM engine failed to initialize: CompileError: WebAssembly.instantiate(): expected magic word",

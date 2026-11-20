@@ -26,9 +26,9 @@ afterEach(() => {
 });
 
 describe("getComputeEngine", () => {
-  it("defaults to ts", () => {
-    expect(DEFAULT_COMPUTE_ENGINE).toBe("ts");
-    expect(getComputeEngine()).toBe("ts");
+  it("defaults to wasm without an explicit selection", () => {
+    expect(DEFAULT_COMPUTE_ENGINE).toBe("wasm");
+    expect(getComputeEngine()).toBe("wasm");
   });
 
   it("honours ?engine=wasm and ?engine=ts", () => {
@@ -47,11 +47,11 @@ describe("getComputeEngine", () => {
   });
 
   it("reads the flag on every call, so a stored change applies to the next job", () => {
-    expect(getComputeEngine()).toBe("ts");
+    expect(getComputeEngine()).toBe("wasm");
     localStorage.setItem(COMPUTE_ENGINE_STORAGE_KEY, "wasm");
     expect(getComputeEngine()).toBe("wasm");
     localStorage.removeItem(COMPUTE_ENGINE_STORAGE_KEY);
-    expect(getComputeEngine()).toBe("ts");
+    expect(getComputeEngine()).toBe("wasm");
   });
 
   it("gives the URL precedence over localStorage, in both directions", () => {
@@ -67,9 +67,9 @@ describe("getComputeEngine", () => {
     "ignores the invalid value %j in the URL and in storage without throwing",
     (value) => {
       setSearch(`?engine=${encodeURIComponent(value)}`);
-      expect(getComputeEngine()).toBe("ts");
+      expect(getComputeEngine()).toBe("wasm");
       localStorage.setItem(COMPUTE_ENGINE_STORAGE_KEY, value);
-      expect(getComputeEngine()).toBe("ts");
+      expect(getComputeEngine()).toBe("wasm");
     },
   );
 
@@ -88,7 +88,7 @@ describe("getComputeEngine", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new DOMException("The operation is insecure.", "SecurityError");
     });
-    expect(getComputeEngine()).toBe("ts");
+    expect(getComputeEngine()).toBe("wasm");
     setSearch("?engine=wasm");
     expect(getComputeEngine()).toBe("wasm");
     vi.restoreAllMocks();
@@ -97,7 +97,7 @@ describe("getComputeEngine", () => {
     vi.stubGlobal("location", undefined);
     expect(getComputeEngine()).toBe("wasm");
     vi.stubGlobal("localStorage", undefined);
-    expect(getComputeEngine()).toBe("ts");
+    expect(getComputeEngine()).toBe("wasm");
   });
 });
 

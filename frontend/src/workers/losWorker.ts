@@ -20,6 +20,7 @@ export interface LOSWorkerInput {
   radar_config: RadarConfig;
   /** Compute engine; missing means "ts". Any other value is rejected. */
   engine?: ComputeEngine;
+  engine_explicit?: boolean;
 }
 
 export interface LOSWorkerOutput extends LOSResponse {
@@ -51,7 +52,12 @@ self.onmessage = (e: MessageEvent<LOSWorkerInput>): void | Promise<void> => {
   }
   if (engine === "wasm") {
     // Like the "ts" try/catch, a failure while posting the result is also reported as an error.
-    return computeLOSWithWasm(e.data).then(postLOSResult).catch((err: unknown) => postLOSError(err, "wasm"));
+    return computeLOSWithWasm(e.data).then(postLOSResult).catch((err: unknown) => {
+      if (!(err instanceof WasmInitError) || e.data.engine_explicit === true) return postLOSError(err, "wasm");
+      if (!warnedWasmFallback) { warnedWasmFallback = true; console.warn(err.message); }
+      try { postLOSResult({ ...computeLOS(e.data), engine_fallback: err.message }); }
+      catch (fallbackError) { postLOSError(fallbackError, "ts"); }
+    });
   }
   try {
     postLOSResult(computeLOS(e.data));
@@ -672,16 +678,15 @@ interface WasmLOSAnalysis {
   shadow_zone_cell_counts: Uint32Array;
 }
 
-/**
- * A WASM initialisation failure is reported as an error of this job. It deliberately does
- * NOT fall back to the TypeScript engine: a silent fallback would mix both engines in an A/B
- * and hide a broken deployment. End-user protection is decided when the default changes.
- */
+/** Only loader failures are eligible for an implicit-engine fallback. */
+class WasmInitError extends Error {}
+let warnedWasmFallback = false;
+
 async function loadLOSWasm(): Promise<Awaited<ReturnType<typeof loadRadarWasm>>> {
   try {
     return await loadRadarWasm();
   } catch (err) {
-    throw new Error(`LOS WASM engine failed to initialize: ${err instanceof Error ? err.message : String(err)}`);
+    throw new WasmInitError(`LOS WASM engine failed to initialize: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
