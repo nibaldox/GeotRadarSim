@@ -673,30 +673,17 @@ export function TerrainViewer({
                   </div>
                 </div>
               </div>
-              {legendBandRow(
-                "low",
-                policy,
-                "Low projection",
-                "Proyección baja",
-                "Lower movement-projection magnitude.",
-                "Menor magnitud de proyección del movimiento.",
-              )}
-              {legendBandRow(
-                "medium",
-                policy,
-                "Medium projection",
-                "Proyección media",
-                "Intermediate movement-projection magnitude.",
-                "Magnitud intermedia de proyección del movimiento.",
-              )}
-              {legendBandRow(
-                "high",
-                policy,
-                "High projection",
-                "Proyección alta",
-                "Higher movement-projection magnitude.",
-                "Mayor magnitud de proyección del movimiento.",
-              )}
+              {[["0", "rgb(128, 0, 128)"], ["0.2", "rgb(26, 51, 204)"], ["0.6", "rgb(0, 204, 204)"], ["1", "rgb(0, 230, 51)"]].map(([stop, color]) => (
+                <div className="hud-legend-row" key={stop}>
+                  <div className="hud-legend-color" style={{ background: color }} />
+                  <span className="hud-legend-label">{stop}</span>
+                </div>
+              ))}
+              <div className="hud-legend-desc">
+                <span lang="en">Map colors use a continuous gradient with fixed stops at 0.2 and 0.6. The low/medium/high bands in the dashboard, history cards and exports use the configurable thresholds (currently {policy.mediumMin} / {policy.highMin}).</span>
+                {" / "}
+                <span lang="es">Los colores del mapa usan un degradado continuo con cortes fijos en 0.2 y 0.6. Las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones usan los umbrales configurables (actualmente {policy.mediumMin} / {policy.highMin}).</span>
+              </div>
               <div className="hud-legend-desc">
                 <span lang="en">One contributor: |dot| between the maximum-slope direction and radar line of sight (LOS); multiple contributors: RMS(dotᵢ) across contributors. A measured zero has at least one contributor; no contributors means no data, not zero. These are geometric-index ranges, not detection thresholds or RF/SNR performance.</span>
                 {" / "}

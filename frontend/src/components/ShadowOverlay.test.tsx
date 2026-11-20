@@ -374,10 +374,10 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
     })!;
     expect(movement.uniforms.mediumMin).toBe(0.25);
     expect(movement.uniforms.highMin).toBe(0.75);
-    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 0), [0.9, 0.1, 0.1, 0.6]);
-    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 1), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 2), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(movement.fragmentShader, movement.uniforms, 3), [0, 0.9, 0.2, 0.6]);
+    for (let i = 0; i < 4; i++) {
+      const comparison = renderOverlayMaterial({ mode: "SENSITIVITY", cellStates: Array(8).fill(5), observerCounts: Array(8).fill(1), sensitivity: [0.24, 0.25, 0.74, 0.75, 0, 1, 0.5, 0.5], policy: { mediumMin: 0.1, highMin: 0.9 } })!;
+      expect(sampleCell(movement.fragmentShader, movement.uniforms, i)).toEqual(sampleCell(comparison.fragmentShader, comparison.uniforms, i));
+    }
   });
 
   it("uploads quality values with nearest filtering so excluded texels cannot bleed into visible cells", () => {
@@ -430,6 +430,23 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
     expect(movement).not.toBeNull();
   });
 
+  it("uses the fixed continuous projection gradient independently of policy", () => {
+    const values = [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1, Number.NaN];
+    const fixture = { mode: "SENSITIVITY" as const, cellStates: Array(8).fill(5), observerCounts: Array(8).fill(1), sensitivity: values };
+    const a = renderOverlayMaterial({ ...fixture, policy: { mediumMin: 0.1, highMin: 0.3 } })!;
+    const b = renderOverlayMaterial({ ...fixture, policy: { mediumMin: 0.7, highMin: 0.9 } })!;
+    const stops = [[0.5, 0, 0.5], [0.1, 0.2, 0.8], [0, 0.8, 0.8], [0, 0.9, 0.2]];
+    values.slice(0, 7).forEach((value, index) => {
+      const segment = value < 0.2 ? 0 : value < 0.6 ? 1 : 2;
+      const lo = [0, 0.2, 0.6][segment]!;
+      const hi = [0.2, 0.6, 1][segment]!;
+      const expected = stops[segment]!.map((c, channel) => c + (stops[segment + 1]![channel]! - c) * (value - lo) / (hi - lo));
+      expectColor(sampleCell(a.fragmentShader, a.uniforms, index), [...expected, 0.6]);
+      expectColor(sampleCell(b.fragmentShader, b.uniforms, index), [...expected, 0.6]);
+    });
+    expect(sampleCell(a.fragmentShader, a.uniforms, 7)).toBeNull();
+  });
+
   it("keeps the 3D movement-projection mode keyed on observer counts, not merged states", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "SENSITIVITY",
@@ -440,15 +457,15 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
 
     // No contributors means no measurement, not a zero value.
     expect(sampleCell(fragmentShader, uniforms, 0), "zero observers must stay transparent").toBeNull();
-    // A measured zero with a contributor stays painted (low band).
-    expectColor(sampleCell(fragmentShader, uniforms, 1), [0.9, 0.1, 0.1, 0.6]);
+    // A measured zero with a contributor stays painted violet.
+    expectColor(sampleCell(fragmentShader, uniforms, 1), [0.5, 0, 0.5, 0.6]);
     expectColor(sampleCell(fragmentShader, uniforms, 2), [0, 0.9, 0.2, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 3), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 3), [0.025, 0.65, 0.8, 0.6]);
     // The merged LOS state is not a visibility proxy here: SHADOW/NODATA/
     // OUTSIDE_FOV cells with contributors still show their projection.
-    expectColor(sampleCell(fragmentShader, uniforms, 4), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 5), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 6), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 7), [1, 0.8, 0, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 4), [0.025, 0.65, 0.8, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 5), [0.025, 0.65, 0.8, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 6), [0.025, 0.65, 0.8, 0.6]);
+    expectColor(sampleCell(fragmentShader, uniforms, 7), [0.025, 0.65, 0.8, 0.6]);
   });
 });

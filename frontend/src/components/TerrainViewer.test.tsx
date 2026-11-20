@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { buildTerrainCameraPose, buildTerrainMeshGeometry, getTerrainMeshCenter, TerrainViewer } from "./TerrainViewer";
 import * as TerrainViewerApi from "./TerrainViewer";
 import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
@@ -244,12 +244,11 @@ describe("TerrainViewer geometric projection legend", () => {
     expect(screen.getByText("Proyección del movimiento")).toBeInTheDocument();
     expect(screen.getByText("No data — transparent")).toBeInTheDocument();
     expect(screen.getByText("Sin datos — transparente")).toBeInTheDocument();
-    expect(screen.getByText("Low projection ([0, 0.3))")).toBeInTheDocument();
-    expect(screen.getByText("Proyección baja ([0, 0.3))")).toBeInTheDocument();
-    expect(screen.getByText("Medium projection ([0.3, 0.7))")).toBeInTheDocument();
-    expect(screen.getByText("Proyección media ([0.3, 0.7))")).toBeInTheDocument();
-    expect(screen.getByText("High projection ([0.7, 1])")).toBeInTheDocument();
-    expect(screen.getByText("Proyección alta ([0.7, 1])")).toBeInTheDocument();
+    const colors = ["0", "0.2", "0.6", "1"].map((stop) =>
+      screen.getByText(stop, { selector: ".hud-legend-label" }).closest(".hud-legend-row")?.querySelector<HTMLElement>(".hud-legend-color")?.style.background);
+    expect(colors).toEqual(["rgb(128, 0, 128)", "rgb(26, 51, 204)", "rgb(0, 204, 204)", "rgb(0, 230, 51)"]);
+    expect(screen.getByText("Map colors use a continuous gradient with fixed stops at 0.2 and 0.6. The low/medium/high bands in the dashboard, history cards and exports use the configurable thresholds (currently 0.3 / 0.7).")).toBeInTheDocument();
+    expect(screen.getByText("Los colores del mapa usan un degradado continuo con cortes fijos en 0.2 y 0.6. Las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones usan los umbrales configurables (actualmente 0.3 / 0.7).")).toBeInTheDocument();
     expect(screen.getByText(
       "Transparent means no contributing observation: no individual LOS is VISIBLE with a computable terrain gradient. This can result from NODATA, an unknown ray state, outside range/FOV, shadow, or a VISIBLE cell without a computable gradient; transparency alone does not identify shadow.",
     )).toBeInTheDocument();
@@ -293,10 +292,11 @@ describe("TerrainViewer geometric projection legend", () => {
 
     render(<TerrainViewer showShadowOverlay />);
 
-    expect(screen.getByText("Low projection ([0, 0.25))")).toBeInTheDocument();
-    expect(screen.getByText("Medium projection ([0.25, 0.8))")).toBeInTheDocument();
-    expect(screen.getByText("High projection ([0.8, 1])")).toBeInTheDocument();
-    useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } });
+    expect(screen.getByText(/currently 0.25 \/ 0.8/)).toBeInTheDocument();
+    act(() => useQualityPolicyStore.setState({ policy: { mediumMin: 0.4, highMin: 0.9 } }));
+    expect(screen.getByText(/currently 0.4 \/ 0.9/)).toBeInTheDocument();
+    expect(screen.getByText(/actualmente 0.4 \/ 0.9/)).toBeInTheDocument();
+    act(() => useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } }));
   });
 });
 

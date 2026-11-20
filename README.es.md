@@ -31,7 +31,7 @@ No permite determinar si un radar real recibirá una señal adecuada a una dista
 | 🗺️ **Entrada de terreno** | Carga datos DXF de puntos/líneas/polilíneas o una superficie STL y conviértelos a una cuadrícula regular de elevaciones |
 | 🏗️ **Terreno sintético** | Genera una superficie de ejemplo tipo cuenco para probar la interfaz y la geometría |
 | 📡 **LOS geométrica** | Clasifica muestras como visibles, en sombra, fuera de límites configurados, sin datos o con rayo desconocido |
-| ✅ **Capas de calidad geométrica (v2)** | Pinta el índice de incidencia superficial o la proyección del movimiento solo sobre celdas observadas, con bandas provisionales compartidas configurables |
+| ✅ **Capas de calidad geométrica (v2)** | Pinta la incidencia superficial con bandas provisionales configurables y la proyección del movimiento con un degradado continuo fijo violeta–azul–cian–verde, solo sobre celdas observadas |
 | 🎯 **Límites configurables** | Selecciona un perfil local incluido y modifica límites de rango, elevación y azimut |
 | 🔴 **Múltiples análisis** | Selecciona entradas compatibles del historial para combinar su visibilidad geométrica por celda |
 | 🧮 **Sensibilidad geométrica** | Proyecta la dirección de máxima pendiente del terreno sobre una o más direcciones LOS visibles individualmente (un contribuyente: \|dot\|; varios: RMS) |

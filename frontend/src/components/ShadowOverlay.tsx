@@ -101,16 +101,26 @@ const fragmentShader = `
       q = texture2D(qualityTexture, vUv).r;
     }
     // Missing or invalid indices are transparent (NaN-safe test); an exact
-    // measured zero is data and stays painted in the low category.
+    // measured zero is data and stays painted (low band for incidence, violet for movement projection).
     if (!(q >= 0.0)) discard;
-    vec3 colorLow  = vec3(0.9, 0.1, 0.1);
-    vec3 colorMid  = vec3(1.0, 0.8, 0.0);
-    vec3 colorHigh = vec3(0.0, 0.9, 0.2);
-    // Strict category boundaries shared with classification, legends and export:
-    // low q < mediumMin; medium mediumMin <= q < highMin; high q >= highMin.
-    if (q < mediumMin) finalColor = colorLow;
-    else if (q < highMin) finalColor = colorMid;
-    else finalColor = colorHigh;
+    if (mapMode < 0.5) {
+      vec3 colorLow  = vec3(0.9, 0.1, 0.1);
+      vec3 colorMid  = vec3(1.0, 0.8, 0.0);
+      vec3 colorHigh = vec3(0.0, 0.9, 0.2);
+      // Strict category boundaries shared with classification, legends and export:
+      // low q < mediumMin; medium mediumMin <= q < highMin; high q >= highMin.
+      if (q < mediumMin) finalColor = colorLow;
+      else if (q < highMin) finalColor = colorMid;
+      else finalColor = colorHigh;
+    } else {
+      vec3 colorBlind = vec3(0.5, 0.0, 0.5);
+      vec3 colorLow   = vec3(0.1, 0.2, 0.8);
+      vec3 colorMid   = vec3(0.0, 0.8, 0.8);
+      vec3 colorHigh  = vec3(0.0, 0.9, 0.2);
+      if (q < 0.2) finalColor = mix(colorBlind, colorLow, q / 0.2);
+      else if (q < 0.6) finalColor = mix(colorLow, colorMid, (q - 0.2) / 0.4);
+      else finalColor = mix(colorMid, colorHigh, (q - 0.6) / 0.4);
+    }
     gl_FragColor = vec4(finalColor, opacity);
   }
 `;
