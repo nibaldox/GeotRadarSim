@@ -17,8 +17,8 @@ type Scope = { onmessage: ((event: MessageEvent) => unknown) | null; postMessage
 type Terrain = { grid: number[][]; metadata: DTMMetadata; warnings?: string[] };
 type Engine = 'ts' | 'wasm';
 type Pair<T> = Record<Engine, T>;
-const baselinePath = '/home/xodla/.hermes/profiles/simulacion-radar/plans/rust-wasm/evidence/w1a-frozen/golden-manifest.json';
-const baselineHash = '60223fba7dc1c162ba5f594d7174b09f9474da490331151bee9ef289f0f316b3';
+const baselinePath = '/home/xodla/.hermes/profiles/simulacion-radar/plans/rust-wasm/evidence/w1a-frozen-ab195fe/golden-manifest.json';
+const baselineHash = '1f42ce522efadbb800836e339a4a5629377d8737349b0cd45e5308e1294d0da1';
 const FROZEN_CASE_COUNT = 11; // same case set as golden (W1-A v1 has 11 cases)
 const sha = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
 const command = (cmd: string, args: string[]) => execFileSync(cmd, args, { encoding: 'utf8' }).trim();
