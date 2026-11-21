@@ -111,6 +111,15 @@ export function UploadTerrainDialog() {
           </div>
         )}
 
+        {/* Before bounds arrive (still parsing, or rejected), cancelling stops the Worker. */}
+        {!preview.source && (loading || error) && (
+          <div className="upload-dialog-actions">
+            <button type="button" className="btn-secondary" onClick={cancelUploadPreview}>
+              Cancelar
+            </button>
+          </div>
+        )}
+
         {preview?.source && !hasBounds && (
           <>
             <div className="error-text" role="alert">

@@ -40,7 +40,14 @@ import vectorWorkerUrl from "../workers/vectorWorker.ts?worker&url";
 import { generatePDFBlob, generateCSVBlob } from "./exportEngine";
 import type { LOSResponse } from "../types/api";
 import type { QualityExportContext } from "../utils/qualityReport";
-import { validateTerrainFileSize, validateTerrainGridDimensions, validateTerrainResolution } from "../utils/terrainLimits";
+import {
+  TERRAIN_IMPORT_DEADLINE_MS,
+  TERRAIN_PREVIEW_DEADLINE_MS,
+  validateTerrainFileSize,
+  validateTerrainGridDimensions,
+  validateTerrainResolution,
+} from "../utils/terrainLimits";
+import { scopedTerrainAbortSignal, terrainAbortError } from "./terrainAbort";
 import { terrainGradientAt } from "../utils/sensitivity";
 
 // Simulated Job Store for long-running worker tasks
@@ -63,7 +70,8 @@ function releaseJobTerrainLease(jobId: string): void {
 // Wall-time watchdog around the active LOS worker lifetime: it covers worker
 // construction, message transport, and execution. A LOS job whose worker is
 // still running after this budget is marked FAILED, its worker terminated,
-// and its terrain lease released. Sensitivity and terrain workers are not watched.
+// and its terrain lease released. Sensitivity workers are not watched; terrain workers have
+// their own deadlines (see superviseTerrainWorker).
 const LOS_WORKER_WATCHDOG_MS = 125_000;
 const LOS_WORKER_WATCHDOG_ERROR =
   "El análisis LOS superó el tiempo máximo de 125 segundos y fue cancelado. " +
@@ -162,109 +170,109 @@ function validateRadarLimits(radar: RadarConfig): void {
   }
 }
 
-// Helper to run the terrain worker in full (DTM-build) mode. Returns the
-// stored metadata; persists the provisional grid in the local store as well.
-async function runTerrainWorkerFull(input: TerrainWorkerInput): Promise<DTMMetadata> {
-  return new Promise((resolve, reject) => {
+// Every terrain Worker job (bounds preview or full import) is supervised the same way: it ends
+// with the Worker's reply, a Worker error, its AbortSignal, or its deadline, whichever comes
+// first. Each ending clears the handlers, the deadline and the abort listener, and terminates
+// the Worker exactly once, so a cancelled or stuck parse never keeps a core busy.
+function terrainDeadlineError(deadlineMs: number): Error {
+  return new Error(
+    `El procesamiento del terreno superó ${deadlineMs / 1000} s y se detuvo; revisa que el archivo sea válido.`,
+  );
+}
+
+function throwIfTerrainAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw terrainAbortError();
+}
+
+function superviseTerrainWorker<T>(
+  input: TerrainWorkerInput,
+  deadlineMs: number,
+  signal: AbortSignal | undefined,
+  onReply: (data: TerrainWorkerMessage) => T,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     let worker: Worker | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
 
-    const claimTerminal = (): boolean => {
-      if (settled) return false;
+    const finish = (settle: () => void): void => {
+      if (settled) return;
       settled = true;
+      if (deadline !== undefined) clearTimeout(deadline);
+      signal?.removeEventListener("abort", onAbort);
       if (worker) {
         worker.onmessage = null;
         worker.onerror = null;
         try {
           worker.terminate();
         } catch {
-          // Preserve the first worker result or failure.
+          // Preserve the first result or failure.
         }
       }
-      return true;
+      settle();
     };
+    const onAbort = (): void => finish(() => reject(terrainAbortError()));
+
+    if (signal?.aborted) {
+      reject(terrainAbortError());
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     try {
       worker = createModuleWorker(terrainWorkerUrl);
-      worker.onmessage = (e: MessageEvent<TerrainWorkerOutput>) => {
-        if (!claimTerminal()) return;
-        try {
-          if (e.data.error) {
-            reject(new Error(e.data.error));
-            return;
+      deadline = setTimeout(() => finish(() => reject(terrainDeadlineError(deadlineMs))), deadlineMs);
+      worker.onmessage = (e: MessageEvent<TerrainWorkerMessage>) => {
+        finish(() => {
+          try {
+            resolve(onReply(e.data));
+          } catch (error) {
+            reject(error);
           }
-          const metadata = identifyLocalTerrainImport(e.data.metadata!);
-          saveLocalTerrain({ metadata, grid: e.data.grid! });
-          resolve(metadata);
-        } catch (error) {
-          reject(error);
-        }
+        });
       };
-      worker.onerror = (e) => {
-        if (!claimTerminal()) return;
-        reject(new Error("Worker error: " + e.message));
-      };
+      worker.onerror = (e) => finish(() => reject(new Error("Worker error: " + e.message)));
       // Transfer, not copy, the file bytes: this ArrayBuffer is detached here and never read again
       // on the main thread (each upload or preview reads the File into its own buffer).
       worker.postMessage(input, [input.fileData]);
     } catch (error) {
-      if (claimTerminal()) reject(error);
+      finish(() => reject(error));
     }
+  });
+}
+
+// Helper to run the terrain worker in full (DTM-build) mode. Returns the
+// stored metadata; persists the provisional grid in the local store as well.
+function runTerrainWorkerFull(input: TerrainWorkerInput, signal?: AbortSignal): Promise<DTMMetadata> {
+  return superviseTerrainWorker(input, TERRAIN_IMPORT_DEADLINE_MS, signal, (data) => {
+    const output = data as TerrainWorkerOutput;
+    if (output.error) throw new Error(output.error);
+    const metadata = identifyLocalTerrainImport(output.metadata!);
+    saveLocalTerrain({ metadata, grid: output.grid! });
+    return metadata;
   });
 }
 
 // Helper to run the terrain worker in bounds (preview) mode. Returns the
 // X/Y/Z envelope of the parsed file without building a grid or persisting
 // any state — used by the upload UI to suggest a safe resolution.
-async function runTerrainWorkerBounds(input: TerrainWorkerInput): Promise<TerrainBoundsWorkerOutput> {
-  return new Promise((resolve, reject) => {
-    let worker: Worker | undefined;
-    let settled = false;
-
-    const claimTerminal = (): boolean => {
-      if (settled) return false;
-      settled = true;
-      if (worker) {
-        worker.onmessage = null;
-        worker.onerror = null;
-        try {
-          worker.terminate();
-        } catch {
-          // Preserve the first worker result or failure.
-        }
-      }
-      return true;
-    };
-
-    try {
-      worker = createModuleWorker(terrainWorkerUrl);
-      worker.onmessage = (e: MessageEvent<TerrainWorkerMessage>) => {
-        if (!claimTerminal()) return;
-        try {
-          if ('error' in e.data && e.data.error) {
-            reject(new Error(e.data.error));
-            return;
-          }
-          if (e.data.mode !== 'bounds') {
-            reject(new Error('Terrain worker returned non-bounds output for a preview request'));
-            return;
-          }
-          resolve(e.data);
-        } catch (error) {
-          reject(error);
-        }
-      };
-      worker.onerror = (e) => {
-        if (!claimTerminal()) return;
-        reject(new Error("Worker error: " + e.message));
-      };
-      // Transfer, not copy, the file bytes: this ArrayBuffer is detached here and never read again
-      // on the main thread (each upload or preview reads the File into its own buffer).
-      worker.postMessage(input, [input.fileData]);
-    } catch (error) {
-      if (claimTerminal()) reject(error);
+function runTerrainWorkerBounds(input: TerrainWorkerInput, signal?: AbortSignal): Promise<TerrainBoundsWorkerOutput> {
+  return superviseTerrainWorker(input, TERRAIN_PREVIEW_DEADLINE_MS, signal, (data) => {
+    if ('error' in data && data.error) throw new Error(data.error);
+    if (data.mode !== 'bounds') {
+      throw new Error('Terrain worker returned non-bounds output for a preview request');
     }
+    return data;
   });
+}
+
+/** Read the File for a terrain job, refusing to start (or to continue) once `signal` aborted. */
+async function readTerrainFile(file: File, signal: AbortSignal | undefined): Promise<ArrayBuffer> {
+  validateTerrainFileSize(file.size);
+  throwIfTerrainAborted(signal);
+  const fileData = await file.arrayBuffer();
+  throwIfTerrainAborted(signal);
+  return fileData;
 }
 
 // ────────────────────────────────────────────
@@ -283,33 +291,51 @@ export interface TerrainBoundsPreview {
   span: { x: number; y: number; z: number };
 }
 
-/** Imports a DXF grid provisionally; service callers must activate or release its terrain ID. */
-export async function uploadDXF(file: File, resolution?: number): Promise<DTMMetadata> {
-  validateTerrainFileSize(file.size);
-  const fileData = await file.arrayBuffer();
-  return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 });
+/**
+ * Imports a DXF grid provisionally; service callers must activate or release its terrain ID.
+ * Aborting `signal` (default: the one scoped by `withTerrainAbortSignal`) terminates the Worker
+ * and rejects with an `AbortError`.
+ *
+ * The terrain job functions MUST read `scopedTerrainAbortSignal()` before their first `await`
+ * (here, in the default parameter): the scope only lasts while `withTerrainAbortSignal` runs
+ * synchronously, so a read after an `await` gets no signal and cancellation silently stops
+ * reaching the Worker. apiTerrainCancel.test.ts fails if the read moves.
+ */
+export async function uploadDXF(
+  file: File,
+  resolution?: number,
+  signal: AbortSignal | undefined = scopedTerrainAbortSignal(),
+): Promise<DTMMetadata> {
+  const fileData = await readTerrainFile(file, signal);
+  return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 }, signal);
 }
 
-/** Imports an STL grid provisionally; service callers must activate or release its terrain ID. */
-export async function uploadSTL(file: File, resolution?: number): Promise<DTMMetadata> {
-  validateTerrainFileSize(file.size);
-  const fileData = await file.arrayBuffer();
-  return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 });
+/** Imports an STL grid provisionally; same contract (and same synchronous signal read) as {@link uploadDXF}. */
+export async function uploadSTL(
+  file: File,
+  resolution?: number,
+  signal: AbortSignal | undefined = scopedTerrainAbortSignal(),
+): Promise<DTMMetadata> {
+  const fileData = await readTerrainFile(file, signal);
+  return runTerrainWorkerFull({ fileData, filename: file.name, resolution: resolution || 1.0 }, signal);
 }
 
 /**
  * Read the file's X/Y/Z envelope without allocating a DTM. The upload UI uses this
- * to compute a per-file resolution that stays under the 1M-cell cap.
+ * to compute a per-file resolution that stays under the 1M-cell cap. Cancellable like
+ * {@link uploadDXF}; it must also read the scoped signal before its first `await`.
  */
-export async function previewTerrainBounds(file: File): Promise<TerrainBoundsPreview> {
-  validateTerrainFileSize(file.size);
-  const fileData = await file.arrayBuffer();
+export async function previewTerrainBounds(
+  file: File,
+  signal: AbortSignal | undefined = scopedTerrainAbortSignal(),
+): Promise<TerrainBoundsPreview> {
+  const fileData = await readTerrainFile(file, signal);
   const result = await runTerrainWorkerBounds({
     fileData,
     filename: file.name,
     resolution: 1.0,
     mode: 'bounds',
-  });
+  }, signal);
   return {
     source: result.source,
     pointCount: result.pointCount,

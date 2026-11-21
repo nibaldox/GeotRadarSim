@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import DxfParser from 'dxf-parser';
 import type { DTMMetadata } from '../types/api';
+import { preflightDxf } from '../utils/dxfPreflight';
 import { gridNodeCountForSpan, MAX_DXF_TEXT_BYTES, MAX_TERRAIN_GRID_CELLS, validateDxfComplexity, validateTerrainFileSize, validateTerrainGridDimensions, validateTerrainResolution } from '../utils/terrainLimits';
 
 export interface TerrainWorkerInput {
@@ -278,6 +279,9 @@ type DxfEntity = {
 };
 
 function parseDXF(text: string): TerrainPoint[] {
+  // dxf-parser@1.1.2 can loop forever on some malformed structures: reject them (and apply the
+  // entity/vertex limits) in one linear pass before the parser ever sees the text.
+  preflightDxf(text);
   const parser = new DxfParser();
   const dxf = parser.parseSync(text);
   const points: TerrainPoint[] = [];

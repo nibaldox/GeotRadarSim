@@ -1924,6 +1924,22 @@ describe("LOS worker watchdog", () => {
 
     expect(settled).toBe(false);
     expect(MockWorker.instances[0]!.terminateCalls).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+
+    // That single timer is the terrain import's own deadline, not the LOS watchdog: reaching it
+    // terminates the Worker once and rejects with the terrain message. The job above discards its
+    // rejection reason, so an identical second import carries the message assertion.
+    const { TERRAIN_IMPORT_DEADLINE_MS } = await import("../utils/terrainLimits");
+    await vi.advanceTimersByTimeAsync(TERRAIN_IMPORT_DEADLINE_MS - 125000);
+    expect(settled).toBe(true);
+    expect(MockWorker.instances[0]!.terminateCalls).toBe(1);
+    const deadlineError = uploadSTL(new File([new ArrayBuffer(8)], "watchdog-terrain-2.stl"), 1.0)
+      .then(() => null, (error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(TERRAIN_IMPORT_DEADLINE_MS);
+    expect(await deadlineError).toMatchObject({
+      message: `El procesamiento del terreno superó ${TERRAIN_IMPORT_DEADLINE_MS / 1000} s y se detuvo; revisa que el archivo sea válido.`,
+    });
+    expect(MockWorker.instances[1]!.terminateCalls).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 });

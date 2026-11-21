@@ -5,6 +5,15 @@ export const MAX_DXF_TEXT_BYTES = 64 * 1024 * 1024;
 export const MAX_DXF_ENTITIES = 250_000;
 export const MAX_DXF_VERTICES = 1_500_000; // matches the STL point budget
 
+// Watchdog for one terrain Worker job, from Worker start to its reply. Measured worst legitimate
+// jobs (synthetic, 2026-11-20, Node 22.23 and Chromium 156 Worker on a fast desktop CPU;
+// evidence/c2a/measure): a 256 MiB ASCII STL takes up to 6.9 s to preview and 8.2 s to import at
+// ~1 M cells; a 60 MB DXF with 1.5 M vertices 1.2 s / 2.2 s; 250 000 DXF points 0.4 s / 0.7 s; a
+// 256 MiB binary STL 0.2 s / 1.5 s. The deadlines leave 17.3× (preview) and 36.4× (import) over
+// those maxima, so slower user machines still finish legitimate files.
+export const TERRAIN_PREVIEW_DEADLINE_MS = 120_000;
+export const TERRAIN_IMPORT_DEADLINE_MS = 300_000;
+
 export function validateTerrainFileSize(bytes: number): void {
   if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > MAX_TERRAIN_FILE_BYTES) {
     const actual = (bytes / 1024 / 1024).toFixed(2);

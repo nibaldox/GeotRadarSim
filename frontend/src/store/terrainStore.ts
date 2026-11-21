@@ -3,6 +3,13 @@
  *
  * Metadata and grid are committed together only after a terrain request and
  * its grid load both succeed. Request IDs fence off out-of-order responses.
+ *
+ * Each bounds preview owns an AbortController. Cancelling the preview, replacing it with a newer
+ * one or confirming it aborts it, which terminates its Worker (see `superviseTerrainWorker` in
+ * services/api); that AbortError is never shown to the user. Imports are not aborted when a newer
+ * import or terrain change supersedes them: an import only starts after a successful preview of
+ * the same file with the same deterministic parser, the request fence above discards its late
+ * result, and its own deadline bounds it.
  */
 
 import { create } from "zustand";
@@ -21,6 +28,7 @@ import type {
   TerrainGridResponse,
   SyntheticTerrainRequest,
 } from "../types/api";
+import { isAbortError, withTerrainAbortSignal } from "../services/terrainAbort";
 import { useAnalysisStore } from "./analysisStore";
 import type { TerrainKey } from "./analysisStore";
 
@@ -75,6 +83,12 @@ const errorMessage = (err: unknown): string =>
 export const useTerrainStore = create<TerrainState>((set, get) => {
   let latestRequestId = 0;
   let latestPreviewRequest = 0;
+  let previewController: AbortController | null = null;
+
+  const abortPreview = () => {
+    previewController?.abort();
+    previewController = null;
+  };
 
   const beginTransition = () => {
     const requestId = ++latestRequestId;
@@ -199,6 +213,9 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
     setPreferredResolution: (res) => set({ preferredResolution: res }),
 
     startUploadPreview: async (file) => {
+      abortPreview();
+      const controller = new AbortController();
+      previewController = controller;
       const requestId = ++latestPreviewRequest;
       set({
         uploadPreview: { file, filename: file.name } as UploadPreview,
@@ -206,7 +223,10 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
         uploadPreviewError: null,
       });
       try {
-        const bounds: TerrainBoundsPreview = await apiPreviewTerrainBounds(file);
+        const bounds: TerrainBoundsPreview = await withTerrainAbortSignal(
+          controller.signal,
+          () => apiPreviewTerrainBounds(file),
+        );
         if (requestId !== latestPreviewRequest) return;
         set({
           uploadPreview: {
@@ -223,13 +243,16 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
         if (requestId !== latestPreviewRequest) return;
         // Keep the file around so the user can retry without re-picking; only show the error.
         set({
-          uploadPreviewError: errorMessage(err),
+          uploadPreviewError: isAbortError(err) ? null : errorMessage(err),
           uploadPreviewLoading: false,
         });
+      } finally {
+        if (previewController === controller) previewController = null;
       }
     },
 
     cancelUploadPreview: () => {
+      abortPreview();
       ++latestPreviewRequest;
       set({
         uploadPreview: null,
@@ -246,7 +269,8 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
       }
       const file = preview.file;
       const isStl = preview.source === 'STL';
-      // Bump the request fence so any in-flight startUploadPreview becomes a no-op.
+      // Bump the request fence so any in-flight startUploadPreview becomes a no-op, and stop its Worker.
+      abortPreview();
       ++latestPreviewRequest;
       // Clear the preview up front so the dialog closes immediately; the upload itself
       // raises `loading` via beginTransition().
