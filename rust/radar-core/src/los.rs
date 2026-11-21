@@ -485,6 +485,7 @@ fn trace_vertical_ray_at_point(
     start_parameter: f64,
     end_parameter: f64,
     start_z: f64,
+    end_z: f64,
     delta_z: f64,
 ) -> u8 {
     let x = snap_grid_coordinate(x);
@@ -492,8 +493,17 @@ fn trace_vertical_ray_at_point(
     let mut shadowed = false;
     let has_surface = for_each_incident_triangle(dem, x, y, |row, col, tl, tr, bl, br, second| {
         let height = height_on_triangle(tl, tr, bl, br, x - col as f64, y - row as f64, second);
-        let ray_at_start = start_z + start_parameter * delta_z;
-        let ray_at_end = start_z + end_parameter * delta_z;
+        // Parameter 1 is the target node itself: its ray height is end_z exactly.
+        let ray_at_start = if start_parameter == 1.0 {
+            end_z
+        } else {
+            start_z + start_parameter * delta_z
+        };
+        let ray_at_end = if end_parameter == 1.0 {
+            end_z
+        } else {
+            start_z + end_parameter * delta_z
+        };
         if height.is_finite() && (height > ray_at_start || height > ray_at_end) {
             shadowed = true;
         }
@@ -508,6 +518,11 @@ fn trace_vertical_ray_at_point(
 }
 
 /// `traceTerrainRay`: returns VISIBLE, SHADOW or UNKNOWN_RAY.
+///
+/// The ray ends exactly at the target node `(target_row, target_col)`, whose elevation is
+/// `end_z`: the endpoint (t = 1) uses the integer node coordinates and `end_z`, never
+/// `start + 1 * delta`, so the target cannot occlude itself by rounding. Each triangle's entry
+/// is still compared.
 #[allow(clippy::too_many_arguments)]
 fn trace_terrain_ray(
     dem: Dem<'_>,
@@ -515,23 +530,26 @@ fn trace_terrain_ray(
     min_y: f64,
     resolution: f64,
     start: [f64; 3],
-    end: [f64; 3],
+    target_row: usize,
+    target_col: usize,
+    end_z: f64,
     should_abort: &mut dyn FnMut() -> bool,
 ) -> Result<u8, LosError> {
     let [start_x, start_y, start_z] = start;
-    let [end_x, end_y, end_z] = end;
     if dem.rows < 2 || dem.cols < 2 {
         return Ok(cell_state::UNKNOWN_RAY);
     }
     let rows_f = dem.rows as f64;
     let cols_f = dem.cols as f64;
+    let target_row_f = target_row as f64;
+    let target_col_f = target_col as f64;
 
     let grid_start_x = snap_grid_coordinate((start_x - min_x) / resolution);
     let grid_start_y = snap_grid_coordinate((start_y - min_y) / resolution);
-    let grid_end_x = snap_grid_coordinate((end_x - min_x) / resolution);
-    let grid_end_y = snap_grid_coordinate((end_y - min_y) / resolution);
+    let grid_end_x = target_col_f;
+    let grid_end_y = target_row_f;
     let grid_start_diagonal = snap_grid_coordinate(grid_start_x + grid_start_y);
-    let grid_end_diagonal = snap_grid_coordinate(grid_end_x + grid_end_y);
+    let grid_end_diagonal = target_col_f + target_row_f;
     let delta_x = grid_end_x - grid_start_x;
     let delta_y = grid_end_y - grid_start_y;
     let delta_diagonal = grid_end_diagonal - grid_start_diagonal;
@@ -565,14 +583,23 @@ fn trace_terrain_ray(
             clip_start,
             clip_end,
             start_z,
+            end_z,
             delta_z,
         ));
     }
     if clip_start == clip_end {
-        let x = grid_start_x + clip_start * delta_x;
-        let y = grid_start_y + clip_start * delta_y;
+        let x = if clip_start == 1.0 {
+            target_col_f
+        } else {
+            grid_start_x + clip_start * delta_x
+        };
+        let y = if clip_start == 1.0 {
+            target_row_f
+        } else {
+            grid_start_y + clip_start * delta_y
+        };
         return Ok(trace_vertical_ray_at_point(
-            dem, x, y, clip_start, clip_end, start_z, delta_z,
+            dem, x, y, clip_start, clip_end, start_z, end_z, delta_z,
         ));
     }
 
@@ -598,6 +625,8 @@ fn trace_terrain_ray(
         let midpoint = interval_start + (interval_end - interval_start) / 2.0;
         let midpoint_x = grid_start_x + midpoint * delta_x;
         let midpoint_y = grid_start_y + midpoint * delta_y;
+        // The node's integer crossings make the last interval_end exactly 1: the target node.
+        let ends_at_target = interval_end == 1.0;
         let mut interval_shadowed = false;
         let interval_has_surface = for_each_incident_triangle(
             dem,
@@ -608,14 +637,24 @@ fn trace_terrain_ray(
                 let row_f = row as f64;
                 let start_local_x = grid_start_x + interval_start * delta_x - col_f;
                 let start_local_y = grid_start_y + interval_start * delta_y - row_f;
-                let end_local_x = grid_start_x + interval_end * delta_x - col_f;
-                let end_local_y = grid_start_y + interval_end * delta_y - row_f;
+                let (end_local_x, end_local_y) = if ends_at_target {
+                    (target_col_f - col_f, target_row_f - row_f)
+                } else {
+                    (
+                        grid_start_x + interval_end * delta_x - col_f,
+                        grid_start_y + interval_end * delta_y - row_f,
+                    )
+                };
                 let terrain_at_start =
                     height_on_triangle(tl, tr, bl, br, start_local_x, start_local_y, second);
                 let terrain_at_end =
                     height_on_triangle(tl, tr, bl, br, end_local_x, end_local_y, second);
                 let ray_at_start = start_z + interval_start * delta_z;
-                let ray_at_end = start_z + interval_end * delta_z;
+                let ray_at_end = if ends_at_target {
+                    end_z
+                } else {
+                    start_z + interval_end * delta_z
+                };
                 if terrain_at_start > ray_at_start || terrain_at_end > ray_at_end {
                     interval_shadowed = true;
                 }
@@ -822,7 +861,9 @@ fn compute_cells(
                 grid.min_y,
                 resolution,
                 [rx, ry, rz],
-                [cx, cy, target_z],
+                r,
+                c,
+                target_z,
                 should_abort,
             )?;
             if ray_state == cell_state::SHADOW || ray_state == cell_state::UNKNOWN_RAY {

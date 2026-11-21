@@ -636,3 +636,86 @@ fn snap_grid_coordinate_uses_number_epsilon_scaled_tolerance() {
     assert!(snap_grid_coordinate(-1e-17).to_bits() == (-0.0f64).to_bits());
     assert!(snap_grid_coordinate(f64::NAN).is_nan());
 }
+
+// The ray endpoint is the target node, which lies on the surface: it can never occlude itself.
+// Before the exact endpoint, `start_z + 1 * delta_z` (20 + 1 * -27.05 = -7.050000000000001) and
+// `grid_start + 1 * delta - col` missed the node by an ulp, and the target became a false SHADOW.
+
+fn counts(states: &[u8]) -> (usize, usize, usize) {
+    let n = |s: u8| states.iter().filter(|&&v| v == s).count();
+    (n(VISIBLE), n(SHADOW), n(UNKNOWN_RAY))
+}
+
+#[test]
+fn target_endpoint_rounding_premise() {
+    let delta_z: f64 = -7.05 - 20.0;
+    assert_eq!(20.0 + 1.0 * delta_z, -7.050000000000001);
+}
+
+#[test]
+fn target_endpoint_flat_surface_at_minus_7_05_is_visible() {
+    let values = vec![-7.05; 9 * 11];
+    let grid = view(&values, 9, 11);
+    for pos in [[4.0, 4.0, 20.0], [4.3, 3.7, 20.0]] {
+        let out = run(&grid, pos, &open_radar(1e6)).unwrap();
+        assert_eq!(counts(&out.cell_states), (99, 0, 0), "radar {pos:?}");
+    }
+}
+
+#[test]
+fn target_endpoint_simple_slope_is_visible() {
+    let (rows, cols) = (9usize, 11usize);
+    let values: Vec<f64> = (0..rows * cols)
+        .map(|i| -7.05 + 0.35 * (i % cols) as f64 - 0.15 * (i / cols) as f64)
+        .collect();
+    let grid = view(&values, rows as u32, cols as u32);
+    let out = run(&grid, [4.3, 3.7, 20.0], &open_radar(1e6)).unwrap();
+    assert_eq!(counts(&out.cell_states), (99, 0, 0));
+}
+
+#[test]
+fn target_endpoint_shifted_origin_is_visible() {
+    let values = vec![-7.05; 9 * 11];
+    let grid = GridView {
+        min_x: 1000.1,
+        min_y: 2000.3,
+        ..view(&values, 9, 11)
+    };
+    let out = run(&grid, [1000.1 + 4.3, 2000.3 + 3.7, 20.0], &open_radar(1e6)).unwrap();
+    assert_eq!(counts(&out.cell_states), (99, 0, 0));
+}
+
+#[test]
+fn target_endpoint_keeps_real_wall_shadow() {
+    let (rows, cols) = (5usize, 9usize);
+    let values: Vec<f64> = (0..rows * cols)
+        .map(|i| if i % cols == 4 { 30.0 } else { -7.05 })
+        .collect();
+    let grid = view(&values, rows as u32, cols as u32);
+    let out = run(&grid, [0.5, 2.2, 20.0], &open_radar(1e6)).unwrap();
+    for r in 0..rows {
+        for c in 0..cols {
+            if c >= 5 {
+                assert_eq!(at(&out, cols, r, c), SHADOW, "{r},{c}");
+            }
+            if c <= 3 {
+                assert_eq!(at(&out, cols, r, c), VISIBLE, "{r},{c}");
+            }
+        }
+    }
+}
+
+#[test]
+fn target_endpoint_keeps_crest_shadow_at_entry_of_the_incident_triangle() {
+    // Quads (row 1, col 1..2) are not renderable, so only the last interval, in triangle 1 of
+    // quad (row 1, col 3) = (1,3), (1,4) = target, (2,3), sees the 10 m crest at its entry.
+    let (rows, cols) = (4usize, 6usize);
+    let mut values = vec![0.0; rows * cols];
+    values[2 * cols + 2] = f64::NAN;
+    values[cols + 3] = 10.0;
+    values[2 * cols + 3] = 10.0;
+    let grid = view(&values, rows as u32, cols as u32);
+    let out = run(&grid, [0.5, 1.4, 5.0], &open_radar(1e6)).unwrap();
+    assert_eq!(at(&out, cols, 1, 4), SHADOW);
+    assert_eq!(at(&out, cols, 1, 3), UNKNOWN_RAY);
+}

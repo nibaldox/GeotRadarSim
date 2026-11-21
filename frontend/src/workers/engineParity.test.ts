@@ -367,7 +367,12 @@ describe("LOS worker: ts ↔ wasm complete-response parity", () => {
     const cols = 90;
     const ridges = Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, c) => (c % 15 === 7 ? 25 : 0.2 * Math.sin(r / 3 + c / 5))));
     const many = await compareLOS("ridges", losInput(ridges, 0, 0, 1, [0, 30, 3], openRadar));
-    expect(many.shadow_zones.length).toBeGreaterThan(3);
+    // F-ACNE: with the radar at z = 3 the oracle's 4920 real shadows form ONE zone; the other
+    // 50 zones of the old expectation (> 3) were made only of false endpoint-rounding shadows.
+    expect(many.shadow_zones.length).toBe(1);
+    // A higher radar sees between the ridges: 6 zones, all oracle-confirmed real shadows.
+    const high = await compareLOS("ridges-high", losInput(ridges, 0, 0, 1, [0, 30, 40], openRadar));
+    expect(high.shadow_zones.length).toBeGreaterThan(3);
     // One wall: a single shadow zone of several thousand cells.
     const wall = Array.from({ length: 80 }, (_, r) => Array.from({ length: 120 }, (_, c) => (c === 10 && r > 2 && r < 77 ? 80 : 0)));
     const big = await compareLOS("wall", losInput(wall, 0, 0, 1, [0, 40, 5], openRadar));

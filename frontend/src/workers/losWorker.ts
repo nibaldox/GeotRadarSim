@@ -269,6 +269,7 @@ function traceVerticalRayAtPoint(
   startParameter: number,
   endParameter: number,
   startZ: number,
+  endZ: number,
   deltaZ: number,
 ): RayTraceState {
   x = snapGridCoordinate(x);
@@ -279,8 +280,9 @@ function traceVerticalRayAtPoint(
       const height = heightOnTriangle(
         topLeft, topRight, bottomLeft, bottomRight, x - col, y - row, secondTriangle,
       );
-      const rayAtStart = startZ + startParameter * deltaZ;
-      const rayAtEnd = startZ + endParameter * deltaZ;
+      // Parameter 1 is the target node itself: its ray height is endZ exactly.
+      const rayAtStart = startParameter === 1 ? endZ : startZ + startParameter * deltaZ;
+      const rayAtEnd = endParameter === 1 ? endZ : startZ + endParameter * deltaZ;
       if (Number.isFinite(height) && (height > rayAtStart || height > rayAtEnd)) shadowed = true;
     });
   if (shadowed) return LOSCellState.SHADOW;
@@ -290,6 +292,10 @@ function traceVerticalRayAtPoint(
 /**
  * Compare the ray against every triangle it crosses. The integer grid lines and TerrainViewer's
  * x + y = integer diagonals form a monotone event stream, so only the next crossing is retained.
+ *
+ * The ray ends exactly at the target node (targetRow, targetCol), whose elevation is endZ: the
+ * endpoint (t = 1) uses the integer node coordinates and endZ, never `start + 1 * delta`, so the
+ * target cannot occlude itself by rounding. Each triangle's entry is still compared.
  */
 function traceTerrainRay(
   grid: number[][],
@@ -299,8 +305,8 @@ function traceTerrainRay(
   startX: number,
   startY: number,
   startZ: number,
-  endX: number,
-  endY: number,
+  targetRow: number,
+  targetCol: number,
   endZ: number,
   deadline: LOSRuntimeDeadline,
 ): RayTraceState {
@@ -310,10 +316,10 @@ function traceTerrainRay(
 
   const gridStartX = snapGridCoordinate((startX - minX) / resolution);
   const gridStartY = snapGridCoordinate((startY - minY) / resolution);
-  const gridEndX = snapGridCoordinate((endX - minX) / resolution);
-  const gridEndY = snapGridCoordinate((endY - minY) / resolution);
+  const gridEndX = targetCol;
+  const gridEndY = targetRow;
   const gridStartDiagonal = snapGridCoordinate(gridStartX + gridStartY);
-  const gridEndDiagonal = snapGridCoordinate(gridEndX + gridEndY);
+  const gridEndDiagonal = targetCol + targetRow;
   const deltaX = gridEndX - gridStartX;
   const deltaY = gridEndY - gridStartY;
   const deltaDiagonal = gridEndDiagonal - gridStartDiagonal;
@@ -326,13 +332,13 @@ function traceTerrainRay(
   if (!clip) return LOSCellState.UNKNOWN_RAY;
   if (deltaX === 0 && deltaY === 0) {
     return traceVerticalRayAtPoint(
-      grid, rows, cols, gridStartX, gridStartY, clip.start, clip.end, startZ, deltaZ,
+      grid, rows, cols, gridStartX, gridStartY, clip.start, clip.end, startZ, endZ, deltaZ,
     );
   }
   if (clip.start === clip.end) {
-    const x = gridStartX + clip.start * deltaX;
-    const y = gridStartY + clip.start * deltaY;
-    return traceVerticalRayAtPoint(grid, rows, cols, x, y, clip.start, clip.end, startZ, deltaZ);
+    const x = clip.start === 1 ? targetCol : gridStartX + clip.start * deltaX;
+    const y = clip.start === 1 ? targetRow : gridStartY + clip.start * deltaY;
+    return traceVerticalRayAtPoint(grid, rows, cols, x, y, clip.start, clip.end, startZ, endZ, deltaZ);
   }
 
   let rayUnknown = false;
@@ -354,14 +360,16 @@ function traceTerrainRay(
     const midpoint = intervalStart + (intervalEnd - intervalStart) / 2;
     const midpointX = gridStartX + midpoint * deltaX;
     const midpointY = gridStartY + midpoint * deltaY;
+    // The node's integer crossings make the last intervalEnd exactly 1: the target node.
+    const endsAtTarget = intervalEnd === 1;
     let intervalShadowed = false;
     const intervalHasSurface = forEachIncidentTriangle(
       grid, rows, cols, midpointX, midpointY,
       (row, col, topLeft, topRight, bottomLeft, bottomRight, secondTriangle) => {
         const startLocalX = gridStartX + intervalStart * deltaX - col;
         const startLocalY = gridStartY + intervalStart * deltaY - row;
-        const endLocalX = gridStartX + intervalEnd * deltaX - col;
-        const endLocalY = gridStartY + intervalEnd * deltaY - row;
+        const endLocalX = endsAtTarget ? targetCol - col : gridStartX + intervalEnd * deltaX - col;
+        const endLocalY = endsAtTarget ? targetRow - row : gridStartY + intervalEnd * deltaY - row;
         const terrainAtStart = heightOnTriangle(
           topLeft, topRight, bottomLeft, bottomRight, startLocalX, startLocalY, secondTriangle,
         );
@@ -369,7 +377,7 @@ function traceTerrainRay(
           topLeft, topRight, bottomLeft, bottomRight, endLocalX, endLocalY, secondTriangle,
         );
         const rayAtStart = startZ + intervalStart * deltaZ;
-        const rayAtEnd = startZ + intervalEnd * deltaZ;
+        const rayAtEnd = endsAtTarget ? endZ : startZ + intervalEnd * deltaZ;
         if (terrainAtStart > rayAtStart || terrainAtEnd > rayAtEnd) intervalShadowed = true;
       },
     );
@@ -545,7 +553,7 @@ function computeLOS(input: LOSWorkerInput): LOSWorkerOutput {
       }
 
       const rayState = traceTerrainRay(
-        grid, bounds.min_x, bounds.min_y, resolution, rx, ry, rz, cx, cy, targetZ, deadline,
+        grid, bounds.min_x, bounds.min_y, resolution, rx, ry, rz, r, c, targetZ, deadline,
       );
       if (rayState === LOSCellState.SHADOW) {
         cell_states[idx] = LOSCellState.SHADOW;
