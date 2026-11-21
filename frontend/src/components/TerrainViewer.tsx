@@ -696,7 +696,7 @@ export function TerrainViewer({
               </div>
             </>
           ) : (
-            <>
+            <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
               <div className="hud-legend-row">
                 <div
                   className="hud-legend-color"
@@ -719,6 +719,25 @@ export function TerrainViewer({
                     <span lang="es">SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.</span>
                   </div>
                 </div>
+              </div>
+              <div
+                data-testid="incidence-gradient"
+                aria-label="Surface incidence color gradient"
+                style={{
+                  height: "12px",
+                  background: `linear-gradient(to right, ${policy.mediumMin === 0 ? "rgb(242, 115, 13)" : "rgb(230, 26, 26)"} ${policy.mediumMin * 50}%, rgb(242, 115, 13) ${policy.mediumMin * 100}%, rgb(255, 204, 0) ${(policy.mediumMin + policy.highMin) * 50}%, rgb(128, 217, 26) ${policy.highMin * 100}%, ${policy.highMin === 1 ? "rgb(128, 217, 26)" : "rgb(0, 230, 51)"} ${(policy.highMin + 1) * 50}%)`,
+                }}
+              />
+              <div style={{ position: "relative", height: "1.2em" }}>
+                <span style={{ position: "absolute", left: 0 }}>0</span>
+                <span style={{ position: "absolute", left: `${policy.mediumMin * 100}%`, transform: "translateX(-50%)" }}>{policy.mediumMin}</span>
+                <span style={{ position: "absolute", left: `${policy.highMin * 100}%`, transform: "translateX(-50%)" }}>{policy.highMin}</span>
+                <span style={{ position: "absolute", right: 0 }}>1</span>
+              </div>
+              <div className="hud-legend-desc">
+                <span lang="en">Colors change continuously. The configurable cut-offs ({policy.mediumMin} / {policy.highMin}) sit at the midpoint of each color transition and still define the low/medium/high bands in the dashboard, history cards and exports.</span>
+                {" / "}
+                <span lang="es">Los colores cambian de forma continua. Los cortes configurables ({policy.mediumMin} / {policy.highMin}) quedan en el punto medio de cada transición de color y siguen definiendo las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones.</span>
               </div>
               {legendBandRow(
                 "low",
@@ -754,7 +773,7 @@ export function TerrainViewer({
                 {" / "}
                 <span lang="es">Para celdas VISIBLE, el valor de 0-1 es la alineación de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia no es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo VISIBLE. Es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.</span>
               </div>
-            </>
+            </div>
           )}
 
           <div className="hud-legend-desc">

@@ -31,7 +31,7 @@ It cannot answer whether a real radar will receive an adequate signal at a given
 | 🗺️ **Terrain input** | Load DXF point/line/polyline data or an STL surface and convert it to a regular elevation grid |
 | 🏗️ **Synthetic terrain** | Generate a simple bowl-shaped example surface for testing the interface and geometry |
 | 📡 **Geometric LOS** | Classify grid samples as visible, shadowed, outside configured limits, no-data, or unknown-ray |
-| ✅ **Geometric quality layers (v2)** | Paint surface incidence with configurable provisional bands and movement projection with a fixed continuous violet–blue–cyan–green gradient on observed cells only |
+| ✅ **Geometric quality layers (v2)** | Paint surface incidence with a continuous gradient anchored to configurable provisional band cut-offs and movement projection with a fixed continuous violet–blue–cyan–green gradient on observed cells only |
 | 🎯 **Configurable limits** | Choose a bundled software profile and override range, elevation, and azimuth constraints |
 | 🔴 **Multiple analyses** | Select compatible history entries to combine their cell-level geometric visibility |
 | 🧮 **Geometric sensitivity** | Project the terrain's maximum-slope direction onto one or more individually visible LOS directions (one contributor: \|dot\|; several: RMS) |

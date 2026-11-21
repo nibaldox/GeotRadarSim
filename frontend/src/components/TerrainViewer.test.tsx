@@ -320,6 +320,20 @@ describe("TerrainViewer quality legend", () => {
 
     render(<TerrainViewer showShadowOverlay />);
 
+    const gradient = screen.getByTestId("incidence-gradient");
+    expect(gradient.parentElement).toHaveStyle({ maxHeight: "50vh", overflowY: "auto" });
+    expect(gradient.style.background).toContain("rgb(230, 26, 26) 15%");
+    expect(gradient.style.background).toContain("rgb(242, 115, 13) 30%");
+    expect(gradient.style.background).toContain("rgb(255, 204, 0) 50%");
+    expect(gradient.style.background).toContain("rgb(128, 217, 26) 70%");
+    expect(gradient.style.background).toContain("rgb(0, 230, 51) 85%");
+    expect(screen.getByText(/Los colores cambian de forma continua\. Los cortes configurables \(0.3 \/ 0.7\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Colors change continuously\. The configurable cut-offs \(0.3 \/ 0.7\)/)).toBeInTheDocument();
+    act(() => useQualityPolicyStore.setState({ policy: { mediumMin: 0.25, highMin: 0.8 } }));
+    expect(gradient.style.background).toContain("12.5%");
+    expect(gradient.style.background).toContain("52.5%");
+    expect(gradient.style.background).toContain("90%");
+    act(() => useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } }));
     expect(screen.getByText("Surface incidence index (geometric v2)")).toBeInTheDocument();
     expect(screen.getByText("Índice de incidencia superficial (geométrico v2)")).toBeInTheDocument();
     expect(screen.getByText("Low incidence ([0, 0.3))")).toBeInTheDocument();

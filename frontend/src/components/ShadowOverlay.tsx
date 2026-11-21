@@ -107,10 +107,19 @@ const fragmentShader = `
       vec3 colorLow  = vec3(0.9, 0.1, 0.1);
       vec3 colorMid  = vec3(1.0, 0.8, 0.0);
       vec3 colorHigh = vec3(0.0, 0.9, 0.2);
-      // Strict category boundaries shared with classification, legends and export:
-      // low q < mediumMin; medium mediumMin <= q < highMin; high q >= highMin.
-      if (q < mediumMin) finalColor = colorLow;
-      else if (q < highMin) finalColor = colorMid;
+      // Cut-offs are transition midpoints, including the degenerate 0 and 1 endpoints.
+      float cLow = mediumMin / 2.0;
+      float cMid = (mediumMin + highMin) / 2.0;
+      float cHigh = (highMin + 1.0) / 2.0;
+      vec3 lowMid = mix(colorLow, colorMid, 0.5);
+      vec3 midHigh = mix(colorMid, colorHigh, 0.5);
+      if (q == mediumMin) finalColor = lowMid;
+      else if (q == highMin) finalColor = midHigh;
+      else if (q <= cLow) finalColor = colorLow;
+      else if (q < mediumMin) finalColor = mix(colorLow, lowMid, (q - cLow) / (mediumMin - cLow));
+      else if (q < cMid) finalColor = mix(lowMid, colorMid, (q - mediumMin) / (cMid - mediumMin));
+      else if (q < highMin) finalColor = mix(colorMid, midHigh, (q - cMid) / (highMin - cMid));
+      else if (q < cHigh) finalColor = mix(midHigh, colorHigh, (q - highMin) / (cHigh - highMin));
       else finalColor = colorHigh;
     } else {
       vec3 colorBlind = vec3(0.5, 0.0, 0.5);

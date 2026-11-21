@@ -303,7 +303,36 @@ function expectColor(color: number[] | null, expected: number[]): void {
   });
 }
 
+function incidenceReference(q: number, m: number, h: number): number[] {
+  const colors = [[0.9, 0.1, 0.1], [1, 0.8, 0], [0, 0.9, 0.2]];
+  const left = m / 2, center = (m + h) / 2, right = (h + 1) / 2;
+  if (q === center) return [...colors[1]!, 0.6];
+  let t: number;
+  if (q === m) t = 0.5;
+  else if (q === h) t = 0.5;
+  else if (q < m) t = Math.max(0, (q - left) / (m - left)) * 0.5;
+  else if (q < center) t = 0.5 + 0.5 * (q - m) / (center - m);
+  else if (q < h) t = 0.5 * (q - center) / (h - center);
+  else t = Math.min(1, 0.5 + 0.5 * (q - h) / (right - h));
+  const i = q <= center ? 0 : 1;
+  return [...colors[i]!.map((c, k) => c * (1 - t) + colors[i + 1]![k]! * t), 0.6];
+}
+
 describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
+  it("interpolates the configured incidence stops, including degenerate end cuts", () => {
+    for (const policy of [{ mediumMin: 0.3, highMin: 0.7 }, { mediumMin: 0.25, highMin: 0.8 }, { mediumMin: 0, highMin: 0.7 }, { mediumMin: 0.3, highMin: 1 }]) {
+      const { mediumMin: m, highMin: h } = policy;
+      const values = [0, m / 2, (m / 2 + m) / 2, m, (m + h) / 2, h, (h + 1) / 2, 1];
+      const { fragmentShader, uniforms } = renderOverlayMaterial({ mode: "QUALITY", qualityModel: "geometric-v2", cellStates: Array(8).fill(5), quality: values, policy })!;
+      values.forEach((q, i) => expectColor(sampleCell(fragmentShader, uniforms, i), incidenceReference(Math.fround(q), uniforms.mediumMin, uniforms.highMin)));
+      for (const cut of [m, h].filter((v) => v > 0 && v < 1)) {
+        const nearby = renderOverlayMaterial({ mode: "QUALITY", qualityModel: "geometric-v2", cellStates: Array(8).fill(5), quality: [cut - 0.0001, cut + 0.0001], policy })!;
+        const a = sampleCell(nearby.fragmentShader, nearby.uniforms, 0)!;
+        const b = sampleCell(nearby.fragmentShader, nearby.uniforms, 1)!;
+        a.forEach((channel, i) => expect(Math.abs(channel - b[i]!)).toBeLessThan(0.02));
+      }
+    }
+  });
   it("paints only VISIBLE cells; SHADOW and every unobserved state leave the base terrain", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "QUALITY",
@@ -331,7 +360,7 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
     expectColor(sampleCell(fragmentShader, uniforms, 5), [0.9, 0.1, 0.1, 0.6]);
   });
 
-  it("shades the three configured categories red, yellow and green with strict policy boundaries", () => {
+  it("shades incidence continuously across configured policy boundaries", () => {
     const { fragmentShader, uniforms } = renderOverlayMaterial({
       mode: "QUALITY",
       qualityModel: "geometric-v2",
@@ -341,12 +370,9 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
     expect(uniforms.mediumMin).toBe(Math.fround(DEFAULT_QUALITY_POLICY.mediumMin));
     expect(uniforms.highMin).toBe(Math.fround(DEFAULT_QUALITY_POLICY.highMin));
 
-    expectColor(sampleCell(fragmentShader, uniforms, 0), [0.9, 0.1, 0.1, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 1), [0.9, 0.1, 0.1, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 2), [1, 0.8, 0, 0.6]);   // exactly mediumMin → medium
-    expectColor(sampleCell(fragmentShader, uniforms, 3), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(fragmentShader, uniforms, 4), [0, 0.9, 0.2, 0.6]); // exactly highMin → high
-    expectColor(sampleCell(fragmentShader, uniforms, 5), [0, 0.9, 0.2, 0.6]);
+    [0, 0.2999, 0.3, 0.6999, 0.7, 1].forEach((q, index) => {
+      expectColor(sampleCell(fragmentShader, uniforms, index), incidenceReference(Math.fround(q), uniforms.mediumMin, uniforms.highMin));
+    });
   });
 
   it("follows the editable policy in both color layers without recomputing LOS", () => {
@@ -360,10 +386,9 @@ describe("ShadowOverlay LOS quality rendering (real material shader)", () => {
     })!;
     expect(quality.uniforms.mediumMin).toBe(0.25);
     expect(quality.uniforms.highMin).toBe(0.75);
-    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 0), [0.9, 0.1, 0.1, 0.6]);
-    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 1), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 2), [1, 0.8, 0, 0.6]);
-    expectColor(sampleCell(quality.fragmentShader, quality.uniforms, 3), [0, 0.9, 0.2, 0.6]);
+    [0.24, 0.25, 0.74, 0.75].forEach((q, index) => {
+      expectColor(sampleCell(quality.fragmentShader, quality.uniforms, index), incidenceReference(Math.fround(q), quality.uniforms.mediumMin, quality.uniforms.highMin));
+    });
 
     const movement = renderOverlayMaterial({
       mode: "SENSITIVITY",
