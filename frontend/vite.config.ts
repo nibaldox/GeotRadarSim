@@ -20,6 +20,10 @@ export default defineConfig({
           content: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; img-src 'self'; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'",
         },
         injectTo: "head-prepend",
+      }, {
+        tag: "meta",
+        attrs: { name: "referrer", content: "no-referrer" },
+        injectTo: "head-prepend",
       }],
     },
   }],

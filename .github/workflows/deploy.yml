@@ -23,9 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: 'npm'
@@ -33,19 +35,32 @@ jobs:
       - name: Read pinned versions
         id: versions
         run: |
-          echo "toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust/rust-toolchain.toml", "rb"))["toolchain"]["channel"])')" >> "$GITHUB_OUTPUT"
-          echo "bindgen=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import os, re, tomllib
+          toolchain = tomllib.load(open('rust/rust-toolchain.toml', 'rb'))['toolchain']['channel']
+          bindgen = next(p['version'] for p in tomllib.load(open('rust/Cargo.lock', 'rb'))['package'] if p['name'] == 'wasm-bindgen')
+          for name, value in [('toolchain', toolchain), ('bindgen', bindgen)]:
+              if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value):
+                  raise ValueError(f'Invalid {name} version: {value!r}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'toolchain={toolchain}\nbindgen={bindgen}\n')
+          PY
       - name: Install pinned Rust
-        run: rustup toolchain install "${{ steps.versions.outputs.toolchain }}" --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+        env:
+          RUST_TOOLCHAIN: ${{ steps.versions.outputs.toolchain }}
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
       - name: Cache wasm-bindgen
         id: bindgen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/wasm-bindgen/bin
           key: wasm-bindgen-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.toolchain }}-${{ steps.versions.outputs.bindgen }}
       - name: Install wasm-bindgen
         if: steps.bindgen-cache.outputs.cache-hit != 'true'
-        run: cargo +${{ steps.versions.outputs.toolchain }} install wasm-bindgen-cli --version "${{ steps.versions.outputs.bindgen }}" --locked --root "$RUNNER_TEMP/wasm-bindgen"
+        env:
+          RUST_TOOLCHAIN: ${{ steps.versions.outputs.toolchain }}
+          WASM_BINDGEN_VERSION: ${{ steps.versions.outputs.bindgen }}
+        run: cargo +"$RUST_TOOLCHAIN" install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked --root "$RUNNER_TEMP/wasm-bindgen"
       - name: Add wasm-bindgen to PATH
         run: echo "$RUNNER_TEMP/wasm-bindgen/bin" >> "$GITHUB_PATH"
       - name: Check Rust formatting
@@ -74,9 +89,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: 'npm'
@@ -84,19 +101,32 @@ jobs:
       - name: Read pinned versions
         id: versions
         run: |
-          echo "toolchain=$(python3 -c 'import tomllib; print(tomllib.load(open("rust/rust-toolchain.toml", "rb"))["toolchain"]["channel"])')" >> "$GITHUB_OUTPUT"
-          echo "bindgen=$(python3 -c 'import tomllib; d=tomllib.load(open("rust/Cargo.lock", "rb")); print(next(p["version"] for p in d["package"] if p["name"] == "wasm-bindgen"))')" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import os, re, tomllib
+          toolchain = tomllib.load(open('rust/rust-toolchain.toml', 'rb'))['toolchain']['channel']
+          bindgen = next(p['version'] for p in tomllib.load(open('rust/Cargo.lock', 'rb'))['package'] if p['name'] == 'wasm-bindgen')
+          for name, value in [('toolchain', toolchain), ('bindgen', bindgen)]:
+              if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value):
+                  raise ValueError(f'Invalid {name} version: {value!r}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'toolchain={toolchain}\nbindgen={bindgen}\n')
+          PY
       - name: Install pinned Rust
-        run: rustup toolchain install "${{ steps.versions.outputs.toolchain }}" --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
+        env:
+          RUST_TOOLCHAIN: ${{ steps.versions.outputs.toolchain }}
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt --target wasm32-unknown-unknown
       - name: Cache wasm-bindgen
         id: bindgen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/wasm-bindgen/bin
           key: wasm-bindgen-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.toolchain }}-${{ steps.versions.outputs.bindgen }}
       - name: Install wasm-bindgen
         if: steps.bindgen-cache.outputs.cache-hit != 'true'
-        run: cargo +${{ steps.versions.outputs.toolchain }} install wasm-bindgen-cli --version "${{ steps.versions.outputs.bindgen }}" --locked --root "$RUNNER_TEMP/wasm-bindgen"
+        env:
+          RUST_TOOLCHAIN: ${{ steps.versions.outputs.toolchain }}
+          WASM_BINDGEN_VERSION: ${{ steps.versions.outputs.bindgen }}
+        run: cargo +"$RUST_TOOLCHAIN" install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION" --locked --root "$RUNNER_TEMP/wasm-bindgen"
       - name: Add wasm-bindgen to PATH
         run: echo "$RUNNER_TEMP/wasm-bindgen/bin" >> "$GITHUB_PATH"
       - name: Check Rust formatting
@@ -118,7 +148,7 @@ jobs:
         run: npm run build
         working-directory: frontend
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: './frontend/dist'
 
@@ -134,4 +164,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
