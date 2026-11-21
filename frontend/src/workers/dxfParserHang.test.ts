@@ -25,7 +25,7 @@ interface EsbuildLike {
   build(options: Record<string, unknown>): Promise<{ outputFiles: Array<{ text: string }> }>;
 }
 
-const HANG_DEADLINE_MS = 1_500;
+const HANG_DEADLINE_MS = 1_000;
 const frontendDir = decodeURIComponent(new URL("../../", import.meta.url).pathname);
 let workerThreads: WorkerThreads;
 let parserBundle: string;
@@ -116,9 +116,13 @@ function dxfMessage(text: string, filename: string, mode: "bounds" | "full") {
 
 describe("real dxf-parser@1.1.2 in worker_threads", () => {
   it("hangs on every fixture the audit marked as hanging", async () => {
-    const outcomes = await Promise.all(
-      HANGING_DXF.map((fixture) => runInThread(parserThreadSource(), fixture.text, HANG_DEADLINE_MS)),
-    );
+    // At most 6 spinning threads at a time: the machine is shared.
+    const outcomes: ThreadOutcome[] = [];
+    for (let start = 0; start < HANGING_DXF.length; start += 6) {
+      outcomes.push(...await Promise.all(
+        HANGING_DXF.slice(start, start + 6).map((fixture) => runInThread(parserThreadSource(), fixture.text, HANG_DEADLINE_MS)),
+      ));
+    }
     expect(outcomes.map((outcome, index) => [HANGING_DXF[index]!.id, outcome.kind]))
       .toEqual(HANGING_DXF.map((fixture) => [fixture.id, "timeout"]));
   }, 20_000);

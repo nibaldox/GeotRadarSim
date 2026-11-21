@@ -57,6 +57,29 @@ export const HANGING_DXF: readonly DxfFixture[] = [
     text: dxfText(...section("TABLES"), [0, "TABLE"], [2, "LAYER"], [0, "LAYER"], [2, "0"], ...endOfFile),
     reason: /tabla LAYER.*ENDTAB/,
   },
+  // A nested 0/TABLE is ignored inside parseTable, so the parser stays in the OUTER table and
+  // stalls on the other table's record (closing review, evidence/sec-close-opus).
+  {
+    id: "vport-nested-table-layer",
+    text: dxfText(...section("TABLES"), [0, "TABLE"], [2, "VPORT"], [0, "TABLE"], [2, "LAYER"], [0, "VPORT"], [0, "LAYER"], [0, "ENDTAB"], ...endOfFile),
+    reason: /tabla VPORT.*ENDTAB/,
+  },
+  {
+    id: "layer-nested-table-vport",
+    text: dxfText(...section("TABLES"), [0, "TABLE"], [2, "LAYER"], [0, "TABLE"], [2, "VPORT"], [0, "LAYER"], [0, "VPORT"], [0, "ENDTAB"], ...endOfFile),
+    reason: /tabla LAYER.*ENDTAB/,
+  },
+  {
+    id: "vport-nested-table-layer-full",
+    text: dxfText(...section("TABLES"), [0, "TABLE"], [2, "VPORT"], [70, 1], [0, "TABLE"], [2, "LAYER"], [70, 1], [0, "VPORT"], [2, "*ACTIVE"], [0, "LAYER"], [2, "0"], [62, 7], [0, "ENDTAB"], [0, "ENDSEC"],
+      ...section("ENTITIES"), [0, "POINT"], [10, 0], [20, 0], [30, 0], ...endOfFile),
+    reason: /tabla VPORT.*ENDTAB/,
+  },
+  {
+    id: "nested-table-name-code0",
+    text: dxfText(...section("TABLES"), [0, "TABLE"], [2, "VPORT"], [0, "TABLE"], [0, "LAYER"], [0, "VPORT"], [0, "LAYER"], [0, "ENDTAB"], ...endOfFile),
+    reason: /tabla VPORT.*ENDTAB/,
+  },
   {
     id: "lwpolyline-10-then-8",
     text: dxfText(...section("ENTITIES"), [0, "LWPOLYLINE"], [90, 1], [10, 0], [8, "L"], ...endOfFile),

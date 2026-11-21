@@ -46,11 +46,22 @@ describe("preflightDxf — structures that hang dxf-parser@1.1.2", () => {
     }
   });
 
-  it("rejects a POLYLINE or a VPORT/LAYER table that the text ends inside of", () => {
-    expect(() => preflightDxf(dxfText([0, "SECTION"], [2, "ENTITIES"], [0, "POLYLINE"], [0, "VERTEX"], [10, 0])))
-      .toThrow(/POLYLINE.*SEQEND.*fin del archivo/);
-    expect(() => preflightDxf(dxfText([0, "SECTION"], [2, "TABLES"], [0, "TABLE"], [2, "LAYER"], [0, "LAYER"], [2, "0"])))
-      .toThrow(/tabla LAYER.*ENDTAB.*fin del archivo/);
+  it("leaves to the parser the truncated files on which it throws (they end, they do not hang)", () => {
+    // The text ends inside a POLYLINE or a LAYER table: scanner.next() throws "Unexpected end of input".
+    expect(() => preflightDxf(dxfText([0, "SECTION"], [2, "ENTITIES"], [0, "POLYLINE"], [0, "VERTEX"], [10, 0]))).not.toThrow();
+    expect(() => preflightDxf(dxfText([0, "SECTION"], [2, "TABLES"], [0, "TABLE"], [2, "LAYER"], [0, "LAYER"], [2, "0"]))).not.toThrow();
+  });
+
+  it("mirrors parseTable: a nested 0/TABLE is ignored and the outer table keeps its record type", () => {
+    const nested = (outer: string, inner: string, records: string[]) => dxfText(
+      [0, "SECTION"], [2, "TABLES"], [0, "TABLE"], [2, outer], [0, "TABLE"], [2, inner],
+      ...records.map((record) => [0, record] as const), [0, "ENDTAB"], [0, "ENDSEC"], [0, "EOF"]);
+    // Records of the OUTER type only: the parser reads them and closes the table.
+    expect(() => preflightDxf(nested("VPORT", "LAYER", ["VPORT", "VPORT"]))).not.toThrow();
+    expect(() => preflightDxf(nested("LAYER", "VPORT", ["LAYER"]))).not.toThrow();
+    // A record of the nested type after the outer one starts its records: the parser stalls there.
+    expect(() => preflightDxf(nested("VPORT", "LTYPE", ["VPORT", "LTYPE"]))).toThrow(/tabla VPORT.*«LTYPE»/);
+    expect(() => preflightDxf(nested("VPORT", "VPORT", ["VPORT", "LAYER"]))).toThrow(/tabla VPORT.*«LAYER»/);
   });
 
   it("reads codes exactly like the scanner (parseInt), so padded or hexadecimal codes cannot slip through", () => {
@@ -108,8 +119,11 @@ describe("preflightDxf — S2 limits applied before parseSync", () => {
     const declared = (count: number, tens: number): string =>
       dxfText([0, "SECTION"], [2, "BLOCKS"], [0, "BLOCK"], [2, "B"], [0, "LWPOLYLINE"], [90, count],
         ...Array.from({ length: tens }, () => [10, 0] as const), [0, "ENDBLK"], [0, "ENDSEC"], [0, "EOF"]);
-    // A slightly wrong count (typical exporter slop) still passes; a padding bomb does not.
+    // A slightly wrong count (typical exporter slop) still passes; a padding bomb does not. Without
+    // any group 10 the vertex reader never runs, so the count alone allocates nothing.
     expect(() => preflightDxf(declared(5, 3))).not.toThrow();
-    expect(() => preflightDxf(declared(MAX_DXF_VERTICES + 1, 0))).toThrow(/código 90/);
+    expect(() => preflightDxf(declared(MAX_DXF_VERTICES + 1, 0))).not.toThrow();
+    expect(() => preflightDxf(declared(MAX_DXF_VERTICES + 1, 1))).not.toThrow();
+    expect(() => preflightDxf(declared(MAX_DXF_VERTICES + 2, 1))).toThrow(/código 90/);
   });
 });
