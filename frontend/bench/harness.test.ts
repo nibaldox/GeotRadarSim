@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { hashBytes, flattenGrid, outputPath, summarize, firstCellDifference } from './harness';
-import { finestResolution } from './runner';
+import { finestResolution, buildManifest } from './runner';
 import { gridNodeCountForSpan } from '../src/utils/terrainLimits';
+
+describe('frozen manifest', () => {
+  it('writes the v1 schema with keys in v1 order', () => {
+    expect(JSON.stringify(buildManifest('abc', 'LE', { 'a/b': { x: 1 } }))).toBe('{"schema":"geot-ts-baseline-v1","code_sha":"abc","endian":"LE","cases":{"a/b":{"x":1}}}');
+  });
+});
 
 describe('benchmark controls', () => {
   it('defaults to scratch and refuses frozen paths', () => {

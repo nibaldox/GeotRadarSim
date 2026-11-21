@@ -19,8 +19,12 @@ type Engine = 'ts' | 'wasm';
 type Pair<T> = Record<Engine, T>;
 const baselinePath = '/home/xodla/.hermes/profiles/simulacion-radar/plans/rust-wasm/evidence/w1a-frozen/golden-manifest.json';
 const baselineHash = '60223fba7dc1c162ba5f594d7174b09f9474da490331151bee9ef289f0f316b3';
+const FROZEN_CASE_COUNT = 11; // same case set as golden (W1-A v1 has 11 cases)
 const sha = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
 const command = (cmd: string, args: string[]) => execFileSync(cmd, args, { encoding: 'utf8' }).trim();
+export function buildManifest(codeSha: string, endian: string, cases: Record<string, unknown>) {
+  return { schema: 'geot-ts-baseline-v1', code_sha: codeSha, endian, cases };
+}
 async function handlers() {
   const scope: Scope = { onmessage: null, postMessage: () => {} };
   Object.assign(globalThis, { self: scope });
@@ -46,12 +50,15 @@ export function finestResolution(x: number, y: number, upper: number): number {
 }
 export async function run() {
   const mode = process.env.GEOT_BENCH_MODE;
-  if (mode !== 'smoke' && mode !== 'golden' && mode !== 'full') throw new Error('GEOT_BENCH_MODE must be smoke, golden or full');
+  if (mode !== 'smoke' && mode !== 'golden' && mode !== 'full' && mode !== 'freeze') throw new Error('GEOT_BENCH_MODE must be smoke, golden, full or freeze');
+  const frozen = mode === 'freeze';
+  if (frozen && command('git', ['-c', 'core.filemode=false', 'status', '--porcelain', '--untracked-files=no']) !== '') throw new Error('freeze requires a clean tracked worktree');
   const stamp = new Date().toISOString().replace(/:/g, '-');
   const out = outputPath(process.env.GEOT_BENCH_OUT, process.env.TMPDIR ?? '/tmp', stamp);
-  const baselineBytes = readFileSync(baselinePath);
-  if (sha(baselineBytes) !== baselineHash) throw new Error('Frozen baseline hash mismatch');
-  const baseline = JSON.parse(new TextDecoder().decode(baselineBytes)) as { cases: Record<string, unknown> };
+  // freeze does not read the anchor: it only generates a new one.
+  const baselineBytes = frozen ? undefined : readFileSync(baselinePath);
+  if (baselineBytes && sha(baselineBytes) !== baselineHash) throw new Error('Frozen baseline hash mismatch');
+  const baseline = baselineBytes ? JSON.parse(new TextDecoder().decode(baselineBytes)) as { cases: Record<string, unknown> } : { cases: {} as Record<string, unknown> };
   const h = await handlers();
   const startInit = performance.now(); await loadRadarWasm(); const coldInit = performance.now() - startInit;
   const stlPath = process.env.GEOT_BENCH_STL;
@@ -59,16 +66,19 @@ export async function run() {
   const stl = stlPath ? readFileSync(stlPath) : undefined;
   const env = { node: process.version, v8: process.versions.v8, cpu: cpus()[0]?.model, endian: endianness(), code_sha: command('git', ['rev-parse', 'HEAD']),
     code_diff: command('git', ['-c', 'core.filemode=false', 'status', '--short']), rustc: command('rustc', ['--version']),
-    stl_sha256: stl ? sha(stl) : null, wasm_sha256: sha(readFileSync('src/wasm/pkg/radar_wasm_bg.wasm')), baseline_sha256: baselineHash,
+    stl_sha256: stl ? sha(stl) : null, wasm_sha256: sha(readFileSync('src/wasm/pkg/radar_wasm_bg.wasm')), baseline_sha256: frozen ? null : baselineHash,
     load_before: loadavg(), load_after: [] as number[] };
   mkdirSync(out, { recursive: true });
   const save = (name: string, value: unknown) => writeFileSync(`${out}/${name}`, `${JSON.stringify(value, null, 2)}\n`);
   const cases: Record<string, unknown> = {}, samples: Record<string, Pair<number[]>> = {}, contexts: Record<string, number> = {}, flatten: Record<string, number> = {};
   const started = performance.now();
+  const fingerprints: Record<string, unknown> = {};
   function check(name: string, ts: unknown, wasm: unknown) {
+    if (JSON.stringify(ts) !== JSON.stringify(wasm)) throw new Error(`${name}: TS/WASM fingerprint mismatch`);
+    fingerprints[name] = ts;
+    if (frozen) { cases[name] = { ts_equals_wasm: true, fingerprint: ts }; console.log(`${name}: frozen`); return; }
     const anchor = baseline.cases[name];
     if (anchor === undefined) throw new Error(`Missing W1-A case: ${name}`);
-    if (JSON.stringify(ts) !== JSON.stringify(wasm)) throw new Error(`${name}: TS/WASM fingerprint mismatch`);
     if (JSON.stringify(ts) !== JSON.stringify(anchor)) throw new Error(`${name}: TS/W1-A fingerprint mismatch; baseline provides hashes, not per-cell bytes`);
     cases[name] = { ts_equals_wasm: true, ts_equals_w1a: true, wasm_equals_w1a: true, fingerprint: ts };
     console.log(`${name}: equivalent`);
@@ -150,9 +160,11 @@ export async function run() {
       check(`stl-${label}/terrain`, d, d); if (label === 'default') await analyze('stl-default', terrain, true);
     }
   }
-  if (mode !== 'smoke' && Object.keys(cases).length !== Object.keys(baseline.cases).length) throw new Error('Not all baseline cases covered');
+  const expectedCases = frozen ? FROZEN_CASE_COUNT : Object.keys(baseline.cases).length;
+  if (mode !== 'smoke' && Object.keys(cases).length !== expectedCases) throw new Error('Not all baseline cases covered');
   env.load_after = loadavg(); save('env.json', env);
-  save('equivalence.json', { baseline: baselinePath, baseline_sha256: baselineHash, mode, cases });
+  save('equivalence.json', { baseline: frozen ? null : baselinePath, baseline_sha256: frozen ? null : baselineHash, mode, cases });
+  if (frozen) save('golden-manifest.json', buildManifest(env.code_sha, env.endian, fingerprints));
   if (mode === 'full') {
     const summary = Object.fromEntries(Object.entries(samples).map(([name, s]) => [name, summarize(s.ts, s.wasm)]));
     save(`samples-${stamp}.json`, { code_sha: env.code_sha, samples, cold_init_ms: coldInit, flatten_ms: flatten, context_ms: contexts });
