@@ -138,10 +138,10 @@ export function setApiBaseUrl(_url: string): void {
 
 export function normalizeAzimuthRange(center: number, width: number): [number, number] | null {
   if (!Number.isFinite(center)) {
-    throw new RangeError("Azimuth center must be finite");
+    throw new RangeError("El centro del azimut debe ser un número finito.");
   }
   if (!Number.isFinite(width) || width <= 0) {
-    throw new RangeError("Azimuth width must be finite and greater than 0");
+    throw new RangeError("La apertura del azimut debe ser un número finito mayor que 0.");
   }
   if (width >= 360) return null;
 
@@ -161,12 +161,12 @@ export function normalizeAzimuthRange(center: number, width: number): [number, n
 function validateRadarLimits(radar: RadarConfig): void {
   if (!Number.isFinite(radar.min_range_m) || !Number.isFinite(radar.max_range_m) ||
       radar.min_range_m < 0 || radar.min_range_m > radar.max_range_m) {
-    throw new RangeError("LOS range limits must be finite, non-negative, and ordered");
+    throw new RangeError("Los límites de rango LOS deben ser finitos, no negativos y estar en orden.");
   }
   if (!Number.isFinite(radar.elevation_min_deg) || !Number.isFinite(radar.elevation_max_deg) ||
       radar.elevation_min_deg < -90 || radar.elevation_max_deg > 90 ||
       radar.elevation_min_deg > radar.elevation_max_deg) {
-    throw new RangeError("LOS elevation limits must be finite, within [-90, 90], and ordered");
+    throw new RangeError("Los límites de elevación LOS deben ser finitos, estar entre -90 y 90, y estar en orden.");
   }
 }
 
@@ -231,7 +231,7 @@ function superviseTerrainWorker<T>(
           }
         });
       };
-      worker.onerror = (e) => finish(() => reject(new Error("Worker error: " + e.message)));
+      worker.onerror = (e) => finish(() => reject(new Error("Error del proceso de cálculo: " + e.message)));
       // Transfer, not copy, the file bytes: this ArrayBuffer is detached here and never read again
       // on the main thread (each upload or preview reads the File into its own buffer).
       worker.postMessage(input, [input.fileData]);
@@ -357,7 +357,7 @@ export async function generateSynthetic(params: SyntheticTerrainRequest): Promis
 export async function getTerrainGrid(terrainId: string): Promise<TerrainGridResponse> {
   const terrain = getLocalTerrain(terrainId);
   if (!terrain) {
-    throw new Error(`Terrain '${terrainId}' not found locally`);
+    throw new Error(`No se encontró el terreno '${terrainId}' en este equipo.`);
   }
   return {
     terrain_id: terrainId,
@@ -386,7 +386,7 @@ export function releaseTerrain(terrainId: string): void {
 
 export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
   const terrain = getLocalTerrain(req.terrain_id);
-  if (!terrain) throw new Error("Terrain not loaded");
+  if (!terrain) throw new Error("No hay terreno cargado.");
 
   const metadataRows = terrain.metadata.grid_rows;
   const metadataCols = terrain.metadata.grid_cols;
@@ -397,11 +397,11 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
   validateTerrainGridDimensions(gridRows, gridCols, "Terrain");
   if (gridRows !== metadataRows || gridCols !== metadataCols ||
       terrain.grid.some((row) => !Array.isArray(row) || row.length !== gridCols)) {
-    throw new RangeError("Terrain grid dimensions do not match metadata");
+    throw new RangeError("Las dimensiones de la malla del terreno no coinciden con los metadatos.");
   }
 
   const radar = LOCAL_RADARS.find(r => r.model_id === req.radar_model_id);
-  if (!radar) throw new Error("Radar model not found");
+  if (!radar) throw new Error("No se encontró el modelo de radar.");
 
   const effectiveRadar: RadarConfig = { ...radar };
   if (req.range_min_m !== undefined) effectiveRadar.min_range_m = req.range_min_m;
@@ -540,7 +540,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
 
 export async function getLOSJob(jobId: string): Promise<JobStatusResponse> {
   const job = jobStore.get(jobId);
-  if (!job) throw new Error("Job not found");
+  if (!job) throw new Error("No se encontró el trabajo.");
   return job;
 }
 
@@ -583,7 +583,7 @@ export async function listRadars(): Promise<RadarConfig[]> {
 
 export async function getRadar(modelId: string): Promise<RadarConfig> {
   const radar = LOCAL_RADARS.find(r => r.model_id === modelId);
-  if (!radar) throw new Error("Radar not found");
+  if (!radar) throw new Error("No se encontró el radar.");
   return radar;
 }
 
@@ -597,7 +597,7 @@ export async function exportPDF(
   context?: QualityExportContext
 ): Promise<Blob> {
   if (!snapshot || !customResult) {
-    throw new Error("No analysis data available to export. Run LOS analysis first.");
+    throw new Error("No hay datos de análisis para exportar. Calcula primero la cobertura LOS.");
   }
   return generatePDFBlob(snapshot, customResult, context);
 }
@@ -608,7 +608,7 @@ export async function exportCSV(
   context?: QualityExportContext
 ): Promise<Blob> {
   if (!snapshot || !customResult) {
-    throw new Error("No analysis data available to export. Run LOS analysis first.");
+    throw new Error("No hay datos de análisis para exportar. Calcula primero la cobertura LOS.");
   }
   return generateCSVBlob(snapshot, customResult, context);
 }
@@ -620,7 +620,7 @@ function inflateLOSResult(
   cellStates?: Uint8Array
 ): { shadow_grid: boolean[][]; quality_grid: number[][] } {
   if (cellStates && cellStates.length !== rows * cols) {
-    throw new RangeError("LOS cell-state dimensions do not match the terrain grid");
+    throw new RangeError("Las dimensiones de los estados de celda LOS no coinciden con la malla del terreno.");
   }
   const shadow_grid: boolean[][] = [];
   const quality_grid: number[][] = [];
@@ -654,12 +654,12 @@ function prepareSensitivityWorkerInput(
 ): { terrain: ReturnType<typeof getLocalTerrain> & {}; input: SensitivityWorkerInput } {
   const terrainKey = req?.terrainKey;
   if (!terrainKey || !terrainKey.terrain_id || !Number.isSafeInteger(terrainKey.epoch) || terrainKey.epoch < 0) {
-    throw new RangeError("Sensitivity terrain key is invalid");
+    throw new RangeError("La clave del terreno para la sensibilidad no es válida.");
   }
   const terrain = getLocalTerrain(terrainKey.terrain_id);
-  if (!terrain) throw new Error("Terrain not loaded");
+  if (!terrain) throw new Error("No hay terreno cargado.");
   if (terrain.metadata.terrain_id !== terrainKey.terrain_id) {
-    throw new RangeError("Sensitivity terrain key does not match the loaded terrain");
+    throw new RangeError("La clave del terreno para la sensibilidad no coincide con el terreno cargado.");
   }
 
   const rows = terrain.metadata.grid_rows;
@@ -671,20 +671,20 @@ function prepareSensitivityWorkerInput(
   validateTerrainGridDimensions(gridRows, gridCols, "Sensitivity terrain grid");
   if (gridRows !== rows || gridCols !== cols ||
       terrain.grid.some((row) => !Array.isArray(row) || row.length !== cols)) {
-    throw new RangeError("Sensitivity terrain grid dimensions do not match metadata");
+    throw new RangeError("Las dimensiones de la malla para la sensibilidad no coinciden con los metadatos.");
   }
   if (!Number.isFinite(terrain.metadata.bounds.min_x) || !Number.isFinite(terrain.metadata.bounds.min_y)) {
-    throw new RangeError("Sensitivity terrain origin must be finite");
+    throw new RangeError("El origen del terreno para la sensibilidad debe ser finito.");
   }
 
   if (!Array.isArray(req.observations) || req.observations.length === 0 || req.observations.length > 0xffff) {
-    throw new RangeError("Sensitivity requires between 1 and 65535 individual radar observations");
+    throw new RangeError("La sensibilidad requiere entre 1 y 65535 observaciones de radar individuales.");
   }
   const ids = new Set<string>();
   const cellCount = rows * cols;
   for (const observation of req.observations) {
     if (!observation || typeof observation.analysisId !== "string" || !observation.analysisId || ids.has(observation.analysisId)) {
-      throw new RangeError("Sensitivity observations require unique stable analysis IDs");
+      throw new RangeError("Las observaciones de sensibilidad requieren IDs de análisis estables y únicos.");
     }
     ids.add(observation.analysisId);
     const snapshot = observation.snapshot;
@@ -692,21 +692,21 @@ function prepareSensitivityWorkerInput(
         !Array.isArray(snapshot.sourceAnalysisIds) || snapshot.sourceAnalysisIds.length !== 1 ||
         snapshot.sourceAnalysisIds[0] !== observation.analysisId ||
         !sameSensitivityTerrainKey(snapshot.terrainKey, terrainKey)) {
-      throw new RangeError("Sensitivity analysis snapshot does not match the active terrain and analysis ID");
+      throw new RangeError("La instantánea del análisis no coincide con el terreno activo ni con el ID del análisis.");
     }
     if (!Array.isArray(snapshot.radars) || snapshot.radars.length !== 1) {
-      throw new RangeError("Sensitivity requires an individual radar snapshot for every analysis");
+      throw new RangeError("La sensibilidad requiere una instantánea individual del radar para cada análisis.");
     }
     const radar = snapshot.radars[0]!;
     if (typeof radar.radarId !== "string" || !radar.radarId || typeof radar.radarModelId !== "string" ||
         !radar.radarModelId || !radar.position || !Number.isFinite(radar.position.x) ||
         !Number.isFinite(radar.position.y) || !Number.isFinite(radar.position.z)) {
-      throw new RangeError("Sensitivity radar provenance requires a stable ID and finite position");
+      throw new RangeError("El origen del radar para la sensibilidad requiere un ID estable y una posición finita.");
     }
     if (observation.grid_rows !== rows || observation.grid_cols !== cols ||
         observation.resolution !== terrain.metadata.resolution ||
         !(observation.cell_states instanceof Uint8Array) || observation.cell_states.length !== cellCount) {
-      throw new RangeError("Sensitivity observation dimensions, resolution, or cell-state length do not match the active terrain");
+      throw new RangeError("Las dimensiones, la resolución o la longitud de los estados de celda de la observación no coinciden con el terreno activo.");
     }
   }
 
@@ -742,7 +742,7 @@ function validateSensitivityWorkerOutput(
       !(data.flat_sensitivity_grid instanceof Float32Array) || data.flat_sensitivity_grid.length !== rows * cols ||
       !(data.observer_count instanceof Uint16Array) || data.observer_count.length !== rows * cols ||
       "sensitivityGrid" in data) {
-    throw new RangeError("Sensitivity worker returned invalid provenance or map dimensions");
+    throw new RangeError("El proceso de sensibilidad devolvió un origen o unas dimensiones de mapa no válidas.");
   }
 
   for (let index = 0; index < rows * cols; index++) {
@@ -756,7 +756,7 @@ function validateSensitivityWorkerOutput(
     const value = data.flat_sensitivity_grid[index]!;
     if (count !== expectedObserverCount ||
         (count === 0 ? !Number.isNaN(value) : !Number.isFinite(value) || value < 0 || value > 1.00001)) {
-      throw new RangeError("Sensitivity worker mask, gradient, or observer count does not match individual LOS cell states");
+      throw new RangeError("La máscara, el gradiente o el número de observadores del proceso de sensibilidad no coinciden con los estados de celda LOS individuales.");
     }
   }
   return data;

@@ -43,22 +43,39 @@ export const NICE_RESOLUTION_STEPS = [
 
 const ENDPOINT_RELATIVE_TOLERANCE = 1e-9;
 
+// Etiquetas de los llamadores (api, workers, terrainEngine) en español para los mensajes que llegan a la UI.
+const ETIQUETAS_ES: Record<string, string> = {
+  Terrain: "Terreno",
+  "Sensitivity terrain": "Terreno de sensibilidad",
+  "Sensitivity terrain grid": "Malla de sensibilidad",
+  "Synthetic terrain": "Terreno sintético",
+  "Synthetic terrain width": "Ancho del terreno sintético",
+  "Synthetic terrain height": "Alto del terreno sintético",
+  "Terrain width": "Ancho del terreno",
+  "Terrain height": "Alto del terreno",
+  LOS: "LOS",
+};
+const etiqueta = (label: string): string => ETIQUETAS_ES[label] ?? label;
+// Con la etiqueta «LOS» el mensaje conserva el inglés: radar-core/src/los.rs emite el mismo texto y
+// losDifferential.test.ts compara TS y WASM byte a byte. Traducirlo rompería esa paridad.
+const mensaje = (label: string, en: string, es: string): string => (label === "LOS" ? en : `${etiqueta(label)}: ${es}`);
+
 /** Count nodes, admitting the next lattice point only for a tightly near-divisible span. */
 export function gridNodeCountForSpan(span: number, resolution: number, label = "Terrain"): number {
   if (!Number.isFinite(span) || span <= 0) {
-    throw new RangeError(`${label} span must be finite and positive`);
+    throw new RangeError(mensaje(label, `${label} span must be finite and positive`, `el tramo debe ser finito y positivo.`));
   }
   if (!Number.isFinite(resolution) || resolution <= 0) {
-    throw new RangeError(`${label} resolution must be finite and positive`);
+    throw new RangeError(mensaje(label, `${label} resolution must be finite and positive`, `la resolución debe ser finita y positiva.`));
   }
 
   const intervals = span / resolution;
   if (!Number.isFinite(intervals)) {
-    throw new RangeError(`${label} span and resolution do not produce a finite grid dimension`);
+    throw new RangeError(mensaje(label, `${label} span and resolution do not produce a finite grid dimension`, `el tramo y la resolución no producen una dimensión de malla finita.`));
   }
   if (intervals >= MAX_TERRAIN_GRID_DIMENSION) {
     throw new RangeError(
-      `${label} grid dimension exceeds the maximum of ${MAX_TERRAIN_GRID_DIMENSION.toLocaleString("en-US")} nodes`,
+      mensaje(label, `${label} grid dimension exceeds the maximum of ${MAX_TERRAIN_GRID_DIMENSION.toLocaleString("en-US")} nodes`, `la dimensión de la malla supera el máximo de ${MAX_TERRAIN_GRID_DIMENSION.toLocaleString("en-US")} nodos.`),
     );
   }
 
@@ -78,7 +95,7 @@ export function gridNodeCountForSpan(span: number, resolution: number, label = "
   }
 
   if (intervalCount < 1) {
-    throw new RangeError(`${label} must span at least one resolution in both axes (minimum 2 nodes per axis)`);
+    throw new RangeError(mensaje(label, `${label} must span at least one resolution in both axes (minimum 2 nodes per axis)`, `debe abarcar al menos una resolución en ambos ejes (mínimo 2 nodos por eje).`));
   }
 
   return intervalCount + 1;
@@ -91,18 +108,18 @@ export function validateTerrainGridDimensions(
   label = "Terrain",
 ): number {
   if (!Number.isSafeInteger(rows) || rows <= 0 || !Number.isSafeInteger(cols) || cols <= 0) {
-    throw new RangeError(`${label} grid dimensions must be positive safe integers`);
+    throw new RangeError(mensaje(label, `${label} grid dimensions must be positive safe integers`, `las dimensiones de la malla deben ser enteros seguros positivos.`));
   }
   if (rows > MAX_TERRAIN_GRID_DIMENSION || cols > MAX_TERRAIN_GRID_DIMENSION) {
     throw new RangeError(
-      `${label} grid dimension exceeds the maximum of ${MAX_TERRAIN_GRID_DIMENSION.toLocaleString("en-US")} nodes`,
+      mensaje(label, `${label} grid dimension exceeds the maximum of ${MAX_TERRAIN_GRID_DIMENSION.toLocaleString("en-US")} nodes`, `la dimensión de la malla supera el máximo de ${MAX_TERRAIN_GRID_DIMENSION.toLocaleString("en-US")} nodos.`),
     );
   }
 
   const cells = rows * cols;
   if (!Number.isSafeInteger(cells) || cells > MAX_TERRAIN_GRID_CELLS) {
     throw new RangeError(
-      `${label} grid exceeds the maximum size of ${MAX_TERRAIN_GRID_CELLS.toLocaleString("en-US")} cells`,
+      mensaje(label, `${label} grid exceeds the maximum size of ${MAX_TERRAIN_GRID_CELLS.toLocaleString("en-US")} cells`, `la malla supera el tamaño máximo de ${MAX_TERRAIN_GRID_CELLS.toLocaleString("en-US")} celdas.`),
     );
   }
   return cells;
@@ -111,11 +128,11 @@ export function validateTerrainGridDimensions(
 /** Shared resolution guard: area must remain representable by a finite non-zero number. */
 export function validateTerrainResolution(resolution: number, label = "Terrain"): number {
   if (!Number.isFinite(resolution) || resolution <= 0) {
-    throw new RangeError(`${label} resolution must be finite and positive`);
+    throw new RangeError(mensaje(label, `${label} resolution must be finite and positive`, `la resolución debe ser finita y positiva.`));
   }
   const cellArea = resolution * resolution;
   if (!Number.isFinite(cellArea) || cellArea <= 0) {
-    throw new RangeError(`${label} resolution squared must be finite and non-zero to represent cell area`);
+    throw new RangeError(mensaje(label, `${label} resolution squared must be finite and non-zero to represent cell area`, `el cuadrado de la resolución debe ser finito y distinto de cero para representar el área de celda.`));
   }
   return cellArea;
 }
@@ -123,11 +140,11 @@ export function validateTerrainResolution(resolution: number, label = "Terrain")
 /** Validate that finite per-cell area stays representable across the whole grid. */
 export function validateTerrainTotalArea(cellArea: number, cellCount: number, label = "Terrain"): number {
   if (!Number.isFinite(cellArea) || cellArea <= 0 || !Number.isSafeInteger(cellCount) || cellCount <= 0) {
-    throw new RangeError(`${label} total grid area inputs must be finite and positive`);
+    throw new RangeError(mensaje(label, `${label} total grid area inputs must be finite and positive`, `los datos del área total de la malla deben ser finitos y positivos.`));
   }
   const totalArea = cellArea * cellCount;
   if (!Number.isFinite(totalArea)) {
-    throw new RangeError(`${label} total grid area must be finite`);
+    throw new RangeError(mensaje(label, `${label} total grid area must be finite`, `el área total de la malla debe ser finita.`));
   }
   return totalArea;
 }
@@ -153,13 +170,13 @@ export function suggestResolutionForSpan(
   safetyFactor: number = 0.85,
 ): number {
   if (!Number.isFinite(spanX) || spanX <= 0 || !Number.isFinite(spanY) || spanY <= 0) {
-    throw new RangeError("Span values must be finite and positive");
+    throw new RangeError("Los valores del tramo deben ser finitos y positivos.");
   }
   if (!Number.isFinite(maxCells) || maxCells <= 0) {
-    throw new RangeError("maxCells must be finite and positive");
+    throw new RangeError("maxCells debe ser finito y positivo.");
   }
   if (!Number.isFinite(safetyFactor) || safetyFactor <= 0 || safetyFactor > 1) {
-    throw new RangeError("safetyFactor must lie in the (0, 1] interval");
+    throw new RangeError("safetyFactor debe estar en el intervalo (0, 1].");
   }
 
   const budget = maxCells * safetyFactor;

@@ -1,7 +1,9 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo } from "react";
 import { useVectorStore } from "../store/vectorStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { useAnalysisStore } from "../store/analysisStore";
+import { Section } from "./ui/Section";
+import "../styles/panels.css";
 
 function countObservedCells(counts: Uint16Array | null): number {
   if (!counts) return 0;
@@ -11,24 +13,6 @@ function countObservedCells(counts: Uint16Array | null): number {
 }
 
 export function VectorSynthesisPanel() {
-  // Collapsible state
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    if (typeof localStorage !== "undefined" && localStorage.getItem) {
-      return localStorage.getItem("geotradar-collapse-vector") === "true";
-    }
-    return false;
-  });
-
-  const toggleCollapse = useCallback(() => {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      if (typeof localStorage !== "undefined" && localStorage.setItem) {
-        localStorage.setItem("geotradar-collapse-vector", String(next));
-      }
-      return next;
-    });
-  }, []);
-
   const sensitivityMap = useVectorStore((s) => s.sensitivityMap);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
   const loading = useVectorStore((s) => s.loading);
@@ -60,169 +44,30 @@ export function VectorSynthesisPanel() {
   };
 
   return (
-    <div className="glass-panel flex-col">
-      <div 
-        onClick={toggleCollapse}
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
-      >
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>Sensibilidad Geométrica 3D</h3>
-        </div>
-        <svg 
-          viewBox="0 0 24 24" 
-          width="16" 
-          height="16" 
-          fill="none" 
-          stroke="var(--text-secondary)" 
-          strokeWidth="2.5" 
-          strokeLinecap="round" 
-          strokeLinejoin="round"
-          style={{ 
-            transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
-            transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
-          }}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+    <Section id="vector" title="Sensibilidad 3D" summary={visualizationMode === "QUALITY" ? "Incidencia superficial" : "Proyección del movimiento"} defaultOpen={false} storageKey="geotradar-collapse-vector">
+      <div className="panel-fields">
+        {deployedRadars.length < 1 ? (
+          <div className="panel-muted">Sin radares seleccionados: selecciona al menos un análisis en Historial.</div>
+        ) : <>
+          <div className="panel-info-row">
+            <span className="panel-muted">{deployedRadars.length === 1 ? "Una postura" : "Varias posturas"}</span>
+            <details className="panel-info"><summary aria-label="Información de sensibilidad">i</summary>
+              <div>Una postura: cuando el LOS individual es VISIBLE y el gradiente es calculable, el valor es |dot| entre la dirección de movimiento de máxima pendiente y la línea de vista del radar. Varias posturas: sensibilidad por celda √(Σ dot² / número de radares contribuyentes); solo aportan análisis con LOS individual VISIBLE y gradiente calculable.</div>
+              <div>Incidencia superficial: alineación de la normal del terreno con el LOS; la distancia no multiplica el índice. Proyección del movimiento: vista geotécnica del movimiento — proyección escalar sobre la dirección de máxima pendiente (movimiento supuesto de máxima pendiente; no es una inversión de desplazamiento en 3 ejes).</div>
+              <div>Sensibilidad geométrica: mide la proyección sobre la dirección de máxima pendiente usando solo radares con LOS individual VISIBLE y gradiente finito calculable. Sin contribuyentes, la celda queda transparente y es “Sin datos”; un cero con al menos un contribuyente sí es un valor medido. Es un índice geométrico, no SNR ni un modelo RF.</div>
+            </details>
+          </div>
+          <span className="cs-label">Modo de capa del terreno</span>
+          <div className="panel-segments field-row">
+            <button type="button" onClick={() => setVisualizationMode("QUALITY")} className="btn-compact" aria-pressed={visualizationMode === "QUALITY"}>Incidencia superficial</button>
+            <button type="button" onClick={() => setVisualizationMode("SENSITIVITY")} className="btn-compact" aria-pressed={visualizationMode === "SENSITIVITY"}>Proyección del movimiento</button>
+          </div>
+          <button onClick={handleComputeSensitivity} disabled={loading} className="btn-compact primary">{loading ? "Calculando…" : "Calcular mapa de sensibilidad"}</button>
+          {error && <div className="error-text panel-status">Error: {error}</div>}
+          {sensitivityMap && observedCellCount > 0 && <div role="status" className="panel-status">Mapa geométrico cargado — {observedCellCount} {observedCellCount === 1 ? "celda con observación contribuyente" : "celdas con observaciones contribuyentes"}.</div>}
+          {sensitivityMap && observedCellCount === 0 && <div role="status" className="panel-status">Sin datos: no hay celdas con gradiente calculable y al menos un LOS individual VISIBLE.</div>}
+        </>}
       </div>
-
-      {!isCollapsed && (
-        <div className="flex-col" style={{ marginTop: "10px" }}>
-
-          {deployedRadars.length < 1 ? (
-            <div style={{
-              padding: "12px",
-              background: "hsla(351, 100%, 60%, 0.08)",
-              borderRadius: "8px",
-              borderLeft: "4px solid var(--danger)",
-              fontSize: "11px",
-              color: "hsl(351, 100%, 80%)",
-              lineHeight: "1.5"
-            }}>
-              <strong>⚠️ Sin radares seleccionados:</strong> Selecciona al menos 1 análisis de radar en el panel de <strong>Historial</strong> (mediante sus casillas de verificación) para habilitar el análisis de sensibilidad.
-            </div>
-          ) : (
-            <>
-              {/* Dynamic warning/info badge based on posture count */}
-              <div style={{
-                padding: "10px 12px",
-                background: deployedRadars.length === 1 ? "hsla(38, 90%, 45%, 0.08)" : "hsla(125, 85%, 45%, 0.08)",
-                borderRadius: "8px",
-                borderLeft: deployedRadars.length === 1 ? "4px solid var(--warning)" : "4px solid var(--success)",
-                fontSize: "11px",
-                color: deployedRadars.length === 1 ? "var(--text-primary)" : "hsl(125, 85%, 80%)",
-                lineHeight: "1.5",
-                marginBottom: "12px"
-              }}>
-                {deployedRadars.length === 1 ? (
-                  <>
-                    <strong>💡 Una postura:</strong> cuando el LOS individual es VISIBLE y el gradiente es calculable, el valor es <strong>|dot|</strong> entre la dirección de movimiento de máxima pendiente y la línea de vista del radar.
-                  </>
-                ) : (
-                  <>
-                    <strong>✓ Varias posturas:</strong> sensibilidad por celda <strong>√(Σ dot² / número de radares contribuyentes)</strong>; solo aportan análisis con LOS individual VISIBLE y gradiente calculable.
-                  </>
-                )}
-              </div>
-              {/* Visual Overlay Mode Selection */}
-              <div className="flex-col" style={{ gap: "6px" }}>
-                <span style={{ fontSize: "10px", textTransform: "uppercase", fontWeight: "bold", opacity: 0.8, letterSpacing: "0.05em" }}>
-                  Modo de Capa del Terreno:
-                </span>
-                <div className="flex-row" style={{ gap: "8px" }}>
-                  <button
-                    onClick={() => setVisualizationMode("QUALITY")}
-                    className="btn-primary"
-                    style={{
-                      flex: 1,
-                      padding: "8px",
-                      fontSize: "11px",
-                      background: visualizationMode === "QUALITY" 
-                        ? "linear-gradient(135deg, var(--success), hsl(125, 85%, 35%))" 
-                        : "hsla(0, 0%, 100%, 0.03)",
-                      border: visualizationMode === "QUALITY" ? "none" : "1px solid var(--panel-border)",
-                      boxShadow: visualizationMode === "QUALITY" ? "0 0 10px hsla(125, 85%, 45%, 0.3)" : "none"
-                    }}
-                  >
-                    Incidencia superficial
-                  </button>
-                  <button
-                    onClick={() => setVisualizationMode("SENSITIVITY")}
-                    className="btn-primary"
-                    style={{
-                      flex: 1,
-                      padding: "8px",
-                      fontSize: "11px",
-                      background: visualizationMode === "SENSITIVITY"
-                        ? "linear-gradient(135deg, hsl(271, 76%, 53%), hsl(271, 76%, 40%))"
-                        : "hsla(0, 0%, 100%, 0.03)",
-                      border: visualizationMode === "SENSITIVITY" ? "none" : "1px solid var(--panel-border)",
-                      boxShadow: visualizationMode === "SENSITIVITY" ? "0 0 10px hsla(271, 76%, 53%, 0.3)" : "none"
-                    }}
-                  >
-                    Proyección del movimiento
-                  </button>
-                </div>
-                <div style={{ fontSize: "10px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                  <strong>Incidencia superficial</strong> (CALIDAD): alineación de la normal del terreno con el LOS;
-                  la distancia no multiplica el índice. <strong>Proyección del movimiento</strong> (SENSIBILIDAD):
-                  vista geotécnica del movimiento — proyección escalar sobre la dirección de máxima pendiente
-                  (movimiento supuesto de máxima pendiente; no es una inversión de desplazamiento en 3 ejes).
-                </div>
-              </div>
-
-              {/* Trigger global map computation */}
-              <button
-                onClick={handleComputeSensitivity}
-                disabled={loading}
-                className="btn-primary"
-                style={{
-                  padding: "10px",
-                  fontSize: "11px",
-                  background: "linear-gradient(135deg, hsl(230, 20%, 15%), hsl(230, 20%, 8%))",
-                  border: "1px solid var(--panel-border)",
-                  cursor: "pointer"
-                }}
-              >
-                {loading ? (
-                  <span className="flex-row" style={{ gap: "8px", alignItems: "center" }}>
-                    <span className="spinner-neon" /> Calculando...
-                  </span>
-                ) : (
-                  "🗺️ Calcular Mapa de Sensibilidad 3D"
-                )}
-              </button>
-
-              {error && <div className="error-text">❌ Error: {error}</div>}
-
-              {sensitivityMap && observedCellCount > 0 && (
-                <div role="status" style={{ fontSize: "10px", color: "var(--success)", background: "hsla(125, 85%, 45%, 0.06)", padding: "6px 10px", borderRadius: "6px", border: "1px solid hsla(125, 85%, 45%, 0.15)", fontFamily: "var(--font-mono)" }}>
-                  ✓ Mapa geométrico cargado — {observedCellCount} {observedCellCount === 1 ? "celda con observación contribuyente" : "celdas con observaciones contribuyentes"}.
-                </div>
-              )}
-              {sensitivityMap && observedCellCount === 0 && (
-                <div role="status" style={{ fontSize: "10px", color: "var(--text-secondary)", background: "hsla(0, 0%, 100%, 0.03)", padding: "6px 10px", borderRadius: "6px" }}>
-                  Sin datos: no hay celdas con gradiente calculable y al menos un LOS individual VISIBLE.
-                </div>
-              )}
-
-              {/* Educational explanation */}
-              <div style={{
-                padding: "10px 12px",
-                background: "hsla(0, 0%, 100%, 0.01)",
-                borderRadius: "6px",
-                border: "1px solid hsla(0, 0%, 100%, 0.03)",
-                fontSize: "10px",
-                color: "var(--text-secondary)",
-                lineHeight: "1.5",
-                marginTop: "2px"
-              }}>
-                📖 <strong>Sensibilidad geométrica:</strong> mide la proyección sobre la dirección de máxima pendiente usando solo radares con LOS individual VISIBLE y gradiente finito calculable. Sin contribuyentes, la celda queda transparente y es “Sin datos”; un cero con al menos un contribuyente sí es un valor medido. Es un índice geométrico, no SNR ni un modelo RF.
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+    </Section>
   );
 }

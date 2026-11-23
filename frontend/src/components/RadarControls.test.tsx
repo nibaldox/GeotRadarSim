@@ -7,6 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { RadarControls } from "../components/RadarControls";
 import { useAnalysisStore } from "../store/analysisStore";
 import type { RadarConfig } from "../types/api";
@@ -52,12 +53,54 @@ const radarConfigs: RadarConfig[] = [
 ];
 
 describe("RadarControls", () => {
+  it("pliega Parámetros y permite abrirlos con teclado mostrando los ajustes reales", async () => {
+    localStorage.removeItem("geotradar-collapse-radar-params");
+    useAnalysisStore.setState({ radars: radarConfigs, selectedRadarId: radarConfigs[0]!.model_id, rangeMinOverride: 0, rangeMaxOverride: 900, elMinOverride: -20, elMaxOverride: null, azCenterOverride: null, azWidthOverride: null, terrainTransitioning: false });
+    render(<RadarControls />);
+    const toggle = screen.getByRole("button", { name: /Parámetros.*2 ajustados/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("spinbutton", { name: /Rango máx/i })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/modelo de radar/i)).toBeVisible();
+    expect(screen.getByRole("spinbutton", { name: /^E/ })).toBeInTheDocument();
+    toggle.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("spinbutton", { name: /Rango máx/i })).toHaveValue(900);
+    expect(localStorage.getItem("geotradar-collapse-radar-params")).toBe("false");
+    useAnalysisStore.setState({ rangeMinOverride: null, rangeMaxOverride: null, elMinOverride: null, elMaxOverride: null, azCenterOverride: null, azWidthOverride: null });
+  });
+
+  it("compara azimut y apertura con el rango de fábrica del modelo", () => {
+    localStorage.removeItem("geotradar-collapse-radar-params");
+    const model = { ...radarConfigs[0]!, azimuth_range_deg: [-75, 75] as [number, number] };
+    useAnalysisStore.setState({ radars: [model], selectedRadarId: model.model_id, rangeMinOverride: null, rangeMaxOverride: null, elMinOverride: null, elMaxOverride: null, azCenterOverride: 30, azWidthOverride: 150, terrainTransitioning: false });
+    render(<RadarControls />);
+    expect(screen.getByRole("button", { name: /Parámetros.*1 ajustado/i })).toBeInTheDocument();
+    useAnalysisStore.setState({ azCenterOverride: null, azWidthOverride: null });
+  });
+
+  it("reconoce el círculo completo de fábrica sin marcar su apertura como ajustada", () => {
+    localStorage.removeItem("geotradar-collapse-radar-params");
+    const model = { ...radarConfigs[0]!, azimuth_range_deg: [-180, 180] as [number, number] };
+    useAnalysisStore.setState({ radars: [model], selectedRadarId: model.model_id, azCenterOverride: null, azWidthOverride: 360, terrainTransitioning: false });
+    render(<RadarControls />);
+    expect(screen.getByRole("button", { name: /Parámetros.*de fábrica/i })).toBeInTheDocument();
+    useAnalysisStore.setState({ azWidthOverride: null });
+  });
+
+  it.each([undefined, null])("muestra el resumen sin fallar con azimuth_range_deg %s", (range) => {
+    const model = { ...radarConfigs[1]!, azimuth_range_deg: range } as RadarConfig;
+    useAnalysisStore.setState({ radars: [model], selectedRadarId: model.model_id });
+    render(<RadarControls />);
+    expect(screen.getByRole("button", { name: /Radar.*IBIS-ArcSAR360.*10–4000 m.*360°/i })).toBeInTheDocument();
+  });
+
   it("renders radar model options from store", () => {
     useAnalysisStore.setState({ radars: radarConfigs });
 
     render(<RadarControls />);
 
-    const select = screen.getByLabelText(/radar model/i);
+    const select = screen.getByLabelText(/modelo de radar/i);
     expect(select).toBeInTheDocument();
 
     const options = screen.getAllByRole("option");
@@ -73,7 +116,7 @@ describe("RadarControls", () => {
 
     render(<RadarControls />);
 
-    const select = screen.getByLabelText(/radar model/i);
+    const select = screen.getByLabelText(/modelo de radar/i);
     fireEvent.change(select, { target: { value: "ibis-arcsar360" } });
 
     expect(spy).toHaveBeenCalledWith("ibis-arcsar360");
@@ -97,7 +140,7 @@ describe("RadarControls", () => {
 
     render(<RadarControls />);
 
-    expect(screen.getByText(/\* Click on terrain to place automatically/i)).toBeInTheDocument();
+    expect(screen.getByText(/Haz clic en el terreno con «Agregar radar» para ubicarlo/i)).toBeInTheDocument();
   });
 
   it("allows manual coordinate entry and calls setRadarPosition when Apply is clicked", () => {
@@ -111,10 +154,10 @@ describe("RadarControls", () => {
 
     render(<RadarControls />);
 
-    const inputX = screen.getByPlaceholderText(/Easting/i);
-    const inputY = screen.getByPlaceholderText(/Northing/i);
-    const inputZ = screen.getByPlaceholderText(/Elevation/i);
-    const applyBtn = screen.getByRole("button", { name: /Apply Coordinates/i });
+    const inputX = screen.getByPlaceholderText(/Este/i);
+    const inputY = screen.getByPlaceholderText(/Norte/i);
+    const inputZ = screen.getByPlaceholderText(/Cota/i);
+    const applyBtn = screen.getByRole("button", { name: /Aplicar/i });
 
     fireEvent.change(inputX, { target: { value: "100.5" } });
     fireEvent.change(inputY, { target: { value: "200.2" } });
@@ -131,10 +174,11 @@ describe("RadarControls", () => {
       terrainTransitioning: true,
     });
 
+    localStorage.setItem("geotradar-collapse-radar-params", "false");
     render(<RadarControls />);
 
-    expect(screen.getByLabelText(/radar model/i)).toBeDisabled();
+    expect(screen.getByLabelText(/modelo de radar/i)).toBeDisabled();
     expect(screen.getAllByRole("spinbutton").every((input) => (input as HTMLInputElement).disabled)).toBe(true);
-    expect(screen.getByRole("button", { name: /Apply Coordinates/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Aplicar/i })).toBeDisabled();
   });
 });

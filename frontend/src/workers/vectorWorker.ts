@@ -106,30 +106,30 @@ function validateSnapshot(observation: SensitivityObservation, terrainKey: Sensi
 function validateInput(input: SensitivityWorkerInput): { rows: number; cols: number; size: number; positions: Point3D[] } {
   const { grid, grid_rows: rows, grid_cols: cols, resolution, bounds, terrainKey, observations } = input;
   if (!terrainKey || !terrainKey.terrain_id || !Number.isSafeInteger(terrainKey.epoch) || terrainKey.epoch < 0) {
-    throw new RangeError("Sensitivity terrain key is invalid");
+    throw new RangeError("La clave del terreno de sensibilidad no es válida.");
   }
   if (!Number.isInteger(rows) || rows <= 0 || !Number.isInteger(cols) || cols <= 0 ||
       !Number.isSafeInteger(rows * cols) || !Array.isArray(grid) || grid.length !== rows ||
       grid.some((row) => !Array.isArray(row) || row.length !== cols)) {
-    throw new RangeError("Sensitivity terrain grid dimensions are invalid");
+    throw new RangeError("Las dimensiones de la malla de sensibilidad no son válidas.");
   }
   if (!Number.isFinite(resolution) || resolution <= 0 ||
       !Number.isFinite(bounds?.min_x) || !Number.isFinite(bounds?.min_y)) {
-    throw new RangeError("Sensitivity terrain resolution or origin is invalid");
+    throw new RangeError("La resolución o el origen del terreno de sensibilidad no son válidos.");
   }
-  if (!Array.isArray(observations)) throw new RangeError("Sensitivity observations must be an array");
+  if (!Array.isArray(observations)) throw new RangeError("Las observaciones de sensibilidad deben ser una lista.");
 
   const size = rows * cols;
   const analysisIds = new Set<string>();
   const positions = observations.map((observation) => {
-    if (!observation || !observation.snapshot) throw new RangeError("Sensitivity observation is incomplete");
-    if (analysisIds.has(observation.analysisId)) throw new RangeError("Sensitivity analysis IDs must be unique");
+    if (!observation || !observation.snapshot) throw new RangeError("La observación de sensibilidad está incompleta.");
+    if (analysisIds.has(observation.analysisId)) throw new RangeError("Los IDs de análisis de sensibilidad deben ser únicos.");
     analysisIds.add(observation.analysisId);
     const position = validateSnapshot(observation, terrainKey);
     if (observation.grid_rows !== rows || observation.grid_cols !== cols ||
         !Number.isFinite(observation.resolution) || observation.resolution !== resolution ||
         !(observation.cell_states instanceof Uint8Array) || observation.cell_states.length !== size) {
-      throw new RangeError("Sensitivity observation dimensions, resolution, or cell-state length do not match the active grid");
+      throw new RangeError("Las dimensiones, la resolución o la longitud de estados de celda de la observación de sensibilidad no coinciden con la malla activa.");
     }
     return position;
   });
@@ -212,9 +212,9 @@ function computeSensitivityMap(input: SensitivityWorkerInput): SensitivityWorker
  * observations, or a grid beyond the global terrain limits (the API rejects the last two).
  */
 const SENSITIVITY_WASM_ERROR_MESSAGES: Readonly<Record<string, string>> = {
-  INVALID_STATE: "Sensitivity observation cell states must be LOS cell-state codes 0-5",
-  INVALID_OBSERVATIONS: "Sensitivity requires between 1 and 65535 individual radar observations",
-  LIMIT_EXCEEDED: "Sensitivity terrain grid exceeds the 16,384-node axis or 1,000,000-cell limit",
+  INVALID_STATE: "Los estados de celda de la observación de sensibilidad deben ser códigos LOS de 0 a 5",
+  INVALID_OBSERVATIONS: "La sensibilidad requiere entre 1 y 65535 observaciones de radar individuales",
+  LIMIT_EXCEEDED: "La malla del terreno de sensibilidad supera el límite de 16,384 nodos por eje o de 1,000,000 celdas",
 };
 
 function sensitivityWasmError(error: unknown): Error {

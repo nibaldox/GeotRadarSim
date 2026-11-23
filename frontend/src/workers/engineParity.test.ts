@@ -751,6 +751,6 @@ describe("Sensitivity worker: ts ↔ wasm complete-response parity", () => {
     const ts = await runHandler(sensitivityHandler, { ...input, engine: "ts" });
     const rs = await runHandler(sensitivityHandler, { ...input, engine: "wasm" });
     expect(ts.message.error).toBeUndefined();
-    expect(rs.message).toEqual({ error: "Sensitivity observation cell states must be LOS cell-state codes 0-5", engine_used: "wasm" });
+    expect(rs.message).toEqual({ error: "Los estados de celda de la observación de sensibilidad deben ser códigos LOS de 0 a 5", engine_used: "wasm" });
   });
 });

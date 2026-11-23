@@ -220,7 +220,7 @@ describe("useVectorStore — geometric sensitivity", () => {
     await useVectorStore.getState().computeSensitivityMap(terrainKey.terrain_id);
 
     expect(runSensitivityAnalysis).not.toHaveBeenCalled();
-    expect(useVectorStore.getState().error).toMatch(/snapshot|provenance|analysis/i);
+    expect(useVectorStore.getState().error).toMatch(/instantánea|origen|análisis/i);
   });
 
   it("refuses a stale epoch even when the terrain ID is unchanged", async () => {
@@ -231,7 +231,7 @@ describe("useVectorStore — geometric sensitivity", () => {
     await useVectorStore.getState().computeSensitivityMap(terrainKey.terrain_id);
 
     expect(runSensitivityAnalysis).not.toHaveBeenCalled();
-    expect(useVectorStore.getState().error).toMatch(/terrain|epoch|snapshot/i);
+    expect(useVectorStore.getState().error).toMatch(/terreno|época|instantánea/i);
   });
 
   it("rejects returned counts larger than individual VISIBLE masks", async () => {
@@ -249,7 +249,7 @@ describe("useVectorStore — geometric sensitivity", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(useVectorStore.getState().sensitivityMap).toBeNull();
-    expect(useVectorStore.getState().error).toMatch(/mask|observer|sensitivity/i);
+    expect(useVectorStore.getState().error).toMatch(/máscara|observador|sensibilidad/i);
   });
 
   it("accepts fewer contributing observers than visible masks when the DEM gradient is unavailable", async () => {
@@ -289,7 +289,7 @@ describe("useVectorStore — geometric sensitivity", () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(useVectorStore.getState().sensitivityMap).toBeNull();
-    expect(useVectorStore.getState().error).toMatch(/observer|sensitivity/i);
+    expect(useVectorStore.getState().error).toMatch(/observador|sensibilidad/i);
   });
 
   it("rejects forged sensitivity counts, values, and provenance", async () => {
@@ -323,7 +323,7 @@ describe("useVectorStore — geometric sensitivity", () => {
       await vi.advanceTimersByTimeAsync(250);
 
       expect(useVectorStore.getState().sensitivityMap).toBeNull();
-      expect(useVectorStore.getState().error).toMatch(/mask|observer|sensitivity|provenance/i);
+      expect(useVectorStore.getState().error).toMatch(/máscara|observador|sensibilidad|origen/i);
     }
   });
 

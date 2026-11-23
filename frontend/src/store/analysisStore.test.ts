@@ -266,7 +266,7 @@ describe("useAnalysisStore — runAnalysis", () => {
 
     const state = useAnalysisStore.getState();
     expect(state.losResult).toBeNull();
-    expect(state.error).toBe("Radar model and position must be set before analysis");
+    expect(state.error).toBe("Elige un modelo de radar y ubícalo antes de calcular.");
   });
 
   it("stores error on API failure", async () => {
@@ -516,7 +516,7 @@ describe("useAnalysisStore — NODATA-aware network union", () => {
     const first = networkResult([5, 4]);
     const second = { ...networkResult([5, 4]), resolution: 3 } as LOSResponse;
 
-    expect(() => selectForNetworkMerge(first, second)).toThrow(/resolution|grid/i);
+    expect(() => selectForNetworkMerge(first, second)).toThrow(/resoluci|malla/i);
   });
 });
 

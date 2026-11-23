@@ -136,7 +136,7 @@ describe("terrain jobs — AbortSignal", () => {
     worker.reply({ grid: [[1, 2], [3, 4]], metadata: { terrain_id: "late", bounds: { min_x: 0, min_y: 0, min_z: 0, max_x: 1, max_y: 1, max_z: 4 }, resolution: 1, grid_rows: 2, grid_cols: 2 } });
 
     await expect(job).rejects.toMatchObject({ name: "AbortError" });
-    await expect(getTerrainGrid("late")).rejects.toThrow(/not found/);
+    await expect(getTerrainGrid("late")).rejects.toThrow(/No se encontró el terreno/);
   });
 });
 

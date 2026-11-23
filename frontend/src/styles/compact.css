@@ -1,0 +1,482 @@
+/*
+ * compact.css — UI compacta (U1): consola con secciones plegables, barra de
+ * cifras sobre el visor, pie fijo de exportación y tokens de botón compactos.
+ * Se importa una sola vez, después de index.css (main.tsx). Cada paquete de la
+ * ola 2 escribe su propio styles/<area>.css.
+ */
+
+/* ── Tokens que faltaban (R4): --border-color en los dos temas ───────────── */
+:root, .theme-dark {
+  /* Radio común de inputs, selects y botones de control (U10d). Ningún tema lo redefine. */
+  --radius-control: 6px;
+  --border-color: hsla(0, 0%, 100%, 0.08);
+  --cs-divider: hsla(0, 0%, 100%, 0.07);
+  --cs-hover: hsla(0, 0%, 100%, 0.04);
+  --kpi-bg: hsla(220, 18%, 10%, 0.92);
+}
+
+:root.theme-light, .theme-light {
+  --border-color: hsla(220, 15%, 20%, 0.14);
+  --cs-divider: hsla(220, 15%, 20%, 0.1);
+  --cs-hover: hsla(220, 15%, 20%, 0.05);
+  --kpi-bg: hsla(0, 0%, 100%, 0.94);
+}
+
+/* ── Barra lateral compacta ──────────────────────────────────────────────── */
+.sidebar {
+  padding: 0;
+  gap: 0;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--cs-divider);
+}
+
+.sidebar-brand {
+  font-family: var(--font-family);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Los dos botones de la cabecera son cuadrados de 24 × 24 con el ícono centrado y el mismo estilo
+   («Ocultar panel»): sin fondo ni borde, fondo leve al pasar el cursor y sin desplazamiento. */
+.sidebar-header-actions > :is(.theme-toggle-btn, .close-sidebar-btn) {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transform: none;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.sidebar-header-actions > :is(.theme-toggle-btn, .close-sidebar-btn):hover {
+  background: var(--panel-bg);
+  color: var(--text-primary);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.sidebar-header-actions > :is(.theme-toggle-btn, .close-sidebar-btn):focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+.sidebar-header-actions > :is(.theme-toggle-btn, .close-sidebar-btn) svg { display: block; flex: none; }
+
+/* Tema: luna y sol montados y superpuestos. El del tema activo se ve; el otro gira 120° y se funde.
+   Los rayos del sol aparecen con escala. 400 ms, también cuando el tema cambia sin clic. */
+.sidebar-header-actions > .theme-toggle-btn { position: relative; overflow: hidden; }
+.sidebar-header-actions > .theme-toggle-btn .theme-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  opacity: 0;
+  transform: rotate(-120deg) scale(0.6);
+  transition: opacity 400ms ease, transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-header-actions > .theme-toggle-btn[data-theme="dark"] .theme-icon-moon,
+.sidebar-header-actions > .theme-toggle-btn[data-theme="light"] .theme-icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+.sidebar-header-actions > .theme-toggle-btn .theme-sun-rays {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+  transform: scale(0.4);
+  transition: transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-header-actions > .theme-toggle-btn[data-theme="light"] .theme-sun-rays { transform: scale(1); }
+/* Estos selectores pesan más que `.theme-toggle-btn:hover svg` de index.css, que giraba el ícono en hover. */
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-header-actions > .theme-toggle-btn .theme-icon,
+  .sidebar-header-actions > .theme-toggle-btn .theme-sun-rays {
+    transform: none !important;
+    transition: opacity 100ms linear;
+  }
+}
+
+/* Paneles planos: sin blur ni sombra, separados por divisores de 1 px. */
+.sidebar .glass-panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--cs-divider);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 8px 14px 12px;
+}
+
+.sidebar .glass-panel:hover {
+  border-color: var(--cs-divider);
+  box-shadow: none;
+}
+
+/* ── Section ─────────────────────────────────────────────────────────────── */
+.cs-section {
+  border-bottom: 1px solid var(--cs-divider);
+}
+
+.cs-section-header {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+}
+
+.cs-section-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-section-toggle:hover {
+  background: var(--cs-hover);
+}
+
+.cs-section-toggle:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
+.cs-section-title {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.cs-section-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.cs-section-chevron {
+  flex: none;
+  color: var(--text-secondary);
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+
+.cs-section.is-open .cs-section-chevron {
+  transform: rotate(0deg);
+}
+
+.cs-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.cs-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 2px 14px 12px;
+}
+
+.cs-section-body[hidden] {
+  display: none;
+}
+
+/* Paneles dentro de una sección: sin marco propio. */
+.cs-section-body .glass-panel {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.cs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cs-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.cs-value {
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-primary);
+}
+
+.cs-range {
+  width: 100%;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.cs-range-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.quality-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sidebar .checkbox-label {
+  font-size: 12px;
+}
+
+/* ── Botones compactos ───────────────────────────────────────────────────── */
+.btn-compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--input-bg, transparent);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-compact:hover:not(:disabled) {
+  border-color: var(--accent-color);
+}
+
+.btn-compact:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+.btn-compact:disabled {
+  cursor: not-allowed;
+  color: var(--disabled-text);
+  background: var(--disabled-bg);
+}
+
+.btn-compact.primary {
+  min-height: 30px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.btn-compact.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-compact.primary:disabled {
+  color: var(--disabled-text);
+  background: var(--disabled-bg);
+  border-color: var(--border-color);
+}
+
+/* ── Carga y error del análisis ──────────────────────────────────────────── */
+.sidebar .loading-banner {
+  margin: 8px 14px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.loading-cancel {
+  width: auto;
+  display: flex;
+  margin: 6px auto 0;
+}
+
+.analysis-error {
+  margin: 8px 14px;
+}
+
+/* ── Pie fijo de exportación ─────────────────────────────────────────────── */
+.sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  z-index: 5;
+  background: var(--bg-color);
+  border-top: 1px solid var(--cs-divider);
+}
+
+.sidebar-footer .glass-panel {
+  border-bottom: 0;
+}
+
+/* ── Barra de cifras sobre el visor ──────────────────────────────────────── */
+.kpi-bar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  /* Libre a cada lado: 344 px para `aoi-help` (right 12 px + 320 px + aire). */
+  max-width: calc(100% - 700px);
+  overflow: hidden;
+  background: var(--kpi-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.kpi-bar-item {
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 7px 14px;
+  border-right: 1px solid var(--border-color);
+}
+
+.kpi-bar-label {
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.kpi-bar-value {
+  margin-top: 1px;
+  font-size: 17px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.kpi-bar-radars {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 12px;
+}
+
+.kpi-bar-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+@media (max-width: 1500px) {
+  .kpi-bar-item { padding: 6px 9px; }
+  .kpi-bar-value { font-size: 14px; }
+  .kpi-bar-radars { padding: 0 8px; }
+}
+
+/* Terreno: acciones e importación en dos filas compactas. */
+.terrain-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.terrain-actions .btn-compact { padding-inline: 3px; font-size: 10.5px; }
+.terrain-resolution { display: flex; align-items: center; gap: 6px; }
+.terrain-resolution .cs-label { flex: 0 1 auto; font-size: 10.5px; letter-spacing: 0.02em; line-height: 1.15; }
+.terrain-resolution .cs-range { flex: 1 1 65px; width: 65px; min-width: 45px; }
+
+/* ── Responsividad de la barra lateral (Enmienda 3) ─────────────────────────
+   La barra es un contenedor: las filas bajan de columnas con @container según su ancho
+   (260–500 px), no con @media del viewport. */
+.sidebar { container: sidebar / inline-size; }
+
+/* Fila de campos compartida: los controles se alinean por abajo, así una etiqueta de dos
+   líneas no empuja a su control, y todos los controles de la fila miden lo mismo. */
+.field-row { display: grid; align-items: end; min-width: 0; }
+.field-row > * { min-width: 0; }
+.field-row :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"])) {
+  box-sizing: border-box; height: 28px; min-height: 28px;
+}
+.field-row > .btn-compact, .field-row > label > .btn-compact { min-height: 28px; }
+
+/* Controles de formulario de la barra lateral: un solo estilo con las variables del tema (oscuro y claro).
+   Reemplaza el estilo nativo blanco que tenían Sugerir, Ajustes y el título del informe. */
+.sidebar { color-scheme: dark; }
+.theme-light .sidebar { color-scheme: light; }
+.sidebar :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select) {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+  padding: 3px 6px;
+  font-family: var(--font-family);
+  font-size: 11px;
+  color: var(--text-primary);
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-control);
+  outline: none;
+  box-shadow: none;
+}
+.sidebar :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select):focus-visible {
+  border-color: var(--accent-color);
+  outline: 2px solid var(--accent-color);
+  outline-offset: -1px;
+}
+.sidebar :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select):disabled {
+  color: var(--disabled-text);
+  background-color: var(--disabled-bg);
+  cursor: not-allowed;
+}
+.sidebar :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]))::placeholder { color: var(--text-secondary); opacity: 0.7; }
+.sidebar select option { color: var(--text-primary); background-color: var(--bg-color); }
+.sidebar :is(input[type="checkbox"], input[type="radio"], input[type="range"]) { accent-color: var(--accent-color); }
+
+/* ── Radio de control unificado (U10d) ─────────────────────────────────────
+   Inputs, selects y botones rectangulares usan --radius-control (6 px), igual que .btn-compact.
+   Excepciones: botones circulares (50%), casillas, slider e íconos del visor no entran aquí. */
+.sidebar .cs-section-toggle,
+.sidebar .history-clear,
+.sidebar .history-remove { border-radius: var(--radius-control); }
+
+/* Diálogo de carga: los botones (index.css usaba 10 px y 8 px) y el campo siguen el mismo radio. */
+.upload-dialog :is(input, select, .btn-primary, .btn-secondary) { border-radius: var(--radius-control); }

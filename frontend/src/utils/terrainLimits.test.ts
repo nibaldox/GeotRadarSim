@@ -33,19 +33,19 @@ describe("shared terrain and LOS resource limits", () => {
   });
 
   it("rejects 1024×1024 because it exceeds the existing LOS-safe one-million-cell cap", () => {
-    expect(() => validateTerrainGridDimensions(1024, 1024)).toThrow(/1,000,000 cells/i);
+    expect(() => validateTerrainGridDimensions(1024, 1024)).toThrow(/1,000,000 celdas/i);
   });
 
   it("rejects an over-limit 2×2,097,152 grid before allocation", () => {
-    expect(() => validateTerrainGridDimensions(2, 2_097_152)).toThrow(/dimension|maximum/i);
+    expect(() => validateTerrainGridDimensions(2, 2_097_152)).toThrow(/dimensi[óo]n|m[áa]ximo/i);
   });
 
   it("rejects a grid over one million cells even when both axes are below the axis cap", () => {
-    expect(() => validateTerrainGridDimensions(1000, 1001)).toThrow(/1,000,000 cells/i);
+    expect(() => validateTerrainGridDimensions(1000, 1001)).toThrow(/1,000,000 celdas/i);
   });
 
   it("rejects subnormal resolution whose squared cell area underflows", () => {
-    expect(() => validateTerrainResolution(Number.MIN_VALUE)).toThrow(/resolution.*area|area.*resolution/i);
+    expect(() => validateTerrainResolution(Number.MIN_VALUE)).toThrow(/resoluci[óo]n.*[áa]rea|[áa]rea.*resoluci[óo]n/i);
   });
 
   it("rejects a finite per-cell area whose total overflows across the grid", () => {
@@ -99,10 +99,10 @@ describe("suggestResolutionForSpan", () => {
   });
 
   it("rejects non-positive or non-finite spans", () => {
-    expect(() => suggestResolutionForSpan(0, 100)).toThrow(/finite and positive/i);
-    expect(() => suggestResolutionForSpan(-1, 100)).toThrow(/finite and positive/i);
-    expect(() => suggestResolutionForSpan(Number.NaN, 100)).toThrow(/finite and positive/i);
-    expect(() => suggestResolutionForSpan(Infinity, 100)).toThrow(/finite and positive/i);
+    expect(() => suggestResolutionForSpan(0, 100)).toThrow(/finitos y positivos/i);
+    expect(() => suggestResolutionForSpan(-1, 100)).toThrow(/finitos y positivos/i);
+    expect(() => suggestResolutionForSpan(Number.NaN, 100)).toThrow(/finitos y positivos/i);
+    expect(() => suggestResolutionForSpan(Infinity, 100)).toThrow(/finitos y positivos/i);
   });
 
   it("rejects an out-of-range safety factor", () => {

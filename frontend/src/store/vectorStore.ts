@@ -7,6 +7,8 @@ import { LOSCellState } from "../types/api";
 
 export interface VectorState {
   sensitivityMap: SensitivityMapResponse | null;
+  sensitivityAnalysisId: string | null;
+  inFlightOrigin: "user" | null;
   visualizationMode: "QUALITY" | "SENSITIVITY";
   loading: boolean;
   error: string | null;
@@ -55,28 +57,28 @@ function buildObservations(
     if (!snapshot || !snapshot.analysisId || snapshot.sourceAnalysisIds.length !== 1 ||
         snapshot.sourceAnalysisIds[0] !== snapshot.analysisId || snapshot.radars.length !== 1 ||
         !sameTerrainKey(snapshot.terrainKey, terrainKey)) {
-      throw new RangeError("Selected history entry requires current immutable analysis provenance and radar snapshot");
+      throw new RangeError("La entrada del historial seleccionada requiere el origen inmutable del análisis y la instantánea del radar.");
     }
-    if (ids.has(snapshot.analysisId)) throw new RangeError("Selected analysis IDs must be unique");
+    if (ids.has(snapshot.analysisId)) throw new RangeError("Los IDs de los análisis seleccionados deben ser únicos.");
     ids.add(snapshot.analysisId);
     const radar = snapshot.radars[0]!;
     if (!radar.radarId || radar.radarModelId !== entry.radarId ||
         radar.position.x !== entry.position.x || radar.position.y !== entry.position.y || radar.position.z !== entry.position.z) {
-      throw new RangeError("Selected history radar does not match its analysis snapshot");
+      throw new RangeError("El radar del historial seleccionado no coincide con la instantánea de su análisis.");
     }
 
     const { grid_rows: rows, grid_cols: cols, resolution, cell_states } = entry.result;
     if (!Number.isInteger(rows) || rows <= 0 || !Number.isInteger(cols) || cols <= 0 ||
         !Number.isFinite(resolution) || resolution <= 0 || !(cell_states instanceof Uint8Array) ||
         cell_states.length !== rows * cols) {
-      throw new RangeError("Selected LOS result has invalid grid dimensions or cell-state length");
+      throw new RangeError("El resultado LOS seleccionado tiene dimensiones de malla o longitud de estados de celda no válidas.");
     }
     if (expectedRows === null) {
       expectedRows = rows;
       expectedCols = cols;
       expectedResolution = resolution;
     } else if (rows !== expectedRows || cols !== expectedCols || resolution !== expectedResolution) {
-      throw new RangeError("Selected LOS results do not share the same grid dimensions and resolution");
+      throw new RangeError("Los resultados LOS seleccionados no comparten las mismas dimensiones de malla ni la misma resolución.");
     }
     return {
       analysisId: snapshot.analysisId,
@@ -105,7 +107,7 @@ function validateSensitivityResult(
       !(result.observer_count instanceof Uint16Array) ||
       result.flat_sensitivity_grid.length !== firstObservation.grid_rows * firstObservation.grid_cols ||
       result.observer_count.length !== firstObservation.grid_rows * firstObservation.grid_cols) {
-    throw new RangeError("Sensitivity result provenance or grid dimensions do not match the selected analyses");
+    throw new RangeError("El origen o las dimensiones de malla del resultado de sensibilidad no coinciden con los análisis seleccionados.");
   }
 
   for (let index = 0; index < result.observer_count.length; index++) {
@@ -120,7 +122,7 @@ function validateSensitivityResult(
     if (!Number.isInteger(count) || count < 0 || count > visibleMaskCount ||
         (count !== 0 && count !== visibleMaskCount) ||
         (count === 0 ? !Number.isNaN(sensitivity) : !Number.isFinite(sensitivity) || sensitivity < 0 || sensitivity > 1.00001)) {
-      throw new RangeError("Sensitivity observer count or value is inconsistent with individual LOS cell states");
+      throw new RangeError("El número o el valor de los observadores de sensibilidad no es coherente con los estados de celda LOS individuales.");
     }
   }
   return result;
@@ -152,7 +154,7 @@ export const useVectorStore = create<VectorState>((set) => {
 
   const clearMap = () => {
     cancelActiveWork();
-    set({ sensitivityMap: null, loading: false, error: null });
+    set({ sensitivityMap: null, sensitivityAnalysisId: null, inFlightOrigin: null, loading: false, error: null });
   };
 
   let lastAnalysisContext = sensitivityContext(useAnalysisStore.getState());
@@ -175,23 +177,17 @@ export const useVectorStore = create<VectorState>((set) => {
     return selected.length === selectedEntries.length && selected.every((entry, index) => entry === selectedEntries[index]);
   };
 
-  return {
-    sensitivityMap: null,
-    visualizationMode: "QUALITY",
-    loading: false,
-    error: null,
-
-    computeSensitivityMap: async (terrainId) => {
+  const startSensitivity = async (terrainId: string) => {
       cancelActiveWork();
       const token = requestToken;
-      set({ sensitivityMap: null, loading: false, error: null });
+      set({ sensitivityMap: null, sensitivityAnalysisId: null, inFlightOrigin: null, loading: false, error: null });
       const analysisState = useAnalysisStore.getState();
       const selectedEntries = analysisState.history.filter((entry) => entry.selected);
       const terrainKey = analysisState.terrainKey;
 
       if (selectedEntries.length === 0) return;
       if (!terrainKey || analysisState.terrainTransitioning || terrainKey.terrain_id !== terrainId) {
-        set({ error: "Selected analyses do not match the active terrain", loading: false });
+        set({ error: "Los análisis seleccionados no coinciden con el terreno activo.", loading: false, inFlightOrigin: null });
         return;
       }
 
@@ -199,11 +195,11 @@ export const useVectorStore = create<VectorState>((set) => {
       try {
         observations = buildObservations(selectedEntries, terrainKey);
       } catch (error) {
-        set({ error: error instanceof Error ? error.message : "Invalid selected analysis provenance", loading: false });
+        set({ error: error instanceof Error ? error.message : "El origen de los análisis seleccionados no es válido.", loading: false, inFlightOrigin: null });
         return;
       }
       const request: SensitivityMapRequest = { terrainKey: { ...terrainKey }, observations };
-      set({ loading: true, error: null });
+      set({ loading: true, inFlightOrigin: "user", error: null });
 
       const requestIsCurrent = () => isCurrentRequest(token, request.terrainKey, selectedEntries);
       try {
@@ -228,7 +224,7 @@ export const useVectorStore = create<VectorState>((set) => {
               discardJob(job.job_id);
               return;
             }
-            set({ error: error instanceof Error ? error.message : "Error polling sensitivity job", loading: false });
+            set({ error: error instanceof Error ? error.message : "Error al consultar el trabajo de sensibilidad.", loading: false, inFlightOrigin: null });
             discardJob(job.job_id);
             return;
           }
@@ -246,14 +242,14 @@ export const useVectorStore = create<VectorState>((set) => {
 
           try {
             if (status.status === "COMPLETED") {
-              if (!status.result) throw new Error("Sensitivity job completed without a result");
+              if (!status.result) throw new Error("El trabajo de sensibilidad terminó sin resultado.");
               const sensitivityMap = validateSensitivityResult(status.result, request);
-              set({ sensitivityMap, visualizationMode: "SENSITIVITY", loading: false, error: null });
+              set({ sensitivityMap, sensitivityAnalysisId: job.job_id, inFlightOrigin: null, visualizationMode: "SENSITIVITY", loading: false, error: null });
             } else {
-              set({ error: status.error || "Failed to calculate geometric sensitivity map", loading: false });
+              set({ error: status.error || "No se pudo calcular el mapa de sensibilidad geométrica.", loading: false, inFlightOrigin: null });
             }
           } catch (error) {
-            set({ error: error instanceof Error ? error.message : "Invalid sensitivity map result", loading: false });
+            set({ error: error instanceof Error ? error.message : "El resultado del mapa de sensibilidad no es válido.", loading: false, inFlightOrigin: null });
           } finally {
             if (activeJobId === job.job_id) activeJobId = null;
             releaseSensitivityJob(job.job_id);
@@ -263,15 +259,24 @@ export const useVectorStore = create<VectorState>((set) => {
         pollTimer = setTimeout(() => void poll(), 250);
       } catch (error) {
         if (!requestIsCurrent()) return;
-        set({ error: error instanceof Error ? error.message : "Failed to compute geometric sensitivity map", loading: false });
+        set({ error: error instanceof Error ? error.message : "No se pudo calcular el mapa de sensibilidad geométrica.", loading: false, inFlightOrigin: null });
       }
-    },
+    };
 
+  return {
+    sensitivityMap: null,
+    sensitivityAnalysisId: null,
+    inFlightOrigin: null,
+    visualizationMode: "QUALITY",
+    loading: false,
+    error: null,
+
+    computeSensitivityMap: (terrainId) => startSensitivity(terrainId),
     setVisualizationMode: (mode) => set({ visualizationMode: mode }),
 
     reset: () => {
       cancelActiveWork();
-      set({ sensitivityMap: null, error: null, visualizationMode: "QUALITY", loading: false });
+      set({ sensitivityMap: null, sensitivityAnalysisId: null, inFlightOrigin: null, error: null, visualizationMode: "QUALITY", loading: false });
     },
   };
 });

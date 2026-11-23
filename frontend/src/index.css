@@ -1009,3 +1009,8 @@ body, .sidebar, .glass-panel, .btn-primary, .btn-secondary, .hud-card, .hud-metr
   from { opacity: 0; transform: translateY(-12px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0)     scale(1);    }
 }
+
+/* Área a monitorear */
+.aoi-help { position: absolute; top: 12px; right: 12px; max-width: 320px; padding: 8px; background: #102932; color: #fff; border: 1px solid #00d7e6; border-radius: 4px; }
+.aoi-clear { width: auto; padding: 4px 8px; }
+.aoi-coverage { margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 8px; }

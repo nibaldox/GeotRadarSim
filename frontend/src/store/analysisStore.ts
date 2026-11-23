@@ -28,6 +28,7 @@ export interface TerrainKey {
 }
 
 export interface HistoryEntry {
+  origin?: "agent" | "user";
   position: Point3D;
   coveragePct: number | null;
   timestamp: string;
@@ -65,6 +66,9 @@ export interface DeployedRadar {
 }
 
 type RadarOverrides = AnalysisRadarOverrides;
+/** `reason` is set only for `cancelled`: "user" = the app's Cancel button, "agent" = the waiter's own signal. */
+export type AnalysisOutcome = { status: "published" | "superseded" | "failed" | "cancelled"; analysisId: string | null; error: string | null; terrainId: string; epoch: number | null; reason?: "user" | "agent" };
+type InternalOutcome = Omit<AnalysisOutcome, "terrainId" | "epoch">;
 
 interface SingleAnalysisSnapshot {
   terrainKey: TerrainKey;
@@ -83,6 +87,7 @@ export interface AnalysisState {
   /** Provenance paired atomically with losResult; absent for legacy results. */
   activeSnapshot: AnalysisSnapshot | null;
   loading: boolean;
+  inFlightOrigin: "agent" | "user" | null;
   error: string | null;
   rangeMinOverride: number | null;
   rangeMaxOverride: number | null;
@@ -106,6 +111,9 @@ export interface AnalysisState {
   setElevationOverrides: (min: number | null, max: number | null) => void;
   setAzimuthOverrides: (center: number | null, width: number | null) => void;
   runAnalysis: (terrainId: string) => Promise<void>;
+  runAnalysisAndWait: (terrainId: string, options?: { signal?: AbortSignal }) => Promise<AnalysisOutcome>;
+  setOverrides: (overrides: Partial<RadarOverrides>) => void;
+  setHistorySelection: (analysisIds: string[]) => boolean;
   /** Cancel any in-flight single or multi LOS analysis (never the radar catalog load). */
   cancelAnalysis: () => void;
   clearResult: () => void;
@@ -134,21 +142,21 @@ export interface AnalysisState {
  * and the merge only claims the geometric-v2 tag when every source result does.
  */
 export function mergeResults(results: LOSResponse[]): LOSResponse {
-  if (results.length === 0) throw new Error("No results to merge");
+  if (results.length === 0) throw new Error("No hay resultados que combinar.");
   if (results.length === 1) return results[0]!;
 
   const first = results[0]!;
   const { grid_rows: rows, grid_cols: cols, resolution } = first;
   if (!Number.isInteger(rows) || rows <= 0 || !Number.isInteger(cols) || cols <= 0 || !Number.isFinite(resolution) || resolution <= 0) {
-    throw new Error("LOS results must provide valid grid dimensions and resolution");
+    throw new Error("Los resultados LOS deben indicar dimensiones de malla y resolución válidas.");
   }
   const size = rows * cols;
   for (const result of results) {
     if (result.grid_rows !== rows || result.grid_cols !== cols || result.resolution !== resolution) {
-      throw new Error("Cannot merge LOS results with different grid dimensions or resolution");
+      throw new Error("No se pueden combinar resultados LOS con distintas dimensiones de malla o resolución.");
     }
     if (!(result.cell_states instanceof Uint8Array) || result.cell_states.length !== size) {
-      throw new Error("LOS cell-state dimensions do not match the declared grid");
+      throw new Error("Las dimensiones de los estados de celda LOS no coinciden con la malla declarada.");
     }
   }
 
@@ -308,6 +316,8 @@ const createAnalysisSnapshot = (
 
 export const useAnalysisStore = create<AnalysisState>((set, get) => {
   let requestGeneration = 0;
+  const waiters = new Map<number, (outcome: InternalOutcome) => void>();
+  const finish = (id: number, outcome: InternalOutcome) => { const resolve = waiters.get(id); waiters.delete(id); resolve?.(outcome); };
   let radarListGeneration = 0;
   let preTransitionTerrainKey: TerrainKey | null = null;
   let preTransitionRadarPosition: Point3D | null = null;
@@ -345,8 +355,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
     }
   };
 
-  const advanceRequestGeneration = (): number => {
+  const advanceRequestGeneration = (pendingOutcome: InternalOutcome = { status: "superseded", analysisId: null, error: null }): number => {
     requestGeneration += 1;
+    for (const id of waiters.keys()) finish(id, { ...pendingOutcome });
     for (const requestId of [...trackedLOSJobs.keys()]) cancelRequestLOSJobs(requestId);
     return requestGeneration;
   };
@@ -387,6 +398,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
     losResult: null,
     activeSnapshot: null,
     loading: false,
+    inFlightOrigin: null,
     error: null,
     history: state.history.map((entry) => ({ ...entry, selected: false })),
     deployedRadars: clearDeployedResults(state.deployedRadars),
@@ -425,8 +437,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       deployedSnapshotMatches(state, deployedSnapshot);
   };
 
-  const invalidateForConfigurationChange = (): Partial<AnalysisState> => {
-    advanceRequestGeneration();
+  const invalidateForConfigurationChange = (pendingOutcome?: InternalOutcome): Partial<AnalysisState> => {
+    advanceRequestGeneration(pendingOutcome);
     return invalidateCurrentResults(get());
   };
 
@@ -458,6 +470,172 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
     return createAnalysisSnapshot(snapshots[0]!.terrainKey, radars, sourceIds, generation);
   };
 
+  const startAnalysis = async (terrainId: string, resolve?: (outcome: InternalOutcome) => void, signal?: AbortSignal) => {
+      const initialState = get();
+      if (initialState.terrainTransitioning) { resolve?.({ status: "superseded", analysisId: null, error: null }); return; }
+      const { selectedRadarId, radarPosition } = initialState;
+      if (resolve && signal?.aborted) { resolve({ status: "cancelled", analysisId: null, error: null, reason: "agent" }); return; }
+      if (!resolve && radarPosition && (![radarPosition.x, radarPosition.y, radarPosition.z].every(Number.isFinite) || Object.values(overridesFor(initialState)).some(v => v !== null && !Number.isFinite(v)))) {
+        advanceRequestGeneration();
+        set({ loading: false, multiLoading: false, inFlightOrigin: null, error: "La posición y los ajustes del radar deben ser números finitos." });
+        return;
+      }
+      if (resolve && radarPosition && (![radarPosition.x, radarPosition.y, radarPosition.z].every(Number.isFinite) || Object.values(overridesFor(initialState)).some(v => v !== null && !Number.isFinite(v)))) {
+        resolve({ status: "failed", analysisId: null, error: "INVALID_ARGUMENT" }); return;
+      }
+      if (!selectedRadarId || !radarPosition) {
+        set({ error: "Elige un modelo de radar y ubícalo antes de calcular.", loading: false });
+        resolve?.({ status: "failed", analysisId: null, error: "Elige un modelo de radar y ubícalo antes de calcular." });
+        return;
+      }
+
+      const terrainKey = initialState.terrainKey ?? { terrain_id: terrainId, epoch: 0 };
+      if (terrainKey.terrain_id !== terrainId) { resolve?.({ status: "superseded", analysisId: null, error: null }); return; }
+      const snapshot: SingleAnalysisSnapshot = {
+        terrainKey: { ...terrainKey },
+        radarId: selectedRadarId,
+        position: { ...radarPosition },
+        overrides: overridesFor(initialState),
+      };
+      const requestId = advanceRequestGeneration();
+      if (resolve) {
+        const abort = () => {
+          if (requestGeneration !== requestId || !waiters.has(requestId)) return;
+          finish(requestId, { status: "cancelled", analysisId: null, error: null, reason: "agent" });
+          set({ ...invalidateForConfigurationChange() });
+        };
+        signal?.addEventListener("abort", abort, { once: true });
+        waiters.set(requestId, outcome => { signal?.removeEventListener("abort", abort); resolve(outcome); });
+      }
+      set({
+        loading: true,
+        inFlightOrigin: resolve ? "agent" : "user",
+        multiLoading: false,
+        error: null,
+        losResult: null,
+        activeSnapshot: null,
+        unifiedLos: null,
+        deployedRadars: clearDeployedResults(get().deployedRadars),
+        history: get().history.map((entry) => ({ ...entry, selected: false })),
+      });
+
+      try {
+        const jobResp = await apiRunLOS({
+          terrain_id: snapshot.terrainKey.terrain_id,
+          radar_position: { ...snapshot.position },
+          radar_model_id: snapshot.radarId,
+          range_min_m: snapshot.overrides.rangeMin ?? undefined,
+          range_max_m: snapshot.overrides.rangeMax ?? undefined,
+          el_min_deg: snapshot.overrides.elMin ?? undefined,
+          el_max_deg: snapshot.overrides.elMax ?? undefined,
+          az_center_deg: snapshot.overrides.azCenter ?? undefined,
+          az_width_deg: snapshot.overrides.azWidth ?? undefined,
+        });
+        trackLOSJob(requestId, jobResp.job_id);
+        if (!isCurrentSingleRequest(requestId, snapshot)) {
+          settleLOSJob(requestId, jobResp.job_id, true);
+          finish(requestId, { status: "superseded", analysisId: null, error: null });
+          return;
+        }
+
+        const poll = async () => {
+          if (!isCurrentSingleRequest(requestId, snapshot)) {
+            cancelRequestLOSJobs(requestId);
+            finish(requestId, { status: "superseded", analysisId: null, error: null });
+            return;
+          }
+          try {
+            const statusResp = await getLOSJob(jobResp.job_id);
+            if (!isCurrentSingleRequest(requestId, snapshot)) {
+              cancelRequestLOSJobs(requestId);
+              finish(requestId, { status: "superseded", analysisId: null, error: null });
+              return;
+            }
+            if (statusResp.status === "COMPLETED" && statusResp.result) {
+              const analysisSnapshot = createAnalysisSnapshot(
+                snapshot.terrainKey,
+                [{
+                  radarId: snapshot.radarId,
+                  radarModelId: snapshot.radarId,
+                  position: snapshot.position,
+                  overrides: snapshot.overrides,
+                }],
+                [jobResp.job_id],
+                requestId,
+              );
+              const entry: HistoryEntry = {
+                ...(resolve ? { origin: "agent" as const } : {}),
+                position: { ...snapshot.position },
+                coveragePct: statusResp.result.coverage_pct,
+                timestamp: new Date().toLocaleTimeString(),
+                result: statusResp.result,
+                radarId: snapshot.radarId,
+                selected: true,
+                terrain_id: snapshot.terrainKey.terrain_id,
+                terrain_epoch: snapshot.terrainKey.epoch,
+                snapshot: analysisSnapshot,
+              };
+              let published = false;
+              try { set((state) => {
+                if (requestId !== requestGeneration || !snapshotIsCurrent(state, snapshot)) return {};
+                const currentHistory = state.history
+                  .filter((historyEntry) => entryMatchesKey(historyEntry, snapshot.terrainKey))
+                  .map((historyEntry) => ({ ...historyEntry, selected: false }));
+                published = true;
+                return {
+                  losResult: statusResp.result,
+                  activeSnapshot: analysisSnapshot,
+                  loading: false,
+                  inFlightOrigin: null,
+                  error: null,
+                  history: [entry, ...currentHistory].slice(0, 10),
+                };
+              }); } finally {
+                finish(requestId, published ? { status: "published", analysisId: jobResp.job_id, error: null } : { status: "superseded", analysisId: null, error: null });
+                settleLOSJob(requestId, jobResp.job_id, !published);
+              }
+            } else if (statusResp.status === "FAILED") {
+              if (!isCurrentSingleRequest(requestId, snapshot)) {
+                cancelRequestLOSJobs(requestId);
+                finish(requestId, { status: "superseded", analysisId: null, error: null });
+                return;
+              }
+              set({ error: statusResp.error || "El análisis falló.", loading: false, inFlightOrigin: null, losResult: null });
+              settleLOSJob(requestId, jobResp.job_id, false);
+              finish(requestId, { status: "failed", analysisId: null, error: statusResp.error || "El análisis falló." });
+            } else {
+              setTimeout(resolve ? () => { void poll().catch(err => finish(requestId, { status: "failed", analysisId: null, error: err instanceof Error ? err.message : "Error desconocido." })); } : poll, 1000);
+            }
+          } catch (err) {
+            if (resolve && get().activeSnapshot?.analysisId === jobResp.job_id) return;
+            if (!isCurrentSingleRequest(requestId, snapshot)) {
+              cancelRequestLOSJobs(requestId);
+              finish(requestId, { status: "superseded", analysisId: null, error: null });
+              return;
+            }
+            set({
+              error: err instanceof Error ? err.message : "Error al consultar el estado del trabajo.",
+              loading: false,
+              inFlightOrigin: null,
+            });
+            cancelRequestLOSJobs(requestId);
+            finish(requestId, { status: "failed", analysisId: null, error: err instanceof Error ? err.message : "Error al consultar el estado del trabajo." });
+          }
+        };
+
+        if (isCurrentSingleRequest(requestId, snapshot)) setTimeout(resolve ? () => { void poll().catch(err => finish(requestId, { status: "failed", analysisId: null, error: err instanceof Error ? err.message : "Error desconocido." })); } : poll, 1000);
+        else { cancelRequestLOSJobs(requestId); finish(requestId, { status: "superseded", analysisId: null, error: null }); }
+      } catch (err) {
+        if (!isCurrentSingleRequest(requestId, snapshot)) { finish(requestId, { status: "superseded", analysisId: null, error: null }); return; }
+        set({
+          error: err instanceof Error ? err.message : "Error desconocido.",
+          loading: false,
+          inFlightOrigin: null,
+        });
+        finish(requestId, { status: "failed", analysisId: null, error: err instanceof Error ? err.message : "Error desconocido." });
+      }
+    };
+
   return {
     radars: [],
     selectedRadarId: null,
@@ -465,6 +643,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
     losResult: null,
     activeSnapshot: null,
     loading: false,
+    inFlightOrigin: null,
     error: null,
     rangeMinOverride: null,
     rangeMaxOverride: null,
@@ -488,7 +667,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
         set({ radars, loading: false });
       } catch (err) {
         if (requestId !== radarListGeneration) return;
-        set({ error: err instanceof Error ? err.message : "Unknown error", loading: false });
+        set({ error: err instanceof Error ? err.message : "Error desconocido.", loading: false });
       }
     },
 
@@ -534,135 +713,49 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       set({ ...invalidateForConfigurationChange(), azCenterOverride: center, azWidthOverride: width });
     },
 
-    runAnalysis: async (terrainId) => {
-      const initialState = get();
-      if (initialState.terrainTransitioning) return;
-      const { selectedRadarId, radarPosition } = initialState;
-      if (!selectedRadarId || !radarPosition) {
-        set({ error: "Radar model and position must be set before analysis", loading: false });
-        return;
-      }
-
-      const terrainKey = initialState.terrainKey ?? { terrain_id: terrainId, epoch: 0 };
-      if (terrainKey.terrain_id !== terrainId) return;
-      const snapshot: SingleAnalysisSnapshot = {
-        terrainKey: { ...terrainKey },
-        radarId: selectedRadarId,
-        position: { ...radarPosition },
-        overrides: overridesFor(initialState),
-      };
-      const requestId = advanceRequestGeneration();
-      set({
-        loading: true,
-        multiLoading: false,
-        error: null,
-        losResult: null,
-        activeSnapshot: null,
-        unifiedLos: null,
-        deployedRadars: clearDeployedResults(get().deployedRadars),
-        history: get().history.map((entry) => ({ ...entry, selected: false })),
+    runAnalysis: (terrainId) => startAnalysis(terrainId),
+    runAnalysisAndWait: (terrainId, options) => new Promise((resolve) => {
+      const key = get().terrainKey;
+      const epoch = key?.terrain_id === terrainId ? key.epoch : (!key && !get().terrainTransitioning ? 0 : null);
+      const done = (outcome: InternalOutcome) => resolve({ ...outcome, terrainId, epoch });
+      const initialGeneration = requestGeneration;
+      void startAnalysis(terrainId, done, options?.signal).catch(err => {
+        const failure: InternalOutcome = { status: "failed", analysisId: null, error: err instanceof Error ? err.message : "Error desconocido." };
+        if (requestGeneration === initialGeneration + 1 && waiters.has(requestGeneration)) {
+          finish(requestGeneration, failure);
+          try { set({ ...invalidateForConfigurationChange() }); } catch { /* state is already applied */ }
+        } else done(failure);
       });
+    }),
 
-      try {
-        const jobResp = await apiRunLOS({
-          terrain_id: snapshot.terrainKey.terrain_id,
-          radar_position: { ...snapshot.position },
-          radar_model_id: snapshot.radarId,
-          range_min_m: snapshot.overrides.rangeMin ?? undefined,
-          range_max_m: snapshot.overrides.rangeMax ?? undefined,
-          el_min_deg: snapshot.overrides.elMin ?? undefined,
-          el_max_deg: snapshot.overrides.elMax ?? undefined,
-          az_center_deg: snapshot.overrides.azCenter ?? undefined,
-          az_width_deg: snapshot.overrides.azWidth ?? undefined,
-        });
-        trackLOSJob(requestId, jobResp.job_id);
-        if (!isCurrentSingleRequest(requestId, snapshot)) {
-          settleLOSJob(requestId, jobResp.job_id, true);
-          return;
-        }
-
-        const poll = async () => {
-          if (!isCurrentSingleRequest(requestId, snapshot)) {
-            cancelRequestLOSJobs(requestId);
-            return;
-          }
-          try {
-            const statusResp = await getLOSJob(jobResp.job_id);
-            if (!isCurrentSingleRequest(requestId, snapshot)) {
-              cancelRequestLOSJobs(requestId);
-              return;
-            }
-            if (statusResp.status === "COMPLETED" && statusResp.result) {
-              const analysisSnapshot = createAnalysisSnapshot(
-                snapshot.terrainKey,
-                [{
-                  radarId: snapshot.radarId,
-                  radarModelId: snapshot.radarId,
-                  position: snapshot.position,
-                  overrides: snapshot.overrides,
-                }],
-                [jobResp.job_id],
-                requestId,
-              );
-              const entry: HistoryEntry = {
-                position: { ...snapshot.position },
-                coveragePct: statusResp.result.coverage_pct,
-                timestamp: new Date().toLocaleTimeString(),
-                result: statusResp.result,
-                radarId: snapshot.radarId,
-                selected: true,
-                terrain_id: snapshot.terrainKey.terrain_id,
-                terrain_epoch: snapshot.terrainKey.epoch,
-                snapshot: analysisSnapshot,
-              };
-              let published = false;
-              set((state) => {
-                if (requestId !== requestGeneration || !snapshotIsCurrent(state, snapshot)) return {};
-                const currentHistory = state.history
-                  .filter((historyEntry) => entryMatchesKey(historyEntry, snapshot.terrainKey))
-                  .map((historyEntry) => ({ ...historyEntry, selected: false }));
-                published = true;
-                return {
-                  losResult: statusResp.result,
-                  activeSnapshot: analysisSnapshot,
-                  loading: false,
-                  error: null,
-                  history: [entry, ...currentHistory].slice(0, 10),
-                };
-              });
-              settleLOSJob(requestId, jobResp.job_id, !published);
-            } else if (statusResp.status === "FAILED") {
-              if (!isCurrentSingleRequest(requestId, snapshot)) {
-                cancelRequestLOSJobs(requestId);
-                return;
-              }
-              set({ error: statusResp.error || "Analysis failed", loading: false, losResult: null });
-              settleLOSJob(requestId, jobResp.job_id, false);
-            } else {
-              setTimeout(poll, 1000);
-            }
-          } catch (err) {
-            if (!isCurrentSingleRequest(requestId, snapshot)) {
-              cancelRequestLOSJobs(requestId);
-              return;
-            }
-            set({
-              error: err instanceof Error ? err.message : "Error checking job status",
-              loading: false,
-            });
-            cancelRequestLOSJobs(requestId);
-          }
-        };
-
-        if (isCurrentSingleRequest(requestId, snapshot)) setTimeout(poll, 1000);
-        else cancelRequestLOSJobs(requestId);
-      } catch (err) {
-        if (!isCurrentSingleRequest(requestId, snapshot)) return;
-        set({
-          error: err instanceof Error ? err.message : "Unknown error",
-          loading: false,
-        });
+    setOverrides: (overrides) => {
+      const state = get();
+      const next = { ...overridesFor(state) };
+      for (const key of Object.keys(next) as (keyof RadarOverrides)[]) {
+        const value = overrides[key];
+        if (value === undefined) continue;
+        if (value !== null && (typeof value !== "number" || !Number.isFinite(value))) throw new RangeError("INVALID_ARGUMENT");
+        next[key] = value;
       }
+      if (sameOverrides(overridesFor(state), next)) return;
+      set({ ...invalidateForConfigurationChange(), rangeMinOverride: next.rangeMin, rangeMaxOverride: next.rangeMax,
+        elMinOverride: next.elMin, elMaxOverride: next.elMax, azCenterOverride: next.azCenter, azWidthOverride: next.azWidth });
+    },
+
+    setHistorySelection: (ids) => {
+      const state = get();
+      const requested = new Set(ids);
+      if (requested.size !== ids.length || state.terrainTransitioning) return false;
+      const matches = state.history.filter((entry) => entryMatchesTerrain(entry, state) && entry.snapshot?.analysisId && requested.has(entry.snapshot.analysisId));
+      if (matches.length !== requested.size || ids.some((id) => matches.filter((entry) => entry.snapshot?.analysisId === id).length !== 1)) return false;
+      const currentIds = state.history.filter(entry => entry.selected).map(entry => entry.snapshot?.analysisId);
+      if (currentIds.length === requested.size && currentIds.every((id) => id != null && requested.has(id))) return true;
+      const history = state.history.map((entry) => ({ ...entry, selected: !!entry.snapshot?.analysisId && matches.includes(entry) }));
+      const losResult = recomputeSelectedHistory(history, state);
+      advanceRequestGeneration();
+      const activeSnapshot = snapshotForSelectedHistory(history, state, requestGeneration);
+      set({ history, losResult, activeSnapshot, loading: false, inFlightOrigin: null, multiLoading: false, error: null, unifiedLos: null });
+      return true;
     },
 
     cancelAnalysis: () => {
@@ -673,18 +766,19 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       if (!state.loading && !state.multiLoading) return;
       // advanceRequestGeneration fences every pending single/multi poll and
       // terminates all tracked LOS jobs via cancelLOSAnalysis; jobs created
-      // afterwards settle stale and get cancelled on arrival.
-      set({ ...invalidateForConfigurationChange() });
+      // afterwards settle stale and get cancelled on arrival. A pending
+      // `runAnalysisAndWait` learns that the USER cancelled (R4 WP4B-10).
+      set({ ...invalidateForConfigurationChange({ status: "cancelled", analysisId: null, error: null, reason: "user" }) });
     },
 
     clearResult: () => {
       advanceRequestGeneration();
-      set({ losResult: null, activeSnapshot: null, loading: false });
+      set({ losResult: null, activeSnapshot: null, loading: false, inFlightOrigin: null });
     },
 
     clearHistory: () => {
       advanceRequestGeneration();
-      set({ history: [], losResult: null, activeSnapshot: null, loading: false, error: null });
+      set({ history: [], losResult: null, activeSnapshot: null, loading: false, inFlightOrigin: null, error: null });
     },
 
     restoreHistoryEntry: (index) => {
@@ -712,6 +806,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
           azWidthOverride: radarSnapshot.overrides.azWidth,
         } : {}),
         loading: false,
+        inFlightOrigin: null,
         multiLoading: false,
         error: null,
         unifiedLos: null,
@@ -730,7 +825,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       });
       const losResult = recomputeSelectedHistory(history, state);
       const activeSnapshot = snapshotForSelectedHistory(history, state, requestGeneration);
-      set({ history, losResult, activeSnapshot, loading: false, multiLoading: false, error: null, unifiedLos: null });
+      set({ history, losResult, activeSnapshot, loading: false, inFlightOrigin: null, multiLoading: false, error: null, unifiedLos: null });
     },
 
     removeHistoryEntry: (index) => {
@@ -739,7 +834,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       const history = state.history.filter((_, idx) => idx !== index);
       const losResult = recomputeSelectedHistory(history, state);
       const activeSnapshot = snapshotForSelectedHistory(history, state, requestGeneration);
-      set({ history, losResult, activeSnapshot, loading: false, multiLoading: false, error: null });
+      set({ history, losResult, activeSnapshot, loading: false, inFlightOrigin: null, multiLoading: false, error: null });
     },
 
     beginTerrainTransition: () => {
@@ -799,7 +894,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       } = state;
 
       if (!selectedRadarId || !radarPosition) {
-        set({ error: "Select a radar model and place it on the terrain first." });
+        set({ error: "Elige un modelo de radar y ubícalo en el terreno antes de calcular." });
         return;
       }
 
@@ -850,7 +945,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       const terrainKey = state.terrainKey ?? { terrain_id: terrainId, epoch: 0 };
       if (terrainKey.terrain_id !== terrainId) return;
       if (state.deployedRadars.length === 0) {
-        set({ error: "Deploy at least one radar first.", multiLoading: false });
+        set({ error: "Ubica al menos un radar.", multiLoading: false });
         return;
       }
 
@@ -858,6 +953,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
       const requestId = advanceRequestGeneration();
       set({
         multiLoading: true,
+        inFlightOrigin: "user",
         loading: false,
         error: null,
         losResult: null,
@@ -906,7 +1002,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
                   return;
                 }
                 if (response.status === "COMPLETED" && response.result) resolve(response.result);
-                else if (response.status === "FAILED") reject(new Error(response.error ?? "Analysis failed"));
+                else if (response.status === "FAILED") reject(new Error(response.error ?? "El análisis falló."));
                 else setTimeout(check, 1000);
               } catch (err) {
                 if (!snapshotIsCurrent()) {
@@ -962,6 +1058,7 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
             losResult: unified,
             activeSnapshot: analysisSnapshot,
             multiLoading: false,
+            inFlightOrigin: null,
             error: null,
           };
         });
@@ -973,8 +1070,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
           return;
         }
         set({
-          error: err instanceof Error ? err.message : "Multi-analysis failed",
+          error: err instanceof Error ? err.message : "El análisis múltiple falló.",
           multiLoading: false,
+          inFlightOrigin: null,
         });
         cancelRequestLOSJobs(requestId);
       }

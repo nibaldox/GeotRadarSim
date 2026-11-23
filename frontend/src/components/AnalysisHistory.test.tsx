@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { AnalysisHistory } from "./AnalysisHistory";
-import { useAnalysisStore } from "../store/analysisStore";
+import { RADAR_COLORS, useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { useVectorStore } from "../store/vectorStore";
 import { useQualityPolicyStore } from "../store/qualityPolicyStore";
@@ -24,6 +24,7 @@ beforeEach(() => {
 describe("AnalysisHistory NODATA display", () => {
   it("shows no-data for a result with no candidate cells", () => {
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
 
     expect(screen.getByText(/Visibilidad \(candidatos\)/).parentElement).toHaveTextContent("Sin datos");
     expect(screen.getByText(/Completitud/).parentElement).toHaveTextContent("Sin datos");
@@ -98,6 +99,7 @@ describe("AnalysisHistory quality summary cards", () => {
   it("leads with useful incidence coverage of the shared common target", () => {
     setupCard();
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
 
     expect(screen.getByText(/Cobertura útil/).parentElement).toHaveTextContent("Incidencia superficial");
     expect(screen.getByText(/Cobertura útil/).parentElement).toHaveTextContent("33.3%");
@@ -114,6 +116,7 @@ describe("AnalysisHistory quality summary cards", () => {
     setupCard();
     useVectorStore.setState({ visualizationMode: "SENSITIVITY" });
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
 
     expect(screen.getByText(/Cobertura útil/).parentElement).toHaveTextContent("Proyección del movimiento");
     // Projection [0.75, 0.75, NaN, 0.5] over 6 target cells: 3 useful.
@@ -125,6 +128,7 @@ describe("AnalysisHistory quality summary cards", () => {
   it("reclassifies card metrics after a policy edit without rerunning LOS", () => {
     setupCard();
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
     expect(screen.getByText(/Cobertura útil/).parentElement).toHaveTextContent("33.3%");
 
     act(() => {
@@ -138,6 +142,7 @@ describe("AnalysisHistory quality summary cards", () => {
   it("shows no current quality summary for an entry from another terrain epoch", () => {
     setupCard({ terrain_id: entryKey.terrain_id, epoch: 2 });
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
 
     expect(screen.getByText(/no disponible/i)).toBeInTheDocument();
     expect(screen.getByText(/Recalcular el análisis/i)).toBeInTheDocument();
@@ -152,6 +157,7 @@ describe("AnalysisHistory quality summary cards", () => {
       metadata: { ...useTerrainStore.getState().metadata!, resolution: 4 },
     });
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
 
     expect(screen.getByText(/no disponible/i)).toBeInTheDocument();
     expect(screen.queryByText(/Cobertura útil/)).not.toBeInTheDocument();
@@ -163,8 +169,78 @@ describe("AnalysisHistory quality summary cards", () => {
       history: [{ ...useAnalysisStore.getState().history[0]!, snapshot: undefined }] as any,
     });
     render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
 
     expect(screen.getByText(/no disponible/i)).toBeInTheDocument();
     expect(screen.queryByText(/Cobertura útil/)).not.toBeInTheDocument();
   });
+});
+
+
+describe("historial compacto", () => {
+  it("muestra cifras y resumen en una fila cerrada", () => {
+    setupCard();
+    render(<AnalysisHistory />);
+    expect(screen.getByText("1 de 1 seleccionados")).toBeInTheDocument();
+    const row = screen.getByRole("button", { name: /R 1/ });
+    expect(row).toHaveTextContent("útil 33.3% · vis 66.7%");
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("quality-summary")).not.toBeInTheDocument();
+  });
+  it("selecciona con la casilla sin abrir el detalle", () => {
+    setupCard();
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("checkbox", { name: /seleccionar radar 1/i }));
+    expect(useAnalysisStore.getState().history[0]!.selected).toBe(false);
+    expect(screen.getByRole("button", { name: /R 1/ })).toHaveAttribute("aria-expanded", "false");
+  });
+  it("abre el detalle sin cambiar la selección", () => {
+    setupCard();
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: /R 1/ }));
+    expect(useAnalysisStore.getState().history[0]!.selected).toBe(true);
+    expect(screen.getByText(/E 0 · N 0 · Cota 1 m/)).toBeInTheDocument();
+    expect(screen.getByText("card")).toBeInTheDocument();
+    expect(screen.getByTestId("quality-summary")).toBeInTheDocument();
+  });
+  it("quita la entrada", () => {
+    setupCard();
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: "Quitar del historial" }));
+    expect(useAnalysisStore.getState().history).toHaveLength(0);
+  });
+  it("permite abrir y cerrar el detalle con teclado", () => {
+    setupCard();
+    render(<AnalysisHistory />);
+    const row = screen.getByRole("button", { name: /R 1/ });
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(row, { key: " " });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+  it("mantiene los colores del visor para la unión activa", () => {
+    setupCard();
+    const first = useAnalysisStore.getState().history[0]!;
+    useAnalysisStore.setState({
+      history: [first, { ...first, radarId: "otro", timestamp: "otro" }],
+      activeSnapshot: { ...cardSnapshot(), radars: [
+        { radarId: "otro", position: first.position },
+        { radarId: "test-radar", position: first.position },
+      ] } as any,
+    });
+    const { container } = render(<AnalysisHistory />);
+    const dots = container.querySelectorAll<HTMLElement>(".history-color");
+    expect(dots[0]).toHaveStyle({ backgroundColor: RADAR_COLORS[1] });
+    expect(dots[1]).toHaveStyle({ backgroundColor: RADAR_COLORS[0] });
+  });
+  it("borra todo sin cambiar el estado plegado persistido", () => {
+    setupCard();
+    localStorage.setItem("geotradar-collapse-history", "false");
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole("button", { name: "Borrar todo" }));
+    expect(useAnalysisStore.getState().history).toHaveLength(0);
+    expect(localStorage.getItem("geotradar-collapse-history")).toBe("false");
+    expect(screen.queryByRole("region", { name: /Historial/ })).not.toBeInTheDocument();
+  });
+
 });

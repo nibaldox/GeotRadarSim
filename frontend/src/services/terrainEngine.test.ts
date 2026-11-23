@@ -27,7 +27,7 @@ describe("synthetic terrain resource limits", () => {
     }
 
     expect(caught).toBeInstanceOf(RangeError);
-    expect(String(caught)).toMatch(/dimension|maximum/i);
+    expect(String(caught)).toMatch(/dimensi[óo]n|m[áa]ximo/i);
     expect(oversizedArrayAllocations).toBe(0);
   });
 
@@ -85,7 +85,7 @@ describe("synthetic terrain resource limits", () => {
   });
 
   it("rejects synthetic dimensions smaller than one grid interval", () => {
-    expect(() => generateSyntheticTerrain(1, 20, 30, 2)).toThrow(/at least 2.*nodes|one resolution/i);
+    expect(() => generateSyntheticTerrain(1, 20, 30, 2)).toThrow(/al menos una resoluci[óo]n/i);
   });
 
   it("rejects negative bowl depth", () => {

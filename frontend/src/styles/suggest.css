@@ -1,0 +1,48 @@
+/*
+ * U6 · «Sugerir ubicación» compacto. Reglas movidas desde index.css (WP15b) y ajustadas a la consola
+ * compacta: tokens de compact.css, una línea por sugerencia y el detalle a un clic.
+ */
+.suggest-positions { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.suggest-form { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.suggest-row { display: grid; grid-template-columns: 1fr 2fr; gap: 6px; }
+.suggest-form select, .suggest-form input[type="number"] { min-height: 28px; padding: 2px 6px; width: 100%; box-sizing: border-box; }
+.suggest-form label.suggest-check { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; }
+.suggest-note, .suggest-hint { font-size: 11px; color: var(--text-secondary); }
+.suggest-info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; margin-left: 4px; border-radius: 50%;
+  border: 1px solid var(--border-color); font-size: 9px; font-style: italic; text-transform: none;
+  color: var(--text-secondary); cursor: help;
+}
+.suggest-progress { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.suggest-phase { font-size: 11.5px; color: var(--text-secondary); }
+.suggest-bar { width: 100%; height: 4px; appearance: none; border: 0; border-radius: 2px; background: var(--border-color); overflow: hidden; }
+.suggest-bar::-webkit-progress-bar { background: var(--border-color); }
+.suggest-bar::-webkit-progress-value { background: var(--accent-color); }
+.suggest-bar::-moz-progress-bar { background: var(--accent-color); }
+.suggest-actions { display: flex; gap: 6px; }
+.suggest-confirm { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.suggest-error { font-size: 12px; color: var(--error, #e74c3c); }
+.suggest-results { display: flex; flex-direction: column; gap: 2px; }
+.suggest-results-head { display: flex; align-items: center; gap: 4px; }
+.suggest-item { display: flex; flex-direction: column; }
+.suggest-line {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 26px; padding: 2px 4px;
+  background: transparent; border: 0; border-radius: 4px; color: var(--text-primary);
+  font-family: var(--font-family); font-size: 12px; text-align: left; cursor: pointer;
+}
+.suggest-line:hover { background: var(--cs-hover); }
+.suggest-line:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 1px; }
+.suggest-line strong { font-weight: 600; }
+.suggest-line-figures { margin-left: auto; color: var(--text-secondary); font-family: var(--font-mono); font-size: 11px; }
+.suggest-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); }
+.suggest-detail { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 6px 18px; font-size: 11px; }
+.suggest-detail[hidden] { display: none; }
+.suggest-coords { font-family: var(--font-mono); }
+.suggest-notes { color: var(--text-secondary); }
+
+/* Radares | Objetivo: el objetivo necesita más ancho; en barras angostas van en una columna. */
+.suggest-row.field-row { grid-template-columns: minmax(0, 1fr) minmax(0, 3fr); }
+@container sidebar (max-width: 280px) {
+  .suggest-row.field-row { grid-template-columns: minmax(0, 1fr); }
+}

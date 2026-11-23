@@ -47,10 +47,21 @@ beforeEach(() => {
 });
 
 describe("VectorSynthesisPanel", () => {
+  it("empieza plegada y muestra los controles al abrirla", () => {
+    render(<VectorSynthesisPanel />);
+    const heading = screen.getByRole("button", { name: /Sensibilidad 3D/i });
+    expect(heading).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /Calcular mapa de sensibilidad/i })).not.toBeInTheDocument();
+    fireEvent.click(heading);
+    expect(heading).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /Calcular mapa de sensibilidad/i })).toBeInTheDocument();
+  });
+
   it("waits for the explicit calculate button instead of auto-running", () => {
     const compute = vi.fn().mockResolvedValue(undefined);
     useVectorStore.setState({ computeSensitivityMap: compute });
 
+    localStorage.setItem("geotradar-collapse-vector", "false");
     render(<VectorSynthesisPanel />);
 
     expect(compute).not.toHaveBeenCalled();
@@ -61,6 +72,7 @@ describe("VectorSynthesisPanel", () => {
   it("shows Sin datos when every cell has zero observers", () => {
     useVectorStore.setState({ sensitivityMap: sensitivityMap(Number.NaN, 0) });
 
+    localStorage.setItem("geotradar-collapse-vector", "false");
     render(<VectorSynthesisPanel />);
 
     expect(screen.getByRole("status")).toHaveTextContent(/Sin datos/i);
@@ -71,6 +83,7 @@ describe("VectorSynthesisPanel", () => {
   it("treats a measured zero as observed data, not as no-data", () => {
     useVectorStore.setState({ sensitivityMap: sensitivityMap(0, 1) });
 
+    localStorage.setItem("geotradar-collapse-vector", "false");
     render(<VectorSynthesisPanel />);
     expect(screen.getByRole("status")).toHaveTextContent(/1 celda con observación/i);
   });
@@ -79,6 +92,7 @@ describe("VectorSynthesisPanel", () => {
     const compute = vi.fn();
     useVectorStore.setState({ computeSensitivityMap: compute, sensitivityMap: sensitivityMap(0.5, 1) });
 
+    localStorage.setItem("geotradar-collapse-vector", "false");
     render(<VectorSynthesisPanel />);
 
     const incidence = screen.getByRole("button", { name: "Incidencia superficial" });

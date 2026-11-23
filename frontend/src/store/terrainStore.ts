@@ -46,6 +46,9 @@ export interface UploadPreview {
   span: { x: number; y: number; z: number };
 }
 
+/** How one terrain request ended (internal). */
+type TerrainRequestOutcome = "activated" | "superseded" | "failed";
+
 export interface TerrainState {
   metadata: DTMMetadata | null;
   grid: number[][] | null;
@@ -78,7 +81,7 @@ export interface TerrainState {
 }
 
 const errorMessage = (err: unknown): string =>
-  err instanceof Error ? err.message : "Unknown error";
+  err instanceof Error ? err.message : "Error desconocido.";
 
 export const useTerrainStore = create<TerrainState>((set, get) => {
   let latestRequestId = 0;
@@ -116,7 +119,7 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
       response.terrain_id !== expectedTerrainId ||
       response.metadata.terrain_id !== expectedTerrainId
     ) {
-      throw new Error("Terrain grid does not match the requested terrain");
+      throw new Error("La malla del terreno no coincide con el terreno solicitado.");
     }
 
     const epoch = get().terrainEpoch + 1;
@@ -137,33 +140,36 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
     requestId: number,
     previousKey: TerrainKey | null,
     metadata: DTMMetadata,
-  ) => {
+  ): Promise<TerrainRequestOutcome> => {
     try {
       const response = await apiGetTerrainGrid(metadata.terrain_id);
       if (requestId !== latestRequestId) {
         apiReleaseTerrain(metadata.terrain_id);
-        return;
+        return "superseded";
       }
       activateGrid(requestId, metadata.terrain_id, response);
+      return requestId === latestRequestId ? "activated" : "superseded";
     } catch (err) {
       apiReleaseTerrain(metadata.terrain_id);
       restorePreviousTerrain(requestId, previousKey, err);
+      return requestId === latestRequestId ? "failed" : "superseded";
     }
   };
 
   const uploadAndActivate = async (
     upload: () => Promise<DTMMetadata>,
-  ): Promise<void> => {
+  ): Promise<TerrainRequestOutcome> => {
     const { requestId, previousKey } = beginTransition();
     try {
       const metadata = await upload();
       if (requestId !== latestRequestId) {
         apiReleaseTerrain(metadata.terrain_id);
-        return;
+        return "superseded";
       }
-      await loadGridForTransition(requestId, previousKey, metadata);
+      return await loadGridForTransition(requestId, previousKey, metadata);
     } catch (err) {
       restorePreviousTerrain(requestId, previousKey, err);
+      return requestId === latestRequestId ? "failed" : "superseded";
     }
   };
 

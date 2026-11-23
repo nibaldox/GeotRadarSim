@@ -1,0 +1,38 @@
+/* Densidad exclusiva del resumen global; historial y sugerencias no cambian. */
+/* Cuerpo a 11 px como mínimo; la altura se compensa con interlineado y gaps ajustados. */
+.results-section { gap: 2px; font-size: 11px; line-height: 1.15; }
+.results-section .quality-summary-dense {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas: "coverage coverage" "target target" "quality quality" "visible visible" "bands bands" "area complete" "visibility visibility";
+  gap: 1px 6px;
+  font-size: 11px;
+  line-height: 1.15;
+}
+.results-section .quality-summary-dense > :nth-child(1) { grid-area: coverage; }
+.results-section .quality-summary-dense > :nth-child(2) { grid-area: target; }
+.results-section .quality-summary-dense > :nth-child(3) { grid-area: quality; }
+.results-section .quality-summary-dense > :nth-child(4) { grid-area: visible; }
+.results-section .quality-summary-dense > :nth-child(5) { grid-area: bands; }
+.results-section .quality-summary-dense > :nth-child(6) { grid-area: area; }
+.results-section .quality-summary-dense > :nth-child(7) { grid-area: complete; }
+.results-section .quality-summary-dense > :nth-child(8) { grid-area: visibility; }
+/* El nombre del objetivo se ve completo; se recortan los conteos. Si no caben juntos, los conteos
+   pasan a una segunda línea con elipsis. El texto completo está en `title`. */
+.results-section .quality-target-dense { display: flex; flex-wrap: wrap; min-width: 0; }
+.results-section .quality-target-dense > :first-child { flex: 0 1 auto; max-width: 100%; overflow-wrap: anywhere; }
+.results-section .quality-target-dense > :last-child { flex: 1 1 8em; min-width: 8em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.results-section [data-testid="quality-distribution-bar"] > div:last-child { flex-wrap: nowrap !important; gap: 8px !important; font-size: 11px !important; margin-top: 1px !important; }
+.results-section .aoi-coverage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 6px; margin-top: 1px; padding-top: 2px; }
+.results-section .aoi-coverage > strong { grid-column: 1; grid-row: 1; }
+.results-section .aoi-coverage > div:nth-child(2) { grid-column: 1; grid-row: 2; }
+.results-section .aoi-coverage > div:nth-child(3) { grid-column: 2; grid-row: 2; }
+.results-section .aoi-coverage > div:nth-child(4) { grid-column: 2; grid-row: 1; }
+
+/* Si falta distribución no hay barra y los tres últimos nodos se desplazan. */
+.results-section .quality-summary-dense:not(:has([data-testid="quality-distribution-bar"])) {
+  grid-template-areas: "coverage coverage" "target target" "quality quality" "visible visible" "area complete" "visibility visibility";
+}
+.results-section .quality-summary-dense:not(:has([data-testid="quality-distribution-bar"])) > :nth-child(5) { grid-area: area; }
+.results-section .quality-summary-dense:not(:has([data-testid="quality-distribution-bar"])) > :nth-child(6) { grid-area: complete; }
+.results-section .quality-summary-dense:not(:has([data-testid="quality-distribution-bar"])) > :nth-child(7) { grid-area: visibility; }

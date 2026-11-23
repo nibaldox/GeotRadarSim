@@ -242,7 +242,7 @@ describe("terrainWorker — STL parsing", () => {
   it("rejects non-positive resolution before allocating a grid", async () => {
     const result = await runWorker(encodeAscii(asciiStl(SURFACE)), 0);
 
-    expect(result.error).toMatch(/resolution/i);
+    expect(result.error).toMatch(/resoluci[óo]n/i);
     expect(result.grid).toBeUndefined();
   });
 
@@ -318,7 +318,7 @@ describe("terrainWorker — STL parsing", () => {
 
     const result = await runWorker(encodeAscii(asciiStl(narrowSurface)), 3);
 
-    expect(result.error).toMatch(/at least 2.*nodes|one resolution/i);
+    expect(result.error).toMatch(/al menos una resoluci[óo]n/i);
     expect(result.grid).toBeUndefined();
   });
 
@@ -328,7 +328,7 @@ describe("terrainWorker — STL parsing", () => {
     ];
     const result = await runWorker(encodeAscii(asciiStl(degenerateSurface)), Number.MIN_VALUE);
 
-    expect(result.error).toMatch(/resolution.*area|area.*resolution/i);
+    expect(result.error).toMatch(/resoluci[óo]n.*[áa]rea|[áa]rea.*resoluci[óo]n/i);
     expect(result.grid).toBeUndefined();
   });
 
@@ -338,7 +338,7 @@ describe("terrainWorker — STL parsing", () => {
     ];
     const result = await runWorker(encodeAscii(asciiStl(degenerateSurface)), 1e200);
 
-    expect(result.error).toMatch(/resolution.*area|area.*resolution/i);
+    expect(result.error).toMatch(/resoluci[óo]n.*[áa]rea|[áa]rea.*resoluci[óo]n/i);
     expect(result.grid).toBeUndefined();
   });
 
@@ -349,7 +349,7 @@ describe("terrainWorker — STL parsing", () => {
 
     const result = await runWorker(encodeAscii(asciiStl(wideSurface, "axis-limit")));
 
-    expect(result.error).toMatch(/terrain grid dimension.*16,384|dimension.*16,384/i);
+    expect(result.error).toMatch(/dimensi[óo]n.*16,384/i);
     expect(result.grid).toBeUndefined();
   });
 
@@ -360,7 +360,7 @@ describe("terrainWorker — STL parsing", () => {
 
     const result = await runWorker(encodeAscii(asciiStl(wideSurface, "wide")));
 
-    expect(result.error).toMatch(/grid exceeds the maximum size/i);
+    expect(result.error).toMatch(/la malla supera el tamaño máximo/i);
     expect(result.grid).toBeUndefined();
   });
 });

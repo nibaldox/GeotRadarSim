@@ -12,64 +12,18 @@
  * report. Legacy exports keep working without it and never invent one.
  */
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
+import "../styles/panels.css";
 import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { useVectorStore } from "../store/vectorStore";
-import { useQualityPolicyStore } from "../store/qualityPolicyStore";
-import { exportPDF, exportCSV } from "../services/api";
 import { metricLabel } from "../utils/qualityMetrics";
-import { buildQualityExportContext, metricForVisualizationMode } from "../utils/qualityReport";
-import type { QualityExportContext } from "../utils/qualityReport";
-import type { AnalysisSnapshot, LOSResponse } from "../types/api";
-
-const sameTerrainKey = (
-  left: Readonly<{ terrain_id: string; epoch: number }> | null,
-  right: Readonly<{ terrain_id: string; epoch: number }> | null,
-): boolean => !!left && !!right && left.terrain_id === right.terrain_id && left.epoch === right.epoch;
-
-function cloneAnalysisSnapshot(snapshot: AnalysisSnapshot): AnalysisSnapshot {
-  return {
-    terrainKey: { ...snapshot.terrainKey },
-    analysisId: snapshot.analysisId,
-    sourceAnalysisIds: [...snapshot.sourceAnalysisIds],
-    generation: snapshot.generation,
-    radars: snapshot.radars.map((radar) => ({
-      radarId: radar.radarId,
-      radarModelId: radar.radarModelId,
-      position: { ...radar.position },
-      overrides: { ...radar.overrides },
-    })),
-  };
-}
-
-function isCurrentExport(snapshot: AnalysisSnapshot, result: LOSResponse): boolean {
-  const analysis = useAnalysisStore.getState();
-  const terrain = useTerrainStore.getState();
-  return analysis.activeSnapshot === snapshot && analysis.losResult === result &&
-    !analysis.terrainTransitioning &&
-    sameTerrainKey(snapshot.terrainKey, analysis.terrainKey) &&
-    sameTerrainKey(snapshot.terrainKey, terrain.terrainKey) &&
-    terrain.metadata?.terrain_id === snapshot.terrainKey.terrain_id;
-}
-
-/**
- * Capture the quality-report context synchronously at the click from the
- * current metric/policy/terrain grid. Returns null (legacy export) for
- * unversioned results or stale terrain metadata.
- */
-function captureQualityContext(snapshot: AnalysisSnapshot, result: LOSResponse): QualityExportContext | null {
-  const terrain = useTerrainStore.getState();
-  return buildQualityExportContext({
-    snapshot,
-    losResult: result,
-    metric: metricForVisualizationMode(useVectorStore.getState().visualizationMode),
-    policy: useQualityPolicyStore.getState().policy,
-    terrainGrid: terrain.grid,
-    terrainMetadata: terrain.metadata,
-    terrainKey: terrain.terrainKey,
-  });
-}
+import { metricForVisualizationMode } from "../utils/qualityReport";
+import { ExportError, isCurrentExport, prepareExport, sameTerrainKey } from "../services/exportActions";
+import type { ExportFormat } from "../services/exportActions";
+import { prepareManagementReport } from "../report/reportAction";
+import { ReportError } from "../report/types";
+import { reportStateSignature } from "../report/reportModel";
 
 export function ExportPanel() {
   const losResult = useAnalysisStore((s) => s.losResult);
@@ -85,163 +39,67 @@ export function ExportPanel() {
     terrainId === activeSnapshot.terrainKey.terrain_id;
   const isV2Result = losResult?.quality_model === "geometric-v2";
 
-  // Collapsible state
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    if (typeof localStorage !== "undefined" && localStorage.getItem) {
-      return localStorage.getItem("geotradar-collapse-export") === "true";
-    }
-    return false;
-  });
-
-  const toggleCollapse = useCallback(() => {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      if (typeof localStorage !== "undefined" && localStorage.setItem) {
-        localStorage.setItem("geotradar-collapse-export", String(next));
+  const handleExport = async (format: ExportFormat) => {
+    try {
+      const prepared = await prepareExport(format);
+      if (!isCurrentExport(prepared.provenance.snapshot, prepared.provenance.result)) return;
+      try {
+        downloadBlob(prepared.blob, prepared.filename);
+      } catch (error) {
+        if (!isCurrentExport(prepared.provenance.snapshot, prepared.provenance.result)) return;
+        if (format === "png") throw error;
+        throw new ExportError("EXPORT_FAILED", error);
       }
-      return next;
-    });
-  }, []);
-
-  // ─── PDF Export ───────────────────────────────────────────────────────────
-
-  const handleExportPDF = async () => {
-    const snapshot = useAnalysisStore.getState().activeSnapshot;
-    const result = useAnalysisStore.getState().losResult;
-    if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
-
-    const qualityContext = captureQualityContext(snapshot, result);
-    try {
-      const exportableSnapshot = cloneAnalysisSnapshot(snapshot);
-      const blob = await exportPDF(exportableSnapshot, result, qualityContext ?? undefined);
-      if (!isCurrentExport(snapshot, result)) return;
-      downloadBlob(blob, `coverage-report-${snapshot.terrainKey.terrain_id}.pdf`);
     } catch (err) {
-      if (!isCurrentExport(snapshot, result)) return;
-      console.error("PDF export failed:", err);
-      alert("Failed to export PDF report");
+      if (!(err instanceof ExportError)) throw err;
+      if (err.code === "CANVAS_NOT_FOUND") {
+        alert("No se encontró el visor. Asegúrate de que el terreno esté visible.");
+      } else if (err.code === "EXPORT_FAILED" && format !== "png") {
+        console.error(`${format.toUpperCase()} export failed:`, err.cause);
+        alert(format === "pdf" ? "No se pudo exportar el PDF técnico" : "No se pudo exportar el CSV");
+      }
     }
   };
 
-  // ─── CSV Export ───────────────────────────────────────────────────────────
-
-  const handleExportCSV = async () => {
-    const snapshot = useAnalysisStore.getState().activeSnapshot;
-    const result = useAnalysisStore.getState().losResult;
-    if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
-
-    const qualityContext = captureQualityContext(snapshot, result);
+  const [reportTitle, setReportTitle] = useState("");
+  const [reportGenerating, setReportGenerating] = useState(false);
+  const handleReport = async () => {
+    if (reportGenerating) return;
+    setReportGenerating(true);
+    const { activeSnapshot: snapshot, losResult: result } = useAnalysisStore.getState();
     try {
-      const exportableSnapshot = cloneAnalysisSnapshot(snapshot);
-      const blob = await exportCSV(exportableSnapshot, result, qualityContext ?? undefined);
-      if (!isCurrentExport(snapshot, result)) return;
-      downloadBlob(blob, `coverage-data-${snapshot.terrainKey.terrain_id}.csv`);
+      const signature = reportStateSignature();
+      const prepared = await prepareManagementReport({ title: reportTitle });
+      if (!snapshot || !result || !isCurrentExport(snapshot, result) || signature !== reportStateSignature()) {
+        throw new ReportError("STALE", "El análisis cambió durante la generación. Vuelve a generar el informe.");
+      }
+      downloadBlob(prepared.blob, prepared.filename);
     } catch (err) {
-      if (!isCurrentExport(snapshot, result)) return;
-      console.error("CSV export failed:", err);
-      alert("Failed to export CSV data");
+      if (err instanceof ReportError) alert(err.message);
+      else {
+        console.error("No se pudo generar el informe.", err);
+        alert("No se pudo generar el informe. Inténtalo nuevamente.");
+      }
+    } finally {
+      setReportGenerating(false);
     }
-  };
-
-  // ─── Image Export ─────────────────────────────────────────────────────────
-
-  const handleExportImage = () => {
-    const snapshot = useAnalysisStore.getState().activeSnapshot;
-    const result = useAnalysisStore.getState().losResult;
-    if (!snapshot || !result || !isCurrentExport(snapshot, result)) return;
-    const canvas = document.querySelector("canvas");
-    if (!canvas) {
-      alert("Canvas not found. Make sure the terrain is visible.");
-      return;
-    }
-    canvas.toBlob((blob) => {
-      if (!blob || !isCurrentExport(snapshot, result)) return;
-      downloadBlob(blob, `terrain-snapshot-${snapshot.terrainKey.terrain_id}.png`);
-    }, "image/png");
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="glass-panel">
-      <div 
-        onClick={toggleCollapse}
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
-      >
-        <h3 style={{ margin: 0 }}>Export</h3>
-        <svg 
-          viewBox="0 0 24 24" 
-          width="16" 
-          height="16" 
-          fill="none" 
-          stroke="var(--text-secondary)"
-          strokeWidth="2.5" 
-          strokeLinecap="round" 
-          strokeLinejoin="round"
-          style={{ 
-            transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
-            transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
-          }}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+    <div className="glass-panel panel-fields panel-export" aria-label="Exportar">
+      <label className="cs-label" htmlFor="management-report-title">Título del informe (opcional)</label>
+      <input id="management-report-title" value={reportTitle} maxLength={80} onChange={(event) => setReportTitle(event.target.value)} />
+      <button className="btn-compact primary" disabled={!hasAnalysis || reportGenerating} onClick={() => void handleReport()}>{reportGenerating ? "Generando…" : "Informe para reunión"}</button>
+      <div className="panel-export-row field-row">
+        <button disabled={!hasAnalysis} onClick={() => void handleExport("pdf")} className="btn-compact">PDF técnico</button>
+        <button disabled={!hasAnalysis} onClick={() => void handleExport("csv")} className="btn-compact" title={isV2Result ? `Los informes PDF y CSV incluyen cobertura útil y calidad (métrica: ${metricLabel(metricForVisualizationMode(visualizationMode))}).` : "Resultado sin modelo de calidad v2: los informes no incluyen cobertura útil y conservan la visibilidad (candidatos)."}>CSV</button>
+        <button disabled={!hasAnalysis} onClick={() => void handleExport("png")} className="btn-compact">PNG</button>
       </div>
-
-      {!isCollapsed && (
-        <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
-          {hasAnalysis ? (
-            <div className="text-sm" style={{ marginBottom: "2px" }}>
-              <div><span className="text-value">Visibilidad (candidatos):</span> {formatPercent(losResult!.coverage_pct)}</div>
-              <div><span className="text-value">Completeness:</span> {formatPercent(losResult!.completeness_pct)}</div>
-              <div><span className="text-value">Visible area:</span> {Number.isFinite(losResult!.visible_area_m2) ? `${losResult!.visible_area_m2.toFixed(0)} m²` : "Sin datos"}</div>
-              <div><span className="text-value">Shadow zones:</span> {losResult!.shadow_zones.length}</div>
-              {isV2Result ? (
-                <div>
-                  Los informes PDF y CSV incluyen cobertura útil y calidad (métrica: {metricLabel(metricForVisualizationMode(visualizationMode))}).
-                </div>
-              ) : (
-                <div>
-                  Resultado sin modelo de calidad v2: los informes no incluyen cobertura útil y conservan la visibilidad (candidatos).
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm" style={{ marginBottom: "2px", margin: "0 0 4px 0" }}>
-              No analysis data. Run LOS analysis first.
-            </p>
-          )}
-
-          <div className="flex-col">
-            <button
-              disabled={!hasAnalysis}
-              onClick={handleExportPDF}
-              className="btn-secondary"
-            >
-              📄 PDF Report
-            </button>
-            <button
-              disabled={!hasAnalysis}
-              onClick={handleExportCSV}
-              className="btn-secondary"
-            >
-              📊 CSV Data
-            </button>
-            <button
-              disabled={!hasAnalysis}
-              onClick={handleExportImage}
-              className="btn-secondary"
-            >
-              🖼 Image (PNG)
-            </button>
-          </div>
-        </div>
-      )}
+      {!hasAnalysis && <span className="panel-muted">Aún no hay análisis. Ubica un radar y calcula la cobertura.</span>}
     </div>
   );
-}
-
-function formatPercent(value: number | null): string {
-  return value !== null && Number.isFinite(value) ? `${value.toFixed(1)}%` : "Sin datos";
 }
 
 function downloadBlob(blob: Blob, filename: string): void {

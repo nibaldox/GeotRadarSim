@@ -2,10 +2,12 @@
 
 Desde `frontend/`, después de `npm ci` y `CARGO_TARGET_DIR=... npm run build:wasm`. Ejecuta los handlers reales en Node/Vitest; no mide IPC, structured clone, hilos, navegador ni GPU. El terreno y STL siempre son TS y se calculan una vez como contexto. Sintético: 600×900, una observación. STL: GroundProbe a 25/50/75 %, IBIS y Reutech a 50 %, y tres observaciones para sensibilidad. La resolución fina solo tiene terreno, como W1-A.
 
+`smoke`, `golden` y `full` leen el ancla congelada desde `GEOT_W1A_BASELINE` (ruta a `w1a-frozen-ab195fe/golden-manifest.json`, que no está versionada); sin esa variable abortan. `freeze` no la lee.
+
 ```sh
-GEOT_BENCH_MODE=smoke npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
-GEOT_BENCH_MODE=golden GEOT_BENCH_STL=/ruta/f8_relimit.stl npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
-GEOT_BENCH_MODE=full GEOT_BENCH_STL=/ruta/f8_relimit.stl GEOT_BENCH_OUT=/ruta/salida npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
+GEOT_W1A_BASELINE=/ruta/golden-manifest.json GEOT_BENCH_MODE=smoke npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
+GEOT_W1A_BASELINE=/ruta/golden-manifest.json GEOT_BENCH_MODE=golden GEOT_BENCH_STL=/ruta/f8_relimit.stl npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
+GEOT_W1A_BASELINE=/ruta/golden-manifest.json GEOT_BENCH_MODE=full GEOT_BENCH_STL=/ruta/f8_relimit.stl GEOT_BENCH_OUT=/ruta/salida npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
 GEOT_BENCH_MODE=freeze GEOT_BENCH_STL=/ruta/f8_relimit.stl GEOT_BENCH_OUT=/ruta/salida npx vitest run --config bench/vitest.config.ts bench/baseline.test.ts
 ```
 

@@ -1,0 +1,48 @@
+/* Controles compactos de los paneles Radar, Sensibilidad, Ajustes y Exportar. */
+.panel-fields { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.panel-fields input, .panel-fields select { box-sizing: border-box; min-width: 0; width: 100%; min-height: 28px; padding: 3px 5px; font-size: 11px; }
+.panel-muted, .panel-status { font-size: 10.5px; color: var(--text-secondary); }
+.panel-status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-overrides { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.panel-overrides label, .panel-position label, .panel-policy-row label { display: flex; flex-direction: column; min-width: 0; gap: 2px; color: var(--text-secondary); font-size: 10px; }
+.panel-position { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 4px; align-items: end; }
+.panel-position button { width: auto; padding-inline: 6px; font-size: 10px; }
+.panel-info-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.panel-info { position: relative; color: var(--text-secondary); font-size: 11px; }
+.panel-info summary { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border-color); border-radius: 50%; cursor: pointer; list-style: none; }
+.panel-info summary::-webkit-details-marker { display: none; }
+.panel-info[open] { z-index: 6; }
+.panel-info > div { position: relative; width: 220px; padding: 6px; background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary); }
+.panel-segments, .panel-export-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.panel-segments button { font-size: 10px; padding-inline: 3px; }
+.panel-segments button[aria-pressed="true"] { border-color: var(--accent-color); color: var(--accent-color); }
+.panel-policy-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; }
+.panel-policy-row label input { width: 100% !important; }
+.panel-policy-row button { width: auto; font-size: 10px; padding-inline: 5px; }
+.panel-export-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Subgrupo de parámetros: no añade padding de sección a la fila plegada. */
+[data-section="radar-params"] { border: 0; }
+[data-section="radar-params"] > .cs-section-header,
+[data-section="radar-params"] > .cs-section-header .cs-section-toggle { min-height: 25px; }
+[data-section="radar-params"] > .cs-section-header .cs-section-toggle { padding: 0; }
+[data-section="radar-params"] > .cs-section-body { padding: 2px 0 4px; gap: 6px; }
+[data-section="radar-params"] > .cs-section-header .cs-section-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+[data-section="radar-params"] > .cs-section-header .cs-section-summary { font-size: 10.5px; }
+
+/* Filas de botones del pie y segmentos: una línea y la misma altura en cualquier ancho. */
+.panel-export-row .btn-compact { white-space: nowrap; padding-inline: 4px; }
+@container sidebar (max-width: 280px) {
+  .panel-segments.field-row { grid-template-columns: minmax(0, 1fr); }
+  .panel-export-row .btn-compact { font-size: 11px; padding-inline: 2px; }
+}
+
+/* Barra de 300 px o menos: Posición pasa a 2 columnas (E | N, luego Cota | Aplicar), para que quepan
+   coordenadas UTM de 7 dígitos con el control de flechas; «Restablecer» baja a su propia fila a todo el
+   ancho, para que Media y Alta tengan ancho suficiente. */
+@container sidebar (max-width: 300px) {
+  .panel-position.field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-position.field-row > button { width: 100%; }
+  .panel-policy-row.field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-policy-row.field-row > button { grid-column: 1 / -1; width: 100%; }
+}

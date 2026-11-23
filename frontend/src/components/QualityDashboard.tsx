@@ -9,69 +9,38 @@
  * result provenance is required (a missing snapshot or terrain key is not proof
  * of currency); loading and terrain transitions pause the summary instead of
  * showing stale numbers.
+ *
+ * The figures come from `useGlobalSummary` (hooks/useGlobalQuality.ts), the
+ * same source the viewer KPI bar reads. «Sugerir ubicación» is mounted by
+ * App.tsx in its own sidebar slot, not here.
  */
 
-import { useMemo } from "react";
-import { useAnalysisStore } from "../store/analysisStore";
-import { useTerrainStore } from "../store/terrainStore";
-import { useVectorStore } from "../store/vectorStore";
-import { useQualityPolicyStore } from "../store/qualityPolicyStore";
-import { computeQualitySummary, metricLabel } from "../utils/qualityMetrics";
-import type { QualityMetric, QualitySummary } from "../utils/qualityMetrics";
+import { metricLabel } from "../utils/qualityMetrics";
+import { useGlobalSummary } from "../hooks/useGlobalQuality";
 import { QualitySummaryView } from "./QualitySummaryView";
-
-const metricForMode = (mode: "QUALITY" | "SENSITIVITY"): QualityMetric =>
-  mode === "SENSITIVITY" ? "PROJECTION" : "INCIDENCE";
+import { AoiCoverageView } from "./AoiCoverageView";
+import "../styles/results.css";
 
 export function QualityDashboard() {
-  const policy = useQualityPolicyStore((s) => s.policy);
-  const visualizationMode = useVectorStore((s) => s.visualizationMode);
-  const terrainGrid = useTerrainStore((s) => s.grid);
-  const terrainMetadata = useTerrainStore((s) => s.metadata);
-  const terrainKey = useTerrainStore((s) => s.terrainKey);
-  const losResult = useAnalysisStore((s) => s.losResult);
-  const activeSnapshot = useAnalysisStore((s) => s.activeSnapshot);
-  const loading = useAnalysisStore((s) => s.loading);
-  const multiLoading = useAnalysisStore((s) => s.multiLoading);
-  const terrainTransitioning = useAnalysisStore((s) => s.terrainTransitioning);
-  const metric: QualityMetric = metricForMode(visualizationMode);
-
-  const guarded = loading || multiLoading || terrainTransitioning;
-
-  const summary: QualitySummary | null = useMemo(() => {
-    if (guarded || !losResult || !terrainGrid || !terrainMetadata) return null;
-    const resultKey = activeSnapshot?.terrainKey ?? null;
-    // Missing snapshot or terrain key is not proof of currency.
-    if (!terrainKey || !resultKey) return null;
-    return computeQualitySummary({
-      metric,
-      policy,
-      losResult,
-      terrainGrid,
-      // Expected dimensions and resolution come from the ACTIVE metadata.
-      terrainResolution: terrainMetadata.resolution,
-      terrainKey,
-      snapshot: activeSnapshot,
-    });
-  }, [guarded, losResult, activeSnapshot, terrainGrid, terrainMetadata, terrainKey, metric, policy]);
+  const { summary, guarded, metric, visibility, completeness, hasResult } = useGlobalSummary();
 
   return (
     <section
       aria-label="Resumen global de calidad"
       data-testid="quality-global-summary"
-      className="glass-panel"
+      className="quality-dashboard results-section"
     >
-      <h3 style={{ margin: "0 0 8px 0" }}>Resumen global de calidad</h3>
       {guarded ? (
         <div role="status" data-testid="quality-global-summary-guarded">
           Resumen de calidad en pausa: análisis en curso o terreno en transición.
         </div>
-      ) : losResult ? (
+      ) : hasResult ? (
         <QualitySummaryView
+          variant="dense"
           summary={summary}
           metricLabel={metricLabel(metric)}
-          coveragePct={losResult.coverage_pct ?? null}
-          completenessPct={losResult.completeness_pct ?? null}
+          coveragePct={visibility}
+          completenessPct={completeness}
         />
       ) : (
         <div>
@@ -79,6 +48,7 @@ export function QualityDashboard() {
           del historial para ver el resumen de calidad.
         </div>
       )}
+      <AoiCoverageView current={!!summary && !guarded} />
     </section>
   );
 }

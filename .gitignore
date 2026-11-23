@@ -31,3 +31,6 @@ Thumbs.db
 venv/
 # STL test surfaces
 *.stl
+
+# Local agent CLI state
+.antigravitycli/

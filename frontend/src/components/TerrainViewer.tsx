@@ -6,7 +6,8 @@
  * Uses OrbitControls for camera manipulation.
  */
 
-import { useRef, useMemo, useEffect, useState } from "react";
+import { useRef, useMemo, useEffect, useState, useId } from "react";
+import "../styles/legend.css";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import * as THREE from "three";
@@ -18,6 +19,8 @@ import { useQualityPolicyStore } from "../store/qualityPolicyStore";
 import { formatBandRange } from "../utils/qualityMetrics";
 import type { QualityBand, QualityPolicy } from "../utils/qualityMetrics";
 import { ShadowOverlay } from "./ShadowOverlay";
+import { AoiOverlay } from "./AoiOverlay";
+import { useAoiStore } from "../store/aoiStore";
 import type { Point3D } from "../types/api";
 import type { TerrainKey } from "../store/analysisStore";
 
@@ -26,7 +29,7 @@ interface TerrainMeshProps {
   resolution: number;
   showShadowOverlay: boolean;
   onTerrainClick?: (point: { x: number; y: number; z: number }) => void;
-  activeTool: "PAN" | "ADD_RADAR";
+  activeTool: "PAN" | "ADD_RADAR" | "AOI";
 }
 
 /** Band swatch colors shared by both layers: low/red, medium/yellow, high/green. */
@@ -36,31 +39,12 @@ const BAND_SWATCH: Record<QualityBand, string> = {
   high: "hsl(140, 90%, 45%)",
 };
 
-/** One configured category row shared by the incidence and projection legends. */
-function legendBandRow(
-  band: QualityBand,
-  policy: QualityPolicy,
-  labelEn: string,
-  labelEs: string,
-  descEn: string,
-  descEs: string,
-) {
-  const range = formatBandRange(band, policy);
+/** Compact configured category, with its policy range available on hover. */
+function legendBandRow(band: QualityBand, policy: QualityPolicy, label: string) {
   return (
-    <div className="hud-legend-row" key={band}>
+    <div className="hud-legend-row" key={band} title={`${label} (${formatBandRange(band, policy)})`}>
       <div className="hud-legend-color" style={{ background: BAND_SWATCH[band] }} />
-      <div>
-        <span className="hud-legend-label">
-          <span lang="en">{labelEn} ({range})</span>
-          {" / "}
-          <span lang="es">{labelEs} ({range})</span>
-        </span>
-        <div className="hud-legend-desc">
-          <span lang="en">{descEn}</span>
-          {" / "}
-          <span lang="es">{descEs}</span>
-        </div>
-      </div>
+      <span className="hud-legend-label">{label}</span>
     </div>
   );
 }
@@ -199,9 +183,22 @@ function TerrainMesh({
     <group>
       <mesh
         ref={meshRef}
+        name="aoi-terrain-mesh"
         geometry={geometry}
         castShadow
         receiveShadow
+        onClick={(e) => {
+          if (activeTool !== "AOI" || e.delta > 5) return;
+          e.stopPropagation();
+          const state = useAoiStore.getState();
+          const metadata = useTerrainStore.getState().metadata;
+          if (state.drawing && metadata && e.nativeEvent.detail < 2) {
+            state.addVertex({ x: e.point.x + metadata.bounds.min_x, y: metadata.bounds.min_y - e.point.z });
+          }
+        }}
+        onDoubleClick={(e) => {
+          if (activeTool === "AOI") { e.stopPropagation(); useAoiStore.getState().closePolygon(); }
+        }}
         onPointerDown={(e) => {
           e.stopPropagation();
           pointerDownPos.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
@@ -396,6 +393,7 @@ function Scene({
   onCameraViewApplied,
 }: SceneProps) {
   const { camera } = useThree();
+  const hasAoiVertices = useAoiStore(s => s.vertices.length > 0);
   const controlsRef = useRef<any>(null);
  
   // Auto-fit camera to terrain extent on first load
@@ -458,8 +456,9 @@ function Scene({
         onTerrainClick={onTerrainClick}
         activeTool={activeTool}
       />
+      {hasAoiVertices && <AoiOverlay active={activeTool === "AOI"} />}
       <RadarMarkers />
-      <OrbitControls ref={controlsRef} makeDefault />
+      <OrbitControls ref={controlsRef} makeDefault enabled={activeTool !== "AOI"} />
       
       <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
         <GizmoViewport
@@ -486,22 +485,41 @@ export function TerrainViewer({
   const resolution = useTerrainStore((s) => s.metadata?.resolution ?? 2.0);
 
   // Tools state (PAN is safe, ADD_RADAR places radars, SELECT_CELL simulates vector landslides)
-  const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR">("PAN");
+  const [activeTool, setActiveTool] = useState<"PAN" | "ADD_RADAR" | "AOI">("PAN");
   const [cameraView, setCameraView] = useState<"HOME" | "TOP" | "FRONT" | "SIDE" | null>(null);
   const visualizationMode = useVectorStore((s) => s.visualizationMode);
   const policy = useQualityPolicyStore((s) => s.policy);
 
-  // Tool explanations mapping
-  const toolExplanations = {
-    PAN: {
-      title: "Safe Navigation Mode",
-      desc: "Rotación libre y encuadre seguro de cámara. Clic izquierdo para orbitar, Clic derecho para encuadre (Pan), Scroll para Zoom."
-    },
-    ADD_RADAR: {
-      title: "Radar Placement Mode",
-      desc: "Haz clic izquierdo sobre cualquier celda del terreno 3D para desplegar un radar y proyectar su raycasting inmediatamente."
-    }
-  };
+  const aoi = useAoiStore();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && useAoiStore.getState().drawing) { useAoiStore.getState().clear(); setActiveTool("PAN"); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const [legendOpen, setLegendOpen] = useState(false);
+  const legendRef = useRef<HTMLDivElement>(null);
+  const infoButtonRef = useRef<HTMLButtonElement>(null);
+  const legendInfoId = useId();
+  useEffect(() => {
+    if (!legendOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!legendRef.current?.contains(event.target as Node)) setLegendOpen(false);
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLegendOpen(false);
+        infoButtonRef.current?.focus();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [legendOpen]);
 
   if (!grid || grid.length === 0) {
     return (
@@ -511,10 +529,10 @@ export function TerrainViewer({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#1a1a2e",
-        color: "#aaa",
+        backgroundColor: "var(--sidebar-bg)",
+        color: "var(--text-secondary)",
       }}>
-        <p>No terrain loaded. Generate synthetic terrain or upload a DXF file.</p>
+        <p>Sin terreno. Carga un STL o DXF, o genera un terreno sintético.</p>
       </div>
     );
   }
@@ -537,14 +555,14 @@ export function TerrainViewer({
       </Canvas>
 
       {/* AutoCAD-Style Floating Toolbar */}
-      <div className="autocad-toolbar" aria-label="AutoCAD Navigation Controls">
+      <div className="autocad-toolbar" aria-label="Controles del visor">
         {/* Interaction Tools Section */}
         <div className="toolbar-section">
-          <div className="toolbar-section-title">Tools</div>
+          <div className="toolbar-section-title">Herramientas</div>
           <button
             className={`toolbar-btn ${activeTool === "PAN" ? "active" : ""}`}
-            onClick={() => setActiveTool("PAN")}
-            aria-label="Safe Navigation Mode"
+            onClick={() => { if (useAoiStore.getState().drawing) useAoiStore.getState().clear(); setActiveTool("PAN"); }}
+            aria-label="Navegar"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="5 9 2 12 5 15" />
@@ -554,12 +572,12 @@ export function TerrainViewer({
               <line x1="2" y1="12" x2="22" y2="12" />
               <line x1="12" y1="2" x2="12" y2="22" />
             </svg>
-            <span className="tooltip">Navigate (Safe Pan/Orbit)</span>
+            <span className="tooltip">Navegar (mover y orbitar)</span>
           </button>
           <button
             className={`toolbar-btn ${activeTool === "ADD_RADAR" ? "active" : ""}`}
-            onClick={() => setActiveTool("ADD_RADAR")}
-            aria-label="Radar Placement Mode"
+            onClick={() => { if (useAoiStore.getState().drawing) useAoiStore.getState().clear(); setActiveTool("ADD_RADAR"); }}
+            aria-label="Agregar radar"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 13v7" />
@@ -569,31 +587,35 @@ export function TerrainViewer({
               <path d="M8 6a5 5 0 0 1 8 0" strokeDasharray="2,2" />
               <path d="M6 3a9 9 0 0 1 12 0" />
             </svg>
-            <span className="tooltip">Place Radar (Click terrain)</span>
+            <span className="tooltip">Agregar radar (clic en el terreno)</span>
           </button>
+          <button className={`toolbar-btn ${activeTool === "AOI" ? "active" : ""}`} aria-label="Área a monitorear" onClick={() => { setActiveTool("AOI"); if (!useAoiStore.getState().polygon) useAoiStore.getState().startDrawing(); }}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 18L6 5l12-2 3 13-9 5z"/><circle cx="6" cy="5" r="2"/></svg><span className="tooltip">Área a monitorear</span>
+          </button>
+          {(aoi.polygon || aoi.drawing) && <button className="toolbar-btn aoi-clear" aria-label="Borrar área" title="Borrar área" onClick={() => { aoi.clear(); setActiveTool("PAN"); }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" /></svg><span className="tooltip">Borrar área</span></button>}
         </div>
 
         <div className="toolbar-divider" />
 
         {/* Camera Preset Angles Section */}
         <div className="toolbar-section">
-          <div className="toolbar-section-title">Views</div>
+          <div className="toolbar-section-title">Vistas</div>
           <button
             className="toolbar-btn"
             onClick={() => setCameraView("HOME")}
-            aria-label="Isometric Home View"
+            aria-label="Vista isométrica"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2L2 7l10 5 10-5-10-5z" />
               <path d="M2 7v10l10 5V12L2 7z" />
               <path d="M22 7v10l-10 5V12l10-5z" />
             </svg>
-            <span className="tooltip">Home View (Isometric)</span>
+            <span className="tooltip">Vista isométrica</span>
           </button>
           <button
             className="toolbar-btn"
             onClick={() => setCameraView("TOP")}
-            aria-label="Top Plan View"
+            aria-label="Vista en planta"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -604,12 +626,12 @@ export function TerrainViewer({
               <line x1="12" y1="17" x2="12" y2="7" stroke="var(--accent-color)" strokeWidth="2.5" />
               <polyline points="9 10 12 7 15 10" stroke="var(--accent-color)" strokeWidth="2.5" />
             </svg>
-            <span className="tooltip">Top View (Plan/North)</span>
+            <span className="tooltip">Vista en planta</span>
           </button>
           <button
             className="toolbar-btn"
             onClick={() => setCameraView("FRONT")}
-            aria-label="Front Elevation View"
+            aria-label="Vista frontal"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="2" y1="20" x2="22" y2="20" />
@@ -617,181 +639,66 @@ export function TerrainViewer({
               <line x1="12" y1="2" x2="12" y2="6" strokeWidth="2" />
               <polyline points="9 4 12 6 15 4" strokeWidth="2" />
             </svg>
-            <span className="tooltip">Front View (Elevation)</span>
+            <span className="tooltip">Vista frontal</span>
           </button>
           <button
             className="toolbar-btn"
             onClick={() => setCameraView("SIDE")}
-            aria-label="Side Profile View"
+            aria-label="Vista lateral"
           >
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 20h16V6L4 20z" fill="rgba(255,255,255,0.05)" />
               <path d="M4 20h16M20 20V6M4 20L20 6" />
               <path d="M8 20a4 4 0 0 0 4-4" stroke="var(--accent-color)" />
             </svg>
-            <span className="tooltip">Side View (Profile)</span>
+            <span className="tooltip">Vista lateral</span>
           </button>
         </div>
       </div>
 
-      {/* Geotechnical Tactical HUD Legend Panel */}
-      {showShadowOverlay && (
-        <div className="geotechnical-hud-legend">
-          <div className="hud-legend-title">
-            {visualizationMode === "SENSITIVITY" ? (
-              <>
-                <span lang="en">Movement projection</span>
-                {" / "}
-                <span lang="es">Proyección del movimiento</span>
-              </>
-            ) : (
-              <>
-                <span lang="en">Surface incidence index (geometric v2)</span>
-                {" / "}
-                <span lang="es">Índice de incidencia superficial (geométrico v2)</span>
-              </>
-            )}
-          </div>
+      {activeTool === "AOI" && <div className="aoi-help" role="status">{aoi.error || (aoi.drawing ? "Haz clic para agregar vértices; doble clic o clic en el primero para cerrar. Esc cancela." : "Arrastra los vértices para editar el área.")}</div>}
 
+      {showShadowOverlay && (
+        <div className="geotechnical-hud-legend compact-legend" ref={legendRef}>
+          <div className="compact-legend-header">
+            <div className="hud-legend-title">{visualizationMode === "SENSITIVITY" ? "Proyección del movimiento" : "Incidencia superficial"}</div>
+            <button ref={infoButtonRef} type="button" className="legend-info-button" aria-label="Información de la leyenda" aria-expanded={legendOpen} aria-controls={legendInfoId} onClick={() => setLegendOpen((open) => !open)}>i</button>
+          </div>
           {visualizationMode === "SENSITIVITY" ? (
-            <>
-              <div className="hud-legend-row">
-                <div
-                  className="hud-legend-color"
-                  style={{ background: "transparent", outline: "1px dashed var(--text-secondary)" }}
-                />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">No data — transparent</span>
-                    {" / "}
-                    <span lang="es">Sin datos — transparente</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">Transparent means no contributing observation: no individual LOS is VISIBLE with a computable terrain gradient. This can result from NODATA, an unknown ray state, outside range/FOV, shadow, or a VISIBLE cell without a computable gradient; transparency alone does not identify shadow.</span>
-                    {" / "}
-                    <span lang="es">Transparente significa que no hay observación contribuyente: ningún LOS individual es VISIBLE con un gradiente del terreno calculable. Puede deberse a NODATA, un estado de rayo desconocido, fuera de alcance/FOV, sombra o una celda VISIBLE sin gradiente calculable; la transparencia por sí sola no identifica la sombra.</span>
-                  </div>
-                </div>
-              </div>
+            <div className="legend-projection-stops">
               {[["0", "rgb(128, 0, 128)"], ["0.2", "rgb(26, 51, 204)"], ["0.6", "rgb(0, 204, 204)"], ["1", "rgb(0, 230, 51)"]].map(([stop, color]) => (
-                <div className="hud-legend-row" key={stop}>
+                <div className="hud-legend-row" key={stop} title={`Corte del degradado: ${stop}`}>
                   <div className="hud-legend-color" style={{ background: color }} />
                   <span className="hud-legend-label">{stop}</span>
                 </div>
               ))}
-              <div className="hud-legend-desc">
-                <span lang="en">Map colors use a continuous gradient with fixed stops at 0.2 and 0.6. The low/medium/high bands in the dashboard, history cards and exports use the configurable thresholds (currently {policy.mediumMin} / {policy.highMin}).</span>
-                {" / "}
-                <span lang="es">Los colores del mapa usan un degradado continuo con cortes fijos en 0.2 y 0.6. Las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones usan los umbrales configurables (actualmente {policy.mediumMin} / {policy.highMin}).</span>
-              </div>
-              <div className="hud-legend-desc">
-                <span lang="en">One contributor: |dot| between the maximum-slope direction and radar line of sight (LOS); multiple contributors: RMS(dotᵢ) across contributors. A measured zero has at least one contributor; no contributors means no data, not zero. These are geometric-index ranges, not detection thresholds or RF/SNR performance.</span>
-                {" / "}
-                <span lang="es">Con un contribuyente: |dot| entre la dirección de máxima pendiente y la línea de vista (LOS) del radar; con varios contribuyentes: RMS(dotᵢ) entre ellos. Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. Son intervalos de un índice geométrico, no umbrales de detección ni rendimiento RF/SNR.</span>
-              </div>
-              <div className="hud-legend-desc">
-                <span lang="en">The 3D layer paints a scalar projection on the terrain surface under the assumed maximum-slope motion; it is not a volumetric reconstruction nor a full 3-axis displacement inversion.</span>
-                {" / "}
-                <span lang="es">La capa 3D pinta una proyección escalar sobre la superficie del terreno bajo el movimiento supuesto de máxima pendiente; no es una reconstrucción volumétrica ni una inversión completa de desplazamiento en 3 ejes.</span>
-              </div>
-            </>
+            </div>
           ) : (
-            <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-              <div className="hud-legend-row">
-                <div
-                  className="hud-legend-color"
-                  style={{ background: "transparent", outline: "1px dashed var(--text-secondary)" }}
-                />
-                <div>
-                  <span className="hud-legend-label">
-                    <span lang="en">Transparent — no index value</span>
-                    {" / "}
-                    <span lang="es">Transparente — sin valor de índice</span>
-                  </span>
-                  <div className="hud-legend-desc">
-                    <span lang="en">NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV and SHADOW have no displayed index and appear transparent, showing the base terrain; transparency alone does not identify the cause.</span>
-                    {" / "}
-                    <span lang="es">NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV y SHADOW no tienen un índice mostrado y aparecen transparentes, mostrando el terreno base; la transparencia por sí sola no identifica la causa.</span>
-                  </div>
-                  <div className="hud-legend-desc">
-                    <span lang="en">SHADOW marks an obstruction on the terrain LOS ray; it is distinct from OUT_OF_RANGE and OUTSIDE_FOV.</span>
-                    {" / "}
-                    <span lang="es">SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.</span>
-                  </div>
-                </div>
-              </div>
-              <div
-                data-testid="incidence-gradient"
-                aria-label="Surface incidence color gradient"
-                style={{
-                  height: "12px",
-                  background: `linear-gradient(to right, ${policy.mediumMin === 0 ? "rgb(242, 115, 13)" : "rgb(230, 26, 26)"} ${policy.mediumMin * 50}%, rgb(242, 115, 13) ${policy.mediumMin * 100}%, rgb(255, 204, 0) ${(policy.mediumMin + policy.highMin) * 50}%, rgb(128, 217, 26) ${policy.highMin * 100}%, ${policy.highMin === 1 ? "rgb(128, 217, 26)" : "rgb(0, 230, 51)"} ${(policy.highMin + 1) * 50}%)`,
-                }}
-              />
-              <div style={{ position: "relative", height: "1.2em" }}>
-                <span style={{ position: "absolute", left: 0 }}>0</span>
-                <span style={{ position: "absolute", left: `${policy.mediumMin * 100}%`, transform: "translateX(-50%)" }}>{policy.mediumMin}</span>
-                <span style={{ position: "absolute", left: `${policy.highMin * 100}%`, transform: "translateX(-50%)" }}>{policy.highMin}</span>
-                <span style={{ position: "absolute", right: 0 }}>1</span>
-              </div>
-              <div className="hud-legend-desc">
-                <span lang="en">Colors change continuously. The configurable cut-offs ({policy.mediumMin} / {policy.highMin}) sit at the midpoint of each color transition and still define the low/medium/high bands in the dashboard, history cards and exports.</span>
-                {" / "}
-                <span lang="es">Los colores cambian de forma continua. Los cortes configurables ({policy.mediumMin} / {policy.highMin}) quedan en el punto medio de cada transición de color y siguen definiendo las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones.</span>
-              </div>
-              {legendBandRow(
-                "low",
-                policy,
-                "Low incidence",
-                "Incidencia baja",
-                "Lower band of the surface incidence index.",
-                "Intervalo bajo del índice de incidencia superficial.",
-              )}
-              {legendBandRow(
-                "medium",
-                policy,
-                "Medium incidence",
-                "Incidencia media",
-                "Intermediate band of the surface incidence index.",
-                "Intervalo intermedio del índice de incidencia superficial.",
-              )}
-              {legendBandRow(
-                "high",
-                policy,
-                "High incidence",
-                "Incidencia alta",
-                "Higher band of the surface incidence index.",
-                "Intervalo alto del índice de incidencia superficial.",
-              )}
-              <div className="hud-legend-desc">
-                <span lang="en">Only VISIBLE cells have this geometric index. A displayed value of 0.0 is measured; missing data is transparent.</span>
-                {" / "}
-                <span lang="es">El índice geométrico se calcula solo para celdas VISIBLE. Un valor mostrado de 0.0 es medido; los datos ausentes son transparentes.</span>
-              </div>
-              <div className="hud-legend-desc">
-                <span lang="en">For VISIBLE cells, the 0-1 score is the alignment of the terrain surface normal with the LOS direction from terrain to radar. Distance is not a multiplier: the configured maximum range only gates which cells are eligible for LOS and cannot change the score of a cell that stays VISIBLE. It is a geometric index, not an estimate of sensor signal or data reliability.</span>
-                {" / "}
-                <span lang="es">Para celdas VISIBLE, el valor de 0-1 es la alineación de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia no es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo VISIBLE. Es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.</span>
-              </div>
-            </div>
+            <div data-testid="incidence-gradient" aria-label="Gradiente de incidencia superficial" className="legend-gradient"
+              style={{ background: `linear-gradient(to right, ${policy.mediumMin === 0 ? "rgb(242, 115, 13)" : "rgb(230, 26, 26)"} ${policy.mediumMin * 50}%, rgb(242, 115, 13) ${policy.mediumMin * 100}%, rgb(255, 204, 0) ${(policy.mediumMin + policy.highMin) * 50}%, rgb(128, 217, 26) ${policy.highMin * 100}%, ${policy.highMin === 1 ? "rgb(128, 217, 26)" : "rgb(0, 230, 51)"} ${(policy.highMin + 1) * 50}%)` }} />
           )}
-
-          <div className="hud-legend-desc">
-            <span lang="en">The bands are a configurable shared policy copied from the legacy legend (provisional); they are not equipment-certified detection thresholds.</span>
-            {" / "}
-            <span lang="es">Las bandas son una política compartida configurable copiada de la leyenda anterior (provisional); no son umbrales de detección certificados por equipo.</span>
+          <div className="legend-marks"><span>0</span><span>{policy.mediumMin}</span><span>{policy.highMin}</span><span>1</span></div>
+          <div className="legend-bands">
+            {legendBandRow("low", policy, "baja")}
+            {legendBandRow("medium", policy, "media")}
+            {legendBandRow("high", policy, "alta")}
           </div>
-
-          {/* Active Tool Help Box */}
-          <div className="hud-tool-info">
-            <div className="hud-tool-info-title">Active Tool Status</div>
-            <div style={{ fontSize: "10.5px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {toolExplanations[activeTool].title}
-            </div>
-            <div className="hud-tool-info-text">
-              {toolExplanations[activeTool].desc}
-            </div>
-          </div>
+          <div className="legend-note">Sin color = no visible</div>
+          {legendOpen && <div id={legendInfoId} className="legend-popover" role="region" aria-label="Información de la leyenda">
+            {visualizationMode === "SENSITIVITY" ? <>
+              <p>Transparente significa que no hay observación contribuyente: ningún LOS individual es VISIBLE con un gradiente del terreno calculable. Puede deberse a NODATA, un estado de rayo desconocido, fuera de alcance/FOV, sombra o una celda VISIBLE sin gradiente calculable; la transparencia por sí sola no identifica la sombra.</p>
+              <p>Los colores del mapa usan un degradado continuo con cortes fijos en 0.2 y 0.6. Las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones usan los umbrales configurables (actualmente {policy.mediumMin} / {policy.highMin}).</p>
+              <p>Con un contribuyente: |dot| entre la dirección de máxima pendiente y la línea de vista (LOS) del radar; con varios contribuyentes: RMS(dotᵢ) entre ellos. Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. Son intervalos de un índice geométrico, no umbrales de detección ni rendimiento RF/SNR.</p>
+              <p>La capa 3D pinta una proyección escalar sobre la superficie del terreno bajo el movimiento supuesto de máxima pendiente; no es una reconstrucción volumétrica ni una inversión completa de desplazamiento en 3 ejes.</p>
+            </> : <>
+              <p>NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV y SHADOW no tienen un índice mostrado y aparecen transparentes, mostrando el terreno base; la transparencia por sí sola no identifica la causa.</p>
+              <p>SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.</p>
+              <p>Los colores cambian de forma continua. Los cortes configurables ({policy.mediumMin} / {policy.highMin}) quedan en el punto medio de cada transición de color y siguen definiendo las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones.</p>
+              <p>El índice geométrico se calcula solo para celdas VISIBLE. Un valor mostrado de 0.0 es medido; los datos ausentes son transparentes.</p>
+              <p>Para celdas VISIBLE, el valor de 0-1 es la alineación de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia no es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo VISIBLE. Es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.</p>
+            </>}
+            <p>Las bandas son una política compartida configurable copiada de la leyenda anterior (provisional); no son umbrales de detección certificados por equipo.</p>
+          </div>}
         </div>
       )}
     </div>

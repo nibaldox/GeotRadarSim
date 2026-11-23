@@ -21,6 +21,22 @@ const summary: QualitySummary = {
 };
 
 describe("QualitySummaryView", () => {
+  it("la variante densa conserva todas las cifras y el texto completo del objetivo común", () => {
+    const props = { summary, metricLabel: "Incidencia superficial", coveragePct: 66.7, completenessPct: 100 };
+    const { container, unmount } = render(<QualitySummaryView {...props} />);
+    const normalText = container.textContent;
+    unmount();
+    render(<QualitySummaryView {...props} variant="dense" />);
+    const dense = screen.getByTestId("quality-summary");
+    expect(dense).toHaveClass("quality-summary-dense");
+    expect(dense.textContent).toBe(normalText);
+    const target = dense.querySelector(".quality-target-dense");
+    expect(target).toHaveAttribute("title", "Objetivo común: Topografía válida completa — 6 celdas · 24 m² (nominal)");
+    // El nombre va en su propio nodo (siempre completo) y los conteos en otro (el único que se recorta).
+    expect(target?.children[0]).toHaveTextContent(/^Objetivo común: Topografía válida completa$/);
+    expect(target?.children[1]).toHaveTextContent(/^— 6 celdas · 24 m² \(nominal\)$/);
+  });
+
   it("labels useful coverage with the selected metric and the shared common target", () => {
     render(
       <QualitySummaryView

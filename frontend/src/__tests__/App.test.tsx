@@ -181,10 +181,15 @@ describe("App — resumen global de calidad y bandas", () => {
 });
 
 describe("App — Terrain Upload UI", () => {
+  it("identifica la resolución de importación", () => {
+    render(<App />);
+    expect(screen.getByLabelText(/Resolución de importación/i)).toHaveAttribute("type", "range");
+  });
+
   it("renders a file input for terrain upload (DXF/STL)", () => {
     render(<App />);
 
-    const fileInput = screen.getByLabelText(/upload terrain/i);
+    const fileInput = screen.getByLabelText(/cargar terreno/i);
     expect(fileInput).toBeInTheDocument();
     expect(fileInput).toHaveAttribute("type", "file");
     expect(fileInput).toHaveAttribute("accept", ".dxf,.stl");
@@ -193,7 +198,7 @@ describe("App — Terrain Upload UI", () => {
   it("renders an Upload Terrain button", () => {
     render(<App />);
 
-    const uploadBtn = screen.getByRole("button", { name: /upload dxf \/ stl/i });
+    const uploadBtn = screen.getByRole("button", { name: /cargar stl \/ dxf/i });
     expect(uploadBtn).toBeInTheDocument();
   });
 });
@@ -205,7 +210,7 @@ describe("App — Auto loadGrid after generateSynthetic", () => {
 
     render(<App />);
 
-    const generateBtn = screen.getByRole("button", { name: /generate synthetic/i });
+    const generateBtn = screen.getByRole("button", { name: /terreno sintético/i });
     fireEvent.click(generateBtn);
 
     await waitFor(() => {
@@ -235,7 +240,7 @@ describe("App — Auto loadGrid after DXF upload", () => {
 
     render(<App />);
 
-    const fileInput = screen.getByLabelText(/upload terrain/i);
+    const fileInput = screen.getByLabelText(/cargar terreno/i);
     const file = new File(["dxf-content"], "test.dxf", { type: "application/dxf" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
@@ -309,7 +314,7 @@ it("keeps terrain A visible and does not reload its grid when importing terrain 
   vi.mocked(uploadDXF).mockRejectedValueOnce(new Error("terrain B import failed"));
 
   render(<App />);
-  const fileInput = screen.getByLabelText(/upload terrain/i);
+  const fileInput = screen.getByLabelText(/cargar terreno/i);
   await act(async () => {
     fireEvent.change(fileInput, {
       target: { files: [new File(["bad"], "terrain-B.dxf", { type: "application/dxf" })] },
@@ -325,7 +330,9 @@ it("keeps terrain A visible and does not reload its grid when importing terrain 
     fireEvent.click(confirmButton);
   });
 
-  await waitFor(() => expect(screen.getByText("terrain-A")).toBeInTheDocument());
+  // The terrain_id line is gone (contract §1.1); terrain A stays visible through its header summary.
+  await waitFor(() => expect(screen.getByText("101 × 101 · 2 m")).toBeInTheDocument());
+  expect(screen.queryByText("terrain-A")).not.toBeInTheDocument();
   await waitFor(() => expect(screen.getByText(/terrain B import failed/)).toBeInTheDocument());
 
   expect(getTerrainGrid).not.toHaveBeenCalled();
@@ -364,7 +371,7 @@ describe("App — Auto loadGrid after STL upload", () => {
 
     render(<App />);
 
-    const fileInput = screen.getByLabelText(/upload terrain/i);
+    const fileInput = screen.getByLabelText(/cargar terreno/i);
     const stlFile = new File(["stl-content"], "terrain.stl", { type: "application/octet-stream" });
     fireEvent.change(fileInput, { target: { files: [stlFile] } });
 
@@ -424,7 +431,7 @@ describe("App — Cancelar análisis", () => {
     expect(cancelSpy).toHaveBeenCalledOnce();
     expect(useAnalysisStore.getState().loading).toBe(false);
     expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/running analysis/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/calculando cobertura/i)).not.toBeInTheDocument();
   });
 
   it("shows the cancel button while a multi analysis is loading and hides it after cancel", () => {
@@ -433,7 +440,7 @@ describe("App — Cancelar análisis", () => {
     });
     render(<App />);
 
-    expect(screen.getByText(/running analysis/i)).toBeInTheDocument();
+    expect(screen.getByText(/calculando cobertura/i)).toBeInTheDocument();
     const cancelBtn = screen.getByRole("button", { name: /cancelar análisis/i });
     expect(cancelBtn).toBeInTheDocument();
 
@@ -441,7 +448,7 @@ describe("App — Cancelar análisis", () => {
 
     expect(useAnalysisStore.getState().multiLoading).toBe(false);
     expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/running analysis/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/calculando cobertura/i)).not.toBeInTheDocument();
   });
 
   it("does not offer cancel while only the radar catalog is loading", () => {
@@ -451,5 +458,47 @@ describe("App — Cancelar análisis", () => {
     render(<App />);
 
     expect(screen.queryByRole("button", { name: /cancelar análisis/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("App — botón de tema solo con ícono (U11)", () => {
+  beforeEach(() => {
+    localStorage.removeItem("geotradar-theme");
+    document.documentElement.classList.remove("theme-dark", "theme-light");
+  });
+
+  it("no muestra texto, monta los dos íconos y alterna el tema y su aria-label al hacer clic", () => {
+    render(<App />);
+    const toggle = screen.getByRole("button", { name: "Cambiar a tema claro" });
+    expect(toggle).toHaveAttribute("title", "Cambiar a tema claro");
+    expect(toggle.textContent).toBe("");
+    expect(toggle).not.toHaveTextContent(/Oscuro|Claro/);
+    expect(toggle.querySelectorAll("svg.theme-icon")).toHaveLength(2);
+    expect(toggle.querySelector("svg.theme-icon-moon")).toBeInTheDocument();
+    expect(toggle.querySelector("svg.theme-icon-sun")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement).toHaveClass("theme-dark");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAccessibleName("Cambiar a tema oscuro");
+    expect(toggle).toHaveAttribute("title", "Cambiar a tema oscuro");
+    expect(toggle).toHaveAttribute("data-theme", "light");
+    expect(document.documentElement).toHaveClass("theme-light");
+    expect(document.documentElement).not.toHaveClass("theme-dark");
+    expect(localStorage.getItem("geotradar-theme")).toBe("light");
+    // Los dos íconos siguen montados después del cambio (la animación los alterna con CSS).
+    expect(toggle.querySelectorAll("svg.theme-icon")).toHaveLength(2);
+    expect(toggle.textContent).toBe("");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAccessibleName("Cambiar a tema claro");
+    expect(document.documentElement).toHaveClass("theme-dark");
+  });
+
+  it("es un botón nativo, que se activa con Enter o Espacio", () => {
+    render(<App />);
+    const toggle = screen.getByRole("button", { name: "Cambiar a tema claro" });
+    expect(toggle.tagName).toBe("BUTTON");
+    expect(toggle).toHaveAttribute("type", "button");
   });
 });

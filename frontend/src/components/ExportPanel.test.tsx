@@ -141,7 +141,7 @@ describe("ExportPanel", () => {
     render(<ExportPanel />);
 
     const buttons = screen.getAllByRole("button");
-    expect(buttons).toHaveLength(3);
+    expect(buttons).toHaveLength(4);
 
     for (const btn of buttons) {
       expect(btn).toBeDisabled();
@@ -167,7 +167,7 @@ describe("ExportPanel", () => {
 
     expect(screen.getByText(/pdf/i)).toBeInTheDocument();
     expect(screen.getByText(/csv/i)).toBeInTheDocument();
-    expect(screen.getByText(/image/i)).toBeInTheDocument();
+    expect(screen.getByText(/png/i)).toBeInTheDocument();
   });
 
   it("shows coverage percentage when analysis exists", () => {
@@ -178,7 +178,7 @@ describe("ExportPanel", () => {
 
     render(<ExportPanel />);
 
-    expect(screen.getByText(/Visibilidad \(candidatos\):/).parentElement).toHaveTextContent("100.0%");
+    expect(screen.queryByText(/Visibilidad \(candidatos\):/)).not.toBeInTheDocument();
   });
 
   it("shows no-data instead of zero coverage for an empty candidate set", () => {
@@ -189,14 +189,14 @@ describe("ExportPanel", () => {
 
     render(<ExportPanel />);
 
-    expect(screen.getAllByText("Sin datos")).toHaveLength(2);
+    expect(screen.queryByText(/Visibilidad \(candidatos\):/)).not.toBeInTheDocument();
     expect(screen.queryByText(/0\.0%/)).not.toBeInTheDocument();
   });
 
   it("shows no-data message when analysis has not been run", () => {
     render(<ExportPanel />);
 
-    expect(screen.getByText(/no analysis data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Aún no hay análisis/i)).toBeInTheDocument();
   });
 
   it("rejects an A snapshot on terrain B even when both terrains have identical grid dimensions", () => {
@@ -211,13 +211,13 @@ describe("ExportPanel", () => {
 
     render(<ExportPanel />);
 
-    expect(screen.getByRole("button", { name: /pdf report/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /csv data/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /pdf técnico/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /csv/i })).toBeDisabled();
   });
 
   it.each([
-    ["PDF", "exportPDF", /pdf report/i, "coverage-report-t1.pdf"],
-    ["CSV", "exportCSV", /csv data/i, "coverage-data-t1.csv"],
+    ["PDF", "exportPDF", /pdf técnico/i, "coverage-report-t1.pdf"],
+    ["CSV", "exportCSV", /csv/i, "coverage-data-t1.csv"],
   ] as const)("exports %s from the immutable analysis snapshot", async (_label, method, buttonName, expectedFilename) => {
     const exporter = vi.spyOn(api, method).mockResolvedValue(new Blob(["export"]));
     class MockURL extends URL {
@@ -243,8 +243,8 @@ describe("ExportPanel", () => {
   });
 
   it.each([
-    ["PDF", "exportPDF", /pdf report/i, "coverage-report-t1.pdf"],
-    ["CSV", "exportCSV", /csv data/i, "coverage-data-t1.csv"],
+    ["PDF", "exportPDF", /pdf técnico/i, "coverage-report-t1.pdf"],
+    ["CSV", "exportCSV", /csv/i, "coverage-data-t1.csv"],
   ] as const)("exports the restored history snapshot for %s", async (_label, method, buttonName, expectedFilename) => {
     const exporter = vi.spyOn(api, method).mockResolvedValue(new Blob(["restored export"]));
     class MockURL extends URL {
@@ -299,8 +299,8 @@ describe("ExportPanel", () => {
   });
 
   it.each([
-    ["PDF", "exportPDF", /pdf report/i],
-    ["CSV", "exportCSV", /csv data/i],
+    ["PDF", "exportPDF", /pdf técnico/i],
+    ["CSV", "exportCSV", /csv/i],
   ] as const)("does not download %s if terrain changes while the export is pending", async (_label, method, buttonName) => {
     let resolveExport!: (blob: Blob) => void;
     const delayed = new Promise<Blob>((resolve) => { resolveExport = resolve; });
@@ -351,7 +351,7 @@ describe("ExportPanel", () => {
     document.body.appendChild(canvas);
     render(<ExportPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: /image \(png\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /png/i }));
     expect(imageCallback).toBeTypeOf("function");
     await act(async () => {
       useAnalysisStore.getState().beginTerrainTransition();
@@ -371,8 +371,8 @@ describe("ExportPanel", () => {
   });
 
   it.each([
-    ["PDF", "exportPDF", /pdf report/i],
-    ["CSV", "exportCSV", /csv data/i],
+    ["PDF", "exportPDF", /pdf técnico/i],
+    ["CSV", "exportCSV", /csv/i],
   ] as const)("does not download when asynchronous %s export rejects", async (_label, method, buttonName) => {
     const exporter = vi.spyOn(api, method).mockRejectedValue(new Error("export failed"));
     class MockURL extends URL {
@@ -412,7 +412,7 @@ describe("ExportPanel", () => {
     setExportableAnalysis(mutableSnapshot);
     render(<ExportPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: /pdf report/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pdf técnico/i }));
     await waitFor(() => expect(exporter).toHaveBeenCalledOnce());
     const exportedSnapshot = exporter.mock.calls[0]![0];
     mutableOverrides.rangeMax = 900;
@@ -441,7 +441,7 @@ describe("ExportPanel", () => {
     document.body.appendChild(canvas);
     render(<ExportPanel />);
 
-    fireEvent.click(screen.getByRole("button", { name: /image \(png\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /png/i }));
     expect(imageCallback).toBeTypeOf("function");
     useAnalysisStore.getState().setRadarPosition({ x: 15, y: 25, z: 5 });
     await act(async () => imageCallback?.(new Blob(["stale radar image"])));
@@ -492,7 +492,7 @@ describe("ExportPanel", () => {
     const toBlob = vi.fn((callback: BlobCallback) => callback(new Blob(["multi-radar-png"])));
     Object.defineProperty(canvas, "toBlob", { configurable: true, value: toBlob });
 
-    fireEvent.click(screen.getByRole("button", { name: /image \(png\)/i }));
+    fireEvent.click(screen.getByRole("button", { name: /png/i }));
 
     const markers = Array.from(scene.querySelectorAll('group[name^="radar-snapshot-"]'));
     expect(markers.map((marker) => [marker.getAttribute("name"), marker.getAttribute("position")])).toEqual([
@@ -569,7 +569,7 @@ describe("ExportPanel quality context", () => {
     setV2ExportableAnalysis();
 
     render(<ExportPanel />);
-    fireEvent.click(screen.getByRole("button", { name: /pdf report/i }));
+    fireEvent.click(screen.getByRole("button", { name: /pdf técnico/i }));
     await waitFor(() => expect(exporter).toHaveBeenCalledOnce());
 
     // policy edits after the click must never reach the captured report
@@ -605,7 +605,7 @@ describe("ExportPanel quality context", () => {
     setV2ExportableAnalysis();
 
     render(<ExportPanel />);
-    fireEvent.click(screen.getByRole("button", { name: /csv data/i }));
+    fireEvent.click(screen.getByRole("button", { name: /csv/i }));
 
     await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
     const blob = MockURL.createObjectURL.mock.calls[0]![0] as Blob;
@@ -628,7 +628,7 @@ describe("ExportPanel quality context", () => {
     setV2ExportableAnalysis();
 
     render(<ExportPanel />);
-    fireEvent.click(screen.getByRole("button", { name: /csv data/i }));
+    fireEvent.click(screen.getByRole("button", { name: /csv/i }));
 
     await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
     const csv = await (MockURL.createObjectURL.mock.calls[0]![0] as Blob).text();
@@ -647,8 +647,8 @@ describe("ExportPanel quality context", () => {
     setExportableAnalysis();
 
     render(<ExportPanel />);
-    expect(screen.getByText(/no incluyen cobertura útil/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /csv data/i }));
+    expect(screen.getByRole("button", { name: /csv/i })).toHaveAttribute("title", expect.stringMatching(/no incluyen cobertura útil/i));
+    fireEvent.click(screen.getByRole("button", { name: /csv/i }));
 
     await waitFor(() => expect(MockURL.createObjectURL).toHaveBeenCalledOnce());
     const csv = await (MockURL.createObjectURL.mock.calls[0]![0] as Blob).text();
@@ -661,6 +661,117 @@ describe("ExportPanel quality context", () => {
   it("tells the user the PDF/CSV reports include useful coverage for v2 results", () => {
     setV2ExportableAnalysis();
     render(<ExportPanel />);
-    expect(screen.getByText(/incluyen cobertura útil/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /csv/i })).toHaveAttribute("title", expect.stringMatching(/incluyen cobertura útil/i));
   });
+});
+
+
+describe("Informe para reunión", () => {
+  it("deshabilita el informe sin análisis", () => {
+    render(<ExportPanel />);
+    expect(screen.getByRole("button", { name: "Informe para reunión" })).toBeDisabled();
+  });
+
+  it("muestra el mensaje de error del informe", async () => {
+    setExportableAnalysis();
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    render(<ExportPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Informe para reunión" }));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringMatching(/resultado|recalcul/i)));
+  });
+});
+
+
+describe("Generación del informe desde el panel", () => {
+  it("muestra el estado pendiente y no descarga si cambia el snapshot", async () => {
+    const reportModel = await import("../report/reportModel");
+    const coverModule = await import("../report/reportCover3d");
+    const { reportFixture3 } = await import("../report/fixtures");
+    setExportableAnalysis();
+    const captured = { snapshot: exportSnapshot, result: sampleLOS } as ReturnType<typeof reportModel.captureReportInputs>;
+    vi.spyOn(reportModel, "captureReportInputs").mockReturnValue(captured);
+    vi.spyOn(reportModel, "buildReportModel").mockReturnValue(reportFixture3());
+    let resolve!: (cover: import("../report/types").ReportCoverImage) => void;
+    vi.spyOn(coverModule, "renderReportCover3d").mockReturnValue(new Promise(r => { resolve = r; }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+    render(<ExportPanel />);
+    const title = screen.getByLabelText("Título del informe (opcional)");
+    expect(title).toHaveAttribute("maxLength", "80");
+    fireEvent.change(title, { target: { value: "Proyecto" } });
+    fireEvent.click(screen.getByRole("button", { name: "Informe para reunión" }));
+    expect(screen.getByRole("button", { name: "Generando…" })).toBeDisabled();
+    expect(reportModel.buildReportModel).toHaveBeenCalledWith(captured, { title: "Proyecto" });
+    await act(async () => {
+      useAnalysisStore.setState({ activeSnapshot: { ...exportSnapshot } });
+      resolve({ format: "PNG", bytes: new Uint8Array(), width: 1, height: 1 });
+    });
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringMatching(/cambió/)));
+    expect(click).not.toHaveBeenCalled();
+  });
+});
+
+
+it("descarga el informe preparado desde el panel", async () => {
+  const action = await import("../report/reportAction");
+  const blob = new Blob(["PDF"], { type: "application/pdf" });
+  vi.spyOn(action, "prepareManagementReport").mockResolvedValue({ blob, filename: "informe-reunion-2026-11-22-1200.pdf" });
+  class MockURL extends URL {
+    static createObjectURL = vi.fn(() => "blob:report");
+    static revokeObjectURL = vi.fn();
+  }
+  vi.stubGlobal("URL", MockURL);
+  const names: string[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { names.push(this.download); });
+  setExportableAnalysis();
+  render(<ExportPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Informe para reunión" }));
+  await waitFor(() => expect(names).toEqual(["informe-reunion-2026-11-22-1200.pdf"]));
+  expect(MockURL.createObjectURL).toHaveBeenCalledWith(blob);
+  expect(MockURL.revokeObjectURL).toHaveBeenCalledWith("blob:report");
+});
+
+
+it("no descarga si la política cambia después de preparar el informe", async () => {
+  const action = await import("../report/reportAction");
+  setExportableAnalysis();
+  const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+  vi.spyOn(action, "prepareManagementReport").mockImplementation(async () => {
+    useQualityPolicyStore.getState().setPolicy({ mediumMin: 0.4, highMin: 0.8 });
+    return { blob: new Blob(["PDF"]), filename: "informe.pdf" };
+  });
+  render(<ExportPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Informe para reunión" }));
+  await waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringMatching(/cambió/)));
+  expect(click).not.toHaveBeenCalled();
+});
+
+
+it.each(["política", "métrica", "área", "historial", "radares desplegados"])("no descarga si cambia %s durante la portada", async (change) => {
+  const reportModel = await import("../report/reportModel");
+  const coverModule = await import("../report/reportCover3d");
+  const { reportFixture3 } = await import("../report/fixtures");
+  const { useAoiStore } = await import("../store/aoiStore");
+  setExportableAnalysis();
+  useAoiStore.getState().clear();
+  useAnalysisStore.setState({ history: [], deployedRadars: [], unifiedLos: change === "radares desplegados" ? sampleLOS : null });
+  vi.spyOn(reportModel, "captureReportInputs").mockReturnValue({ snapshot: exportSnapshot, result: sampleLOS } as ReturnType<typeof reportModel.captureReportInputs>);
+  vi.spyOn(reportModel, "buildReportModel").mockReturnValue(reportFixture3());
+  let resolve!: (image: import("../report/types").ReportCoverImage) => void;
+  vi.spyOn(coverModule, "renderReportCover3d").mockReturnValue(new Promise(r => { resolve = r; }));
+  const alert = vi.spyOn(window, "alert").mockImplementation(() => undefined);
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+  render(<ExportPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Informe para reunión" }));
+  await act(async () => {
+    if (change === "política") useQualityPolicyStore.getState().setPolicy({ mediumMin: 0.4, highMin: 0.8 });
+    if (change === "métrica") useVectorStore.setState({ visualizationMode: "SENSITIVITY" });
+    if (change === "área") useAoiStore.setState({ terrainKey: exportSnapshot.terrainKey, polygon: { vertices: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] } });
+    if (change === "historial") useAnalysisStore.setState({ history: [{ selected: true, snapshot: exportSnapshot, result: sampleLOS } as HistoryEntry] });
+    if (change === "radares desplegados") useAnalysisStore.setState({ deployedRadars: [{ id: "r", modelId: "m", color: "#ffffff", position: { x: 0, y: 0, z: 0 }, result: sampleLOS }] });
+    resolve({ format: "PNG", bytes: new Uint8Array(), width: 1, height: 1 });
+  });
+  await waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringMatching(/cambió/)));
+  expect(click).not.toHaveBeenCalled();
 });

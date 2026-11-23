@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useQualityPolicyStore } from "../store/qualityPolicyStore";
 import { DEFAULT_QUALITY_POLICY } from "../utils/qualityMetrics";
+import "../styles/panels.css";
 
 export function QualityPolicyControl() {
   const policy = useQualityPolicyStore((s) => s.policy);
@@ -46,12 +47,12 @@ export function QualityPolicyControl() {
   };
 
   return (
-    <div className="glass-panel" data-testid="quality-policy-control">
-      <h3 style={{ margin: "0 0 8px 0" }}>Bandas de calidad</h3>
-      <div className="flex-row" style={{ gap: "8px", alignItems: "center" }}>
+    <div className="panel-fields" data-testid="quality-policy-control">
+      <div className="panel-info-row"><span className="cs-label">Bandas de calidad</span><details className="panel-info"><summary aria-label="Información de bandas">i</summary><div>Bandas configurables compartidas (provisionales, no certificadas por equipo). Editar los umbrales reclasifica los resultados existentes sin recalcular el LOS.</div></details></div>
+      <div className="panel-policy-row field-row">
         <label style={{ fontSize: "10px", display: "flex", flexDirection: "column", gap: "2px" }}>
-          Media mínima
-          <input
+          Media desde
+          <input aria-label="Media mínima"
             type="number"
             min={0}
             max={1}
@@ -62,8 +63,8 @@ export function QualityPolicyControl() {
           />
         </label>
         <label style={{ fontSize: "10px", display: "flex", flexDirection: "column", gap: "2px" }}>
-          Alta mínima
-          <input
+          Alta desde
+          <input aria-label="Alta mínima"
             type="number"
             min={0}
             max={1}
@@ -73,7 +74,7 @@ export function QualityPolicyControl() {
             style={{ width: "70px" }}
           />
         </label>
-        <button className="btn-secondary" style={{ fontSize: "10px" }} onClick={reset}>
+        <button className="btn-compact" onClick={reset}>
           Restablecer (0.30 / 0.70)
         </button>
       </div>
@@ -82,10 +83,7 @@ export function QualityPolicyControl() {
           {error}
         </div>
       )}
-      <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginTop: "6px", lineHeight: 1.5 }}>
-        Bandas configurables compartidas (provisionales, no certificadas por equipo). Editar los umbrales
-        reclasifica los resultados existentes sin recalcular el LOS.
-      </div>
+
     </div>
   );
 }

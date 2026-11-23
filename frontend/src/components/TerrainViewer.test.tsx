@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { buildTerrainCameraPose, buildTerrainMeshGeometry, getTerrainMeshCenter, TerrainViewer } from "./TerrainViewer";
 import * as TerrainViewerApi from "./TerrainViewer";
 import { useAnalysisStore, RADAR_COLORS } from "../store/analysisStore";
@@ -221,7 +221,21 @@ describe("TerrainViewer radar markers", () => {
 });
 
 describe("TerrainViewer geometric projection legend", () => {
-  it("describes movement-projection bands and transparent no-data in English and Spanish", () => {
+  it("opens the legend explanation and closes it with Escape and outside click", () => {
+    useTerrainStore.setState({ grid });
+    render(<TerrainViewer showShadowOverlay />);
+    const button = screen.getByRole("button", { name: "Información de la leyenda" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("region", { name: "Información de la leyenda" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(button);
+    fireEvent.pointerDown(document.body);
+    expect(button).toHaveAttribute("aria-expanded", "false");
+  });
+  it("describes movement-projection bands and transparent no-data in Spanish", () => {
     useTerrainStore.setState({
       grid,
       metadata: {
@@ -239,36 +253,25 @@ describe("TerrainViewer geometric projection legend", () => {
     useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } });
 
     render(<TerrainViewer showShadowOverlay />);
+    fireEvent.click(screen.getByRole("button", { name: "Información de la leyenda" }));
 
-    expect(screen.getByText("Movement projection")).toBeInTheDocument();
     expect(screen.getByText("Proyección del movimiento")).toBeInTheDocument();
-    expect(screen.getByText("No data — transparent")).toBeInTheDocument();
-    expect(screen.getByText("Sin datos — transparente")).toBeInTheDocument();
+    expect(screen.getByText("Sin color = no visible")).toBeInTheDocument();
     const colors = ["0", "0.2", "0.6", "1"].map((stop) =>
       screen.getByText(stop, { selector: ".hud-legend-label" }).closest(".hud-legend-row")?.querySelector<HTMLElement>(".hud-legend-color")?.style.background);
     expect(colors).toEqual(["rgb(128, 0, 128)", "rgb(26, 51, 204)", "rgb(0, 204, 204)", "rgb(0, 230, 51)"]);
-    expect(screen.getByText("Map colors use a continuous gradient with fixed stops at 0.2 and 0.6. The low/medium/high bands in the dashboard, history cards and exports use the configurable thresholds (currently 0.3 / 0.7).")).toBeInTheDocument();
     expect(screen.getByText("Los colores del mapa usan un degradado continuo con cortes fijos en 0.2 y 0.6. Las bandas baja/media/alta del dashboard, las tarjetas y las exportaciones usan los umbrales configurables (actualmente 0.3 / 0.7).")).toBeInTheDocument();
     expect(screen.getByText(
-      "Transparent means no contributing observation: no individual LOS is VISIBLE with a computable terrain gradient. This can result from NODATA, an unknown ray state, outside range/FOV, shadow, or a VISIBLE cell without a computable gradient; transparency alone does not identify shadow.",
-    )).toBeInTheDocument();
-    expect(screen.getByText(
       "Transparente significa que no hay observación contribuyente: ningún LOS individual es VISIBLE con un gradiente del terreno calculable. Puede deberse a NODATA, un estado de rayo desconocido, fuera de alcance/FOV, sombra o una celda VISIBLE sin gradiente calculable; la transparencia por sí sola no identifica la sombra.",
-    )).toBeInTheDocument();
-    expect(screen.getByText(
-      "One contributor: |dot| between the maximum-slope direction and radar line of sight (LOS); multiple contributors: RMS(dotᵢ) across contributors. A measured zero has at least one contributor; no contributors means no data, not zero. These are geometric-index ranges, not detection thresholds or RF/SNR performance.",
     )).toBeInTheDocument();
     expect(screen.getByText(
       "Con un contribuyente: |dot| entre la dirección de máxima pendiente y la línea de vista (LOS) del radar; con varios contribuyentes: RMS(dotᵢ) entre ellos. Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. Son intervalos de un índice geométrico, no umbrales de detección ni rendimiento RF/SNR.",
     )).toBeInTheDocument();
     expect(screen.getByText(
-      "The 3D layer paints a scalar projection on the terrain surface under the assumed maximum-slope motion; it is not a volumetric reconstruction nor a full 3-axis displacement inversion.",
-    )).toBeInTheDocument();
-    expect(screen.getByText(
       "La capa 3D pinta una proyección escalar sobre la superficie del terreno bajo el movimiento supuesto de máxima pendiente; no es una reconstrucción volumétrica ni una inversión completa de desplazamiento en 3 ejes.",
     )).toBeInTheDocument();
 
-    const legend = screen.getByText("Movement projection").closest(".geotechnical-hud-legend");
+    const legend = screen.getByText("Proyección del movimiento").closest(".geotechnical-hud-legend");
     expect(legend).not.toBeNull();
     expect(legend).not.toHaveTextContent(/complete detection failure|signal detects|blind zone|optimal sensitivity|radar visual is parallel/i);
   });
@@ -291,10 +294,11 @@ describe("TerrainViewer geometric projection legend", () => {
     useQualityPolicyStore.setState({ policy: { mediumMin: 0.25, highMin: 0.8 } });
 
     render(<TerrainViewer showShadowOverlay />);
+    fireEvent.click(screen.getByRole("button", { name: "Información de la leyenda" }));
 
-    expect(screen.getByText(/currently 0.25 \/ 0.8/)).toBeInTheDocument();
+    expect(screen.getByText(/actualmente 0.25 \/ 0.8/)).toBeInTheDocument();
     act(() => useQualityPolicyStore.setState({ policy: { mediumMin: 0.4, highMin: 0.9 } }));
-    expect(screen.getByText(/currently 0.4 \/ 0.9/)).toBeInTheDocument();
+    expect(screen.getByText(/actualmente 0.4 \/ 0.9/)).toBeInTheDocument();
     expect(screen.getByText(/actualmente 0.4 \/ 0.9/)).toBeInTheDocument();
     act(() => useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } }));
   });
@@ -319,68 +323,51 @@ describe("TerrainViewer quality legend", () => {
     useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } });
 
     render(<TerrainViewer showShadowOverlay />);
+    fireEvent.click(screen.getByRole("button", { name: "Información de la leyenda" }));
 
     const gradient = screen.getByTestId("incidence-gradient");
-    expect(gradient.parentElement).toHaveStyle({ maxHeight: "50vh", overflowY: "auto" });
+    expect(gradient.parentElement).not.toHaveStyle({ maxHeight: "50vh" });
     expect(gradient.style.background).toContain("rgb(230, 26, 26) 15%");
     expect(gradient.style.background).toContain("rgb(242, 115, 13) 30%");
     expect(gradient.style.background).toContain("rgb(255, 204, 0) 50%");
     expect(gradient.style.background).toContain("rgb(128, 217, 26) 70%");
     expect(gradient.style.background).toContain("rgb(0, 230, 51) 85%");
     expect(screen.getByText(/Los colores cambian de forma continua\. Los cortes configurables \(0.3 \/ 0.7\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Colors change continuously\. The configurable cut-offs \(0.3 \/ 0.7\)/)).toBeInTheDocument();
     act(() => useQualityPolicyStore.setState({ policy: { mediumMin: 0.25, highMin: 0.8 } }));
     expect(gradient.style.background).toContain("12.5%");
     expect(gradient.style.background).toContain("52.5%");
     expect(gradient.style.background).toContain("90%");
     act(() => useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } }));
-    expect(screen.getByText("Surface incidence index (geometric v2)")).toBeInTheDocument();
-    expect(screen.getByText("Índice de incidencia superficial (geométrico v2)")).toBeInTheDocument();
-    expect(screen.getByText("Low incidence ([0, 0.3))")).toBeInTheDocument();
-    expect(screen.getByText("Incidencia baja ([0, 0.3))")).toBeInTheDocument();
-    expect(screen.getByText("Medium incidence ([0.3, 0.7))")).toBeInTheDocument();
-    expect(screen.getByText("Incidencia media ([0.3, 0.7))")).toBeInTheDocument();
-    expect(screen.getByText("High incidence ([0.7, 1])")).toBeInTheDocument();
-    expect(screen.getByText("Incidencia alta ([0.7, 1])")).toBeInTheDocument();
+    expect(screen.getByText("Incidencia superficial")).toBeInTheDocument();
+    expect(screen.getByTitle("baja ([0, 0.3))")).toBeInTheDocument();
+    expect(screen.getByTitle("media ([0.3, 0.7))")).toBeInTheDocument();
+    expect(screen.getByTitle("alta ([0.7, 1])")).toBeInTheDocument();
 
     expect(screen.queryByText("Confirmed obstruction shadow")).not.toBeInTheDocument();
     expect(screen.queryByText("Sombra por obstrucción confirmada")).not.toBeInTheDocument();
     expect(screen.getByText(
-      "SHADOW marks an obstruction on the terrain LOS ray; it is distinct from OUT_OF_RANGE and OUTSIDE_FOV.",
-    )).toBeInTheDocument();
-    expect(screen.getByText(
       "SHADOW indica una obstrucción del terreno en el rayo LOS; es distinto de OUT_OF_RANGE y OUTSIDE_FOV.",
     )).toBeInTheDocument();
 
-    expect(screen.getByText("Transparent — no index value")).toBeInTheDocument();
-    expect(screen.getByText("Transparente — sin valor de índice")).toBeInTheDocument();
-    expect(screen.getByText(
-      "NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV and SHADOW have no displayed index and appear transparent, showing the base terrain; transparency alone does not identify the cause.",
-    )).toBeInTheDocument();
+    expect(screen.getByText("Sin color = no visible")).toBeInTheDocument();
     expect(screen.getByText(
       "NODATA, UNKNOWN_RAY, OUT_OF_RANGE, OUTSIDE_FOV y SHADOW no tienen un índice mostrado y aparecen transparentes, mostrando el terreno base; la transparencia por sí sola no identifica la causa.",
-    )).toBeInTheDocument();
-    expect(screen.getByText(
-      "Only VISIBLE cells have this geometric index. A displayed value of 0.0 is measured; missing data is transparent.",
     )).toBeInTheDocument();
     expect(screen.getByText(
       "El índice geométrico se calcula solo para celdas VISIBLE. Un valor mostrado de 0.0 es medido; los datos ausentes son transparentes.",
     )).toBeInTheDocument();
     expect(screen.getByText(
-      "For VISIBLE cells, the 0-1 score is the alignment of the terrain surface normal with the LOS direction from terrain to radar. Distance is not a multiplier: the configured maximum range only gates which cells are eligible for LOS and cannot change the score of a cell that stays VISIBLE. It is a geometric index, not an estimate of sensor signal or data reliability.",
-    )).toBeInTheDocument();
-    expect(screen.getByText(
       "Para celdas VISIBLE, el valor de 0-1 es la alineación de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia no es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo VISIBLE. Es un índice geométrico, no una estimación de la señal del sensor ni de la fiabilidad de los datos.",
     )).toBeInTheDocument();
 
-    const legend = screen.getByText("Surface incidence index (geometric v2)").closest(".geotechnical-hud-legend");
+    const legend = screen.getByText("Incidencia superficial").closest(".geotechnical-hud-legend");
     expect(legend).not.toBeNull();
     expect(legend).not.toHaveTextContent(/suboptimal signal angle|hard to monitor|adequate signal|reliable geotechnical|perfect angle of incidence|ideal snr/i);
     expect(legend).not.toHaveTextContent(/combines terrain-normal\/LOS alignment with distance/i);
     const qualityColors = [
-      screen.getByText("Low incidence ([0, 0.3))").closest(".hud-legend-row"),
-      screen.getByText("Medium incidence ([0.3, 0.7))").closest(".hud-legend-row"),
-      screen.getByText("High incidence ([0.7, 1])").closest(".hud-legend-row"),
+      screen.getByTitle("baja ([0, 0.3))").closest(".hud-legend-row"),
+      screen.getByTitle("media ([0.3, 0.7))").closest(".hud-legend-row"),
+      screen.getByTitle("alta ([0.7, 1])").closest(".hud-legend-row"),
     ].map((row) => row?.querySelector<HTMLElement>(".hud-legend-color")?.style.background);
     expect(qualityColors).toEqual([
       "rgb(230, 26, 56)",
@@ -407,10 +394,8 @@ describe("TerrainViewer quality legend", () => {
     useQualityPolicyStore.setState({ policy: { ...DEFAULT_QUALITY_POLICY } });
 
     render(<TerrainViewer showShadowOverlay />);
+    fireEvent.click(screen.getByRole("button", { name: "Información de la leyenda" }));
 
-    expect(screen.getByText(
-      "The bands are a configurable shared policy copied from the legacy legend (provisional); they are not equipment-certified detection thresholds.",
-    )).toBeInTheDocument();
     expect(screen.getByText(
       "Las bandas son una política compartida configurable copiada de la leyenda anterior (provisional); no son umbrales de detección certificados por equipo.",
     )).toBeInTheDocument();

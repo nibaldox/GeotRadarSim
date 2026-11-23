@@ -65,6 +65,7 @@ export interface QualitySummaryViewProps {
   coveragePct: number | null;
   completenessPct: number | null;
   compact?: boolean;
+  variant?: "dense";
 }
 
 export function QualitySummaryView({
@@ -73,11 +74,12 @@ export function QualitySummaryView({
   coveragePct,
   completenessPct,
   compact = false,
+  variant,
 }: QualitySummaryViewProps) {
   return (
     <div
       data-testid="quality-summary"
-      className="text-sm"
+      className={`text-sm${variant === "dense" && summary ? " quality-summary-dense" : ""}`}
       style={compact ? { fontFamily: "var(--font-mono)", fontSize: "10px", display: "flex", flexDirection: "column", gap: "2px" } : undefined}
     >
       {summary ? (
@@ -85,10 +87,14 @@ export function QualitySummaryView({
           <div>
             <strong>Cobertura útil</strong> ({metricLabel}): {formatPercent(summary.usefulCoveragePct)} del objetivo común
           </div>
-          <div>
+          {variant === "dense" ? (
+            <div className="quality-target-dense" title={`Objetivo común: ${summary.target.label} — ${summary.target.cellCount} celdas · ${Number.isFinite(summary.target.nominalAreaM2) ? `${summary.target.nominalAreaM2.toFixed(0)} m²` : "Sin datos"} (nominal)`}>
+              <span>Objetivo común: {summary.target.label}</span><span> — {summary.target.cellCount} celdas · {Number.isFinite(summary.target.nominalAreaM2) ? `${summary.target.nominalAreaM2.toFixed(0)} m²` : "Sin datos"} (nominal)</span>
+            </div>
+          ) : <div>
             Objetivo común: {summary.target.label} — {summary.target.cellCount} celdas ·{" "}
             {Number.isFinite(summary.target.nominalAreaM2) ? `${summary.target.nominalAreaM2.toFixed(0)} m²` : "Sin datos"} (nominal)
-          </div>
+          </div>}
           <div>
             <strong>Media + alta de lo visible:</strong> {formatPercent(summary.mediumHighAmongVisiblePct)}
           </div>

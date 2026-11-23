@@ -1,8 +1,9 @@
 /**
- * App — main application layout.
+ * App — main application layout (compact console).
  *
- * Left sidebar: terrain controls (synthetic + DXF upload), radar controls, export panel
- * Center: 3D terrain viewer
+ * Left sidebar, top to bottom: header, Terreno, Radar, Sensibilidad 3D,
+ * Historial, Resultados, Sugerir ubicación, Ajustes, and a sticky export foot.
+ * Center: 3D terrain viewer with the KPI bar on top.
  * State managed via Zustand stores.
  */
 
@@ -15,31 +16,22 @@ import { QualityDashboard } from "./components/QualityDashboard";
 import { QualityPolicyControl } from "./components/QualityPolicyControl";
 import { ExportPanel } from "./components/ExportPanel";
 import { UploadTerrainDialog } from "./components/UploadTerrainDialog";
+import { SuggestPositionsPanel } from "./components/SuggestPositionsPanel";
+import { KpiBar, formatKpiPercent } from "./components/KpiBar";
+import { Section } from "./components/ui/Section";
+import { useGlobalSummary } from "./hooks/useGlobalQuality";
 import { useTerrainStore } from "./store/terrainStore";
 import { useAnalysisStore } from "./store/analysisStore";
+import { useQualityPolicyStore } from "./store/qualityPolicyStore";
+import { formatQualityThreshold } from "./utils/qualityMetrics";
+
+/** Default sidebar width of the compact console (drag range stays 260–500 px). */
+const DEFAULT_SIDEBAR_WIDTH = 300;
 
 function App() {
   const [showShadowOverlay, setShowShadowOverlay] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Collapsible Terrain Panel State
-  const [isTerrainCollapsed, setIsTerrainCollapsed] = useState<boolean>(() => {
-    if (typeof localStorage !== "undefined" && localStorage.getItem) {
-      return localStorage.getItem("geotradar-collapse-terrain") === "true";
-    }
-    return false;
-  });
-
-  const toggleTerrainCollapse = useCallback(() => {
-    setIsTerrainCollapsed((prev) => {
-      const next = !prev;
-      if (typeof localStorage !== "undefined" && localStorage.setItem) {
-        localStorage.setItem("geotradar-collapse-terrain", String(next));
-      }
-      return next;
-    });
-  }, []);
-  
   // Minimalist Theme, Sidebar Resize & Collapse States
   const [theme, setTheme] = useState<"dark" | "light">(
     () => {
@@ -52,9 +44,9 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState<number>(
     () => {
       if (typeof localStorage !== "undefined" && localStorage.getItem) {
-        return Number(localStorage.getItem("geotradar-sidebar-width")) || 320;
+        return Number(localStorage.getItem("geotradar-sidebar-width")) || DEFAULT_SIDEBAR_WIDTH;
       }
-      return 320;
+      return DEFAULT_SIDEBAR_WIDTH;
     }
   );
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
@@ -63,7 +55,7 @@ function App() {
   // Sync theme with Document Body
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove("theme-dark", "theme-light", "theme-slate", "theme-charcoal", "theme-amber");
+    root.classList.remove("theme-dark", "theme-light");
     root.classList.add(`theme-${theme}`);
     if (typeof localStorage !== "undefined" && localStorage.setItem) {
       localStorage.setItem("geotradar-theme", theme);
@@ -116,6 +108,16 @@ function App() {
   const radarCatalogReady = useAnalysisStore((s) => s.radars.length > 0);
   const cancelAnalysis = useAnalysisStore((s) => s.cancelAnalysis);
   const analysisError = useAnalysisStore((s) => s.error);
+  const policy = useQualityPolicyStore((s) => s.policy);
+  const { summary: globalSummary, guarded: globalGuarded } = useGlobalSummary();
+
+  const terrainSummary = terrainMetadata
+    ? `${terrainMetadata.grid_cols} × ${terrainMetadata.grid_rows} · ${terrainMetadata.resolution} m`
+    : "Sin terreno";
+  const resultsSummary = globalSummary && !globalGuarded
+    ? `útil ${formatKpiPercent(globalSummary.usefulCoveragePct)}`
+    : "Sin análisis";
+  const settingsSummary = `bandas ${formatQualityThreshold(policy.mediumMin)} / ${formatQualityThreshold(policy.highMin)}`;
 
   // Auto-show the overlay as soon as any analysis result arrives
   useEffect(() => {
@@ -180,172 +182,145 @@ function App() {
           minWidth: isSidebarOpen ? `${sidebarWidth}px` : '0px'
         }}
       >
-        {/* Console Header: Selector de temas y cierres */}
+        {/* Cabecera de la consola: nombre, tema y ocultar */}
         <div className="sidebar-header">
-          <button 
-            className="theme-toggle-btn"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            title={theme === 'dark' ? "Cambiar a Tema Claro" : "Cambiar a Tema Oscuro"}
-          >
-            {theme === 'dark' ? (
-              <>
-                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="var(--accent-color)" />
-                </svg>
-                <span className="theme-toggle-text" style={{ color: "var(--text-primary)" }}>Oscuro</span>
-              </>
-            ) : (
-              <>
-                <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="4" fill="var(--accent-color)" />
-                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-                </svg>
-                <span className="theme-toggle-text" style={{ color: "var(--text-primary)" }}>Claro</span>
-              </>
-            )}
-          </button>
-          
-          <button 
-            className="close-sidebar-btn" 
-            style={{ display: "flex" }} 
-            onClick={() => setIsSidebarOpen(false)}
-            title="Collapse Sidebar"
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
+          <span className="sidebar-brand">GeotRadarSim</span>
+          <div className="sidebar-header-actions">
+            <button
+              type="button"
+              className="theme-toggle-btn"
+              data-theme={theme}
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              title={theme === 'dark' ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+              aria-label={theme === 'dark' ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+            >
+              {/* Los dos íconos quedan montados y superpuestos; compact.css anima cuál se ve según data-theme. */}
+              <svg className="theme-icon theme-icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="var(--accent-color)" />
+              </svg>
+              <svg className="theme-icon theme-icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent-color)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" fill="var(--accent-color)" />
+                <path className="theme-sun-rays" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className="close-sidebar-btn"
+              style={{ display: "flex" }}
+              onClick={() => setIsSidebarOpen(false)}
+              title="Ocultar panel"
+              aria-label="Ocultar panel"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div className="glass-panel" style={{ display: "flex", flexDirection: "column" }}>
-          <div 
-            onClick={toggleTerrainCollapse}
-            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}
+        <Section
+          id="terrain"
+          title="Terreno"
+          summary={terrainSummary}
+          defaultOpen
+          storageKey="geotradar-collapse-terrain"
+        >
+          <div className="terrain-actions field-row">
+          <button
+            type="button"
+            className="btn-compact primary"
+            onClick={() => void handleGenerateTerrain()}
+            disabled={terrainLoading}
           >
-            <h2 style={{ margin: 0 }}>Terrain</h2>
-            <svg 
-              viewBox="0 0 24 24" 
-              width="18" 
-              height="18" 
-              fill="none" 
-              stroke="var(--text-secondary)" 
-              strokeWidth="2.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-              style={{ 
-                transform: isTerrainCollapsed ? "rotate(-90deg)" : "rotate(0deg)", 
-                transition: "transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)" 
-              }}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
+            {terrainLoading ? "Generando…" : "Terreno sintético"}
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".dxf,.stl"
+            style={{ display: "none" }}
+            onChange={(e) => void handleFileChange(e)}
+            aria-label="Cargar terreno"
+          />
+          <button
+            type="button"
+            className="btn-compact"
+            onClick={handleUploadClick}
+            disabled={terrainLoading}
+          >
+            {terrainLoading ? "Cargando…" : "Cargar STL / DXF"}
+          </button>
           </div>
 
-          {!isTerrainCollapsed && (
-            <div className="flex-col" style={{ marginTop: "12px" }}>
-              <button
-                className="btn-primary"
-                onClick={() => void handleGenerateTerrain()}
-                disabled={terrainLoading}
-              >
-                {terrainLoading ? "Generating..." : "Generate Synthetic Terrain"}
-              </button>
+          {/* Resolución de la próxima importación */}
+          <div className="terrain-resolution">
+            <label className="cs-label" htmlFor="terrain-resolution">
+              Resolución de importación: <span className="cs-value">{preferredResolution} m</span>
+            </label>
+            <input
+              id="terrain-resolution"
+              type="range"
+              min="0.5"
+              max="5.0"
+              step="0.5"
+              value={preferredResolution}
+              onChange={(e) => setPreferredResolution(Number(e.target.value))}
+              className="cs-range"
+              title="Más detalle (0,5 m) · Más rápido (5 m)"
+            />
+          </div>
 
-              {/* Resolution Selector */}
-              <div className="hud-card flex-col" style={{ gap: "6px" }}>
-                <label className="text-sm" style={{ fontWeight: 500, fontSize: "11px", opacity: 0.8 }}>
-                  Grid Resolution: <span className="text-value" style={{ color: "var(--accent-hover)" }}>{preferredResolution}m</span>
-                </label>
-                <input 
-                  type="range" 
-                  min="0.5" 
-                  max="5.0" 
-                  step="0.5" 
-                  value={preferredResolution}
-                  onChange={(e) => setPreferredResolution(Number(e.target.value))}
-                  style={{ cursor: "pointer", accentColor: "var(--accent-color)" }}
-                />
-                <div className="flex-row" style={{ justifyContent: "space-between", fontSize: "9px", opacity: 0.5, fontFamily: "var(--font-mono)" }}>
-                  <span>High Detail (0.5m)</span>
-                  <span>Performance (5m)</span>
-                </div>
-              </div>
-
-              {/* Terrain Upload */}
-              <div className="flex-col mt-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".dxf,.stl"
-                  style={{ display: "none" }}
-                  onChange={(e) => void handleFileChange(e)}
-                  aria-label="Upload Terrain"
-                />
-                <button
-                  className="btn-primary"
-                  onClick={handleUploadClick}
-                  disabled={terrainLoading}
-                >
-                  {terrainLoading ? "Uploading..." : "Upload DXF / STL"}
-                </button>
-              </div>
-
-              {terrainMetadata && (
-                <div className="text-sm mt-4">
-                  <div><span className="text-value">ID:</span> {terrainMetadata.terrain_id}</div>
-                  <div><span className="text-value">Grid:</span> {terrainMetadata.grid_rows}×{terrainMetadata.grid_cols}</div>
-                  <div><span className="text-value">Resolution:</span> {terrainMetadata.resolution}m</div>
-                </div>
-              )}
-
-              {terrainError && (
-                <div className="error-text" role="alert">
-                  Error: {terrainError}
-                </div>
-              )}
+          {terrainError && (
+            <div className="error-text" role="alert">
+              Error: {terrainError}
             </div>
           )}
-        </div>
+        </Section>
 
         <RadarControls />
         <VectorSynthesisPanel />
         <AnalysisHistory />
-        <QualityDashboard />
-        <QualityPolicyControl />
 
-        <div className="glass-panel">
+        <Section
+          id="results"
+          title="Resultados"
+          summary={resultsSummary}
+          defaultOpen
+          storageKey="geotradar-collapse-results"
+        >
+          <QualityDashboard />
+        </Section>
+
+        <SuggestPositionsPanel />
+
+        <Section
+          id="settings"
+          title="Ajustes"
+          summary={settingsSummary}
+          defaultOpen={false}
+          storageKey="geotradar-collapse-settings"
+        >
+          <QualityPolicyControl />
           <label className="checkbox-label">
             <input
               type="checkbox"
               checked={showShadowOverlay}
               onChange={handleToggleOverlay}
             />
-            Show Shadow Overlay
+            Mostrar capa de cobertura
           </label>
-        </div>
-
-        <ExportPanel />
+        </Section>
 
         {(analysisLoading || multiLoading) && (
           <div className="loading-banner">
-            Running analysis...
+            Calculando cobertura…
             {radarCatalogReady && (
               <button
                 type="button"
+                className="btn-compact loading-cancel"
                 onClick={cancelAnalysis}
-                style={{
-                  display: "block",
-                  margin: "8px auto 0",
-                  padding: "4px 14px",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "11px",
-                  fontWeight: 500,
-                  color: "var(--accent-hover)",
-                  background: "transparent",
-                  border: "1px solid hsla(250, 85%, 65%, 0.35)",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                }}
               >
                 Cancelar análisis
               </button>
@@ -354,10 +329,15 @@ function App() {
         )}
 
         {analysisError && (
-          <div className="error-text" role="alert">
-            Analysis error: {analysisError}
+          <div className="error-text analysis-error" role="alert">
+            Error en el análisis: {analysisError}
           </div>
         )}
+
+        {/* Pie fijo: exportación */}
+        <div className="sidebar-footer">
+          <ExportPanel />
+        </div>
 
         {/* Tirador táctil para redimensionamiento (Resizer Splitter) */}
         <div 
@@ -373,8 +353,8 @@ function App() {
           <button 
             className="sidebar-toggle" 
             onClick={() => setIsSidebarOpen(true)}
-            aria-label="Open Console"
-            title="Open Console"
+            aria-label="Mostrar panel"
+            title="Mostrar panel"
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="9 18 15 12 9 6" />
@@ -385,6 +365,7 @@ function App() {
           showShadowOverlay={showShadowOverlay}
           onTerrainClick={handleTerrainClick}
         />
+        <KpiBar />
       </main>
 
       <UploadTerrainDialog />

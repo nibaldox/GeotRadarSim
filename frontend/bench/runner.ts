@@ -17,7 +17,10 @@ type Scope = { onmessage: ((event: MessageEvent) => unknown) | null; postMessage
 type Terrain = { grid: number[][]; metadata: DTMMetadata; warnings?: string[] };
 type Engine = 'ts' | 'wasm';
 type Pair<T> = Record<Engine, T>;
-const baselinePath = '/home/xodla/.hermes/profiles/simulacion-radar/plans/rust-wasm/evidence/w1a-frozen-ab195fe/golden-manifest.json';
+// The frozen W1-A golden manifest is not versioned: pass its path in GEOT_W1A_BASELINE, e.g.
+// GEOT_W1A_BASELINE=/path/to/w1a-frozen-ab195fe/golden-manifest.json GEOT_BENCH_MODE=golden npx vitest run --config bench/vitest.config.ts
+// Its content is still checked against baselineHash below. `freeze` does not read it.
+const BASELINE_ENV = 'GEOT_W1A_BASELINE';
 const baselineHash = '1f42ce522efadbb800836e339a4a5629377d8737349b0cd45e5308e1294d0da1';
 const FROZEN_CASE_COUNT = 11; // same case set as golden (W1-A v1 has 11 cases)
 const sha = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
@@ -56,7 +59,9 @@ export async function run() {
   const stamp = new Date().toISOString().replace(/:/g, '-');
   const out = outputPath(process.env.GEOT_BENCH_OUT, process.env.TMPDIR ?? '/tmp', stamp);
   // freeze does not read the anchor: it only generates a new one.
-  const baselineBytes = frozen ? undefined : readFileSync(baselinePath);
+  const baselinePath = frozen ? undefined : process.env[BASELINE_ENV];
+  if (!frozen && !baselinePath) throw new Error(`${BASELINE_ENV} must point to the frozen W1-A golden-manifest.json (required by smoke, golden and full modes)`);
+  const baselineBytes = frozen ? undefined : readFileSync(baselinePath!);
   if (baselineBytes && sha(baselineBytes) !== baselineHash) throw new Error('Frozen baseline hash mismatch');
   const baseline = baselineBytes ? JSON.parse(new TextDecoder().decode(baselineBytes)) as { cases: Record<string, unknown> } : { cases: {} as Record<string, unknown> };
   const h = await handlers();

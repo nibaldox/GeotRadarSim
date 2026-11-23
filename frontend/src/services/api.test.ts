@@ -308,7 +308,7 @@ describe("uploadSTL", () => {
     const queuedSuccess = importWorker.onmessage;
 
     importWorker.onerror?.({ message: "STL worker crashed" } as ErrorEvent);
-    await expect(importPromise).rejects.toThrow("Worker error: STL worker crashed");
+    await expect(importPromise).rejects.toThrow("Error del proceso de cálculo: STL worker crashed");
 
     expect(importWorker.onmessage).toBeNull();
     expect(importWorker.onerror).toBeNull();
@@ -710,7 +710,7 @@ describe("generateSynthetic", () => {
 
 describe("getTerrainGrid", () => {
   it("throws standard error on nonexistent terrain", async () => {
-    await expect(getTerrainGrid("nonexistent")).rejects.toThrow("Terrain 'nonexistent' not found locally");
+    await expect(getTerrainGrid("nonexistent")).rejects.toThrow("No se encontró el terreno 'nonexistent' en este equipo.");
   });
 });
 
@@ -726,7 +726,7 @@ describe("runLOSAnalysis", () => {
         radar_position: { x: 0, y: 0, z: 0 },
         radar_model_id: "groundprobe-ssr-fx",
       })
-    ).rejects.toThrow("Terrain not loaded");
+    ).rejects.toThrow("No hay terreno cargado.");
   });
 
   it("throws when radar model ID is unknown", async () => {
@@ -739,7 +739,7 @@ describe("runLOSAnalysis", () => {
         radar_position: { x: 0, y: 0, z: 0 },
         radar_model_id: "unknown",
       })
-    ).rejects.toThrow("Radar model not found");
+    ).rejects.toThrow("No se encontró el modelo de radar.");
   });
 
   it("rejects oversized cached terrain metadata before creating a LOS job", async () => {
@@ -756,7 +756,7 @@ describe("runLOSAnalysis", () => {
       terrain_id: metadata.terrain_id,
       radar_position: { x: 0, y: 0, z: 1 },
       radar_model_id: "ibis-arcsar360",
-    })).rejects.toThrow(/dimension|maximum/i);
+    })).rejects.toThrow(/dimensi[óo]n|m[áa]ximo/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
@@ -858,7 +858,7 @@ describe("runLOSAnalysis", () => {
     const consumed = await getLOSJob(job.job_id);
     expect(consumed).toMatchObject({ status: "COMPLETED", result });
     releaseLOSJob(job.job_id);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("cancels an LOS job idempotently and fences off its late worker message", async () => {
@@ -875,7 +875,7 @@ describe("runLOSAnalysis", () => {
     worker.onmessage?.({ data: { coverage_pct: 100 } } as MessageEvent);
 
     expect(worker.terminateCalls).toBe(1);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("does not let sensitivity cancellation alter or stop a pending LOS job", async () => {
@@ -952,7 +952,7 @@ describe("LOS range and elevation overrides", () => {
       radar_position: { x: 10, y: 10, z: 5 },
       radar_model_id: "groundprobe-ssr-fx",
       ...overrides,
-    })).rejects.toThrow(/range|elevation/i);
+    })).rejects.toThrow(/rango|elevación/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
@@ -971,7 +971,7 @@ describe("LOS range and elevation overrides", () => {
       radar_position: { x: 10, y: 10, z: 5 },
       radar_model_id: "groundprobe-ssr-fx",
       ...overrides,
-    })).rejects.toThrow(/range|elevation/i);
+    })).rejects.toThrow(/rango|elevación/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 });
@@ -1026,7 +1026,7 @@ describe("azimuth sectors", () => {
     expect(normalize).toBeTypeOf("function");
     if (!normalize) return;
 
-    expect(() => normalize(center, width)).toThrow(/azimuth/i);
+    expect(() => normalize(center, width)).toThrow(/azimut/i);
   });
 
   it.each([
@@ -1040,7 +1040,7 @@ describe("azimuth sectors", () => {
       radar_position: { x: 10, y: 10, z: 5 },
       radar_model_id: "groundprobe-ssr-fx",
       ...azimuth,
-    })).rejects.toThrow(/azimuth/i);
+    })).rejects.toThrow(/azimut/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
@@ -1073,8 +1073,8 @@ describe("getRadar", () => {
     expect(radar.manufacturer).toBe("IDS GeoRadar");
   });
 
-  it("throws Radar not found for missing ID", async () => {
-    await expect(getRadar("missing-radar")).rejects.toThrow("Radar not found");
+  it("throws «No se encontró el radar» for missing ID", async () => {
+    await expect(getRadar("missing-radar")).rejects.toThrow("No se encontró el radar.");
   });
 });
 
@@ -1228,7 +1228,7 @@ describe("runSensitivityAnalysis", () => {
       },
     });
 
-    await expect(runSensitivityAnalysis(sensitivityRequest(stale))).rejects.toThrow(/terrain/i);
+    await expect(runSensitivityAnalysis(sensitivityRequest(stale))).rejects.toThrow(/terreno/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
@@ -1239,20 +1239,20 @@ describe("runSensitivityAnalysis", () => {
   ])("rejects mismatched observation %s before creating a worker", async (_label, overrides) => {
     installSensitivityTerrain();
     await expect(runSensitivityAnalysis(sensitivityRequest(makeSensitivityObservation("bad-dimensions", [5, 0, 0, 0, 0, 0], overrides))))
-      .rejects.toThrow(/dimension|resolution|grid/i);
+      .rejects.toThrow(/dimension|resoluci|malla/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
   it("rejects cell-state arrays whose length does not match the active rectangular grid", async () => {
     installSensitivityTerrain();
     await expect(runSensitivityAnalysis(sensitivityRequest(makeSensitivityObservation("short-mask", [5, 0]))))
-      .rejects.toThrow(/cell-state|length|dimension/i);
+      .rejects.toThrow(/estados de celda|longitud|dimension/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
   it("rejects a ragged cached terrain grid before creating a worker", async () => {
     installSensitivityTerrain([[1, 2, 3], [4, 5]]);
-    await expect(runSensitivityAnalysis(sensitivityRequest())).rejects.toThrow(/grid|dimension/i);
+    await expect(runSensitivityAnalysis(sensitivityRequest())).rejects.toThrow(/malla|dimension/i);
     expect(MockWorker.instances).toHaveLength(0);
   });
 
@@ -1299,7 +1299,7 @@ describe("runSensitivityAnalysis", () => {
     lateMessage?.({ data: sensitivityResponse() } as MessageEvent);
 
     expect(worker.terminateCalls).toBe(1);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("releases only the consumed sensitivity job and rejects late publication", async () => {
@@ -1324,14 +1324,14 @@ describe("runSensitivityAnalysis", () => {
     releaseSensitivityJob(jobA.job_id);
     lateMessageA?.({ data: sensitivityResponse() } as MessageEvent);
 
-    await expect(getLOSJob(jobA.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(jobA.job_id)).rejects.toThrow("No se encontró el trabajo.");
     expect(await getLOSJob(jobB.job_id)).toMatchObject({ status: "PENDING" });
     expect(workerB.terminateCalls).toBe(0);
 
     finishJobB?.({ data: resultB } as MessageEvent);
     expect(await getLOSJob(jobB.job_id)).toMatchObject({ status: "COMPLETED", result: resultB });
     releaseSensitivityJob(jobB.job_id);
-    await expect(getLOSJob(jobB.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(jobB.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("releases a consumed sensitivity failure", async () => {
@@ -1342,7 +1342,7 @@ describe("runSensitivityAnalysis", () => {
 
     expect(await getLOSJob(job.job_id)).toMatchObject({ status: "FAILED", error: "sensitivity worker failed" });
     releaseSensitivityJob(job.job_id);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("does not let LOS release or cancellation APIs consume a sensitivity job", async () => {
@@ -1440,7 +1440,7 @@ describe("exportPDF", () => {
     await runLOSAnalysis({ terrain_id: terrain.terrain_id, radar_position: { x: 1, y: 1, z: 2 }, radar_model_id: "reutech-msr" });
     await delay(10);
 
-    await expect(exportPDF(exportSnapshotForApi)).rejects.toThrow("No analysis data available to export. Run LOS analysis first.");
+    await expect(exportPDF(exportSnapshotForApi)).rejects.toThrow("No hay datos de análisis para exportar. Calcula primero la cobertura LOS.");
   });
 
   it("delegates the explicit snapshot and result to exportEngine", async () => {
@@ -1483,7 +1483,7 @@ describe("exportCSV", () => {
     await runLOSAnalysis({ terrain_id: terrain.terrain_id, radar_position: { x: 1, y: 1, z: 2 }, radar_model_id: "reutech-msr" });
     await delay(10);
 
-    await expect(exportCSV(exportSnapshotForApi)).rejects.toThrow("No analysis data available to export. Run LOS analysis first.");
+    await expect(exportCSV(exportSnapshotForApi)).rejects.toThrow("No hay datos de análisis para exportar. Calcula primero la cobertura LOS.");
   });
 
   it("delegates the explicit snapshot and result to exportEngine", async () => {
@@ -1534,7 +1534,7 @@ describe("exportCSV", () => {
 
     expect(blob.type).toBe("text/csv");
     expect(generateCSVBlob).toHaveBeenCalledWith(exportSnapshotForApi, consumed.result, undefined);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 });
 
@@ -1707,7 +1707,7 @@ describe("terrain ownership and worker leases", () => {
     cancelSensitivityAnalysis(job.job_id);
 
     expect(getLocalTerrain(sensitivityTerrainKey.terrain_id)).toBeUndefined();
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("evicts nine stale grids from ten overlapping imports and keeps the latest terrain", async () => {
@@ -1846,12 +1846,12 @@ describe("LOS worker watchdog", () => {
     expect(vi.getTimerCount()).toBe(0);
 
     vi.advanceTimersByTime(125000);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
     expect(worker.terminateCalls).toBe(1);
 
     // Late worker traffic stays fenced off after cancellation.
     worker.onmessage?.({ data: watchdogLosResult } as MessageEvent);
-    await expect(getLOSJob(job.job_id)).rejects.toThrow("Job not found");
+    await expect(getLOSJob(job.job_id)).rejects.toThrow("No se encontró el trabajo.");
   });
 
   it("clears the watchdog when the worker reports an error so the timer cannot overwrite it", async () => {
