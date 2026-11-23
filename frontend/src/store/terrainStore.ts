@@ -15,6 +15,7 @@
 import { create } from "zustand";
 import {
   generateSynthetic as apiGenerateSynthetic,
+  loadSampleTerrain as apiLoadSampleTerrain,
   getTerrainGrid as apiGetTerrainGrid,
   uploadDXF as apiUploadDXF,
   uploadSTL as apiUploadSTL,
@@ -29,6 +30,7 @@ import type {
   SyntheticTerrainRequest,
 } from "../types/api";
 import { isAbortError, withTerrainAbortSignal } from "../services/terrainAbort";
+import { sampleTerrainResolution } from "../services/sampleTerrain";
 import { useAnalysisStore } from "./analysisStore";
 import type { TerrainKey } from "./analysisStore";
 
@@ -64,6 +66,8 @@ export interface TerrainState {
   uploadPreviewError: string | null;
 
   generateSynthetic: (params: SyntheticTerrainRequest) => Promise<void>;
+  /** «Terreno sintético»: load the bundled sample open pit at max(preferredResolution, 2) m. */
+  loadSamplePit: () => Promise<void>;
   loadGrid: (terrainId: string) => Promise<void>;
   uploadDXF: (file: File) => Promise<void>;
   uploadSTL: (file: File) => Promise<void>;
@@ -188,6 +192,11 @@ export const useTerrainStore = create<TerrainState>((set, get) => {
     generateSynthetic: async (params) => {
       const { preferredResolution } = get();
       await uploadAndActivate(() => apiGenerateSynthetic({ ...params, resolution: preferredResolution }));
+    },
+
+    loadSamplePit: async () => {
+      const resolution = sampleTerrainResolution(get().preferredResolution);
+      await uploadAndActivate(() => apiLoadSampleTerrain(resolution));
     },
 
     loadGrid: async (terrainId) => {

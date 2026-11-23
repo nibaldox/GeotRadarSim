@@ -93,7 +93,7 @@ function App() {
     };
   }, [isResizing]);
 
-  const generateSynthetic = useTerrainStore((s) => s.generateSynthetic);
+  const loadSamplePit = useTerrainStore((s) => s.loadSamplePit);
   const startUploadPreview = useTerrainStore((s) => s.startUploadPreview);
   const terrainLoading = useTerrainStore((s) => s.loading);
   const terrainMetadata = useTerrainStore((s) => s.metadata);
@@ -125,8 +125,8 @@ function App() {
   }, [losResult]);
 
   const handleGenerateTerrain = useCallback(async () => {
-    await generateSynthetic({ size_x: 200, size_y: 200, depth: 30, resolution: 2.0 });
-  }, [generateSynthetic]);
+    await loadSamplePit();
+  }, [loadSamplePit]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -232,6 +232,7 @@ function App() {
             className="btn-compact primary"
             onClick={() => void handleGenerateTerrain()}
             disabled={terrainLoading}
+            title="Carga un rajo sintético de ejemplo (≈1,4 × 1,1 km) para probar la app"
           >
             {terrainLoading ? "Generando…" : "Terreno sintético"}
           </button>

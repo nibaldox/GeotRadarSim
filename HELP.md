@@ -14,9 +14,9 @@ GeotRadarSim evaluates whether terrain-grid samples are geometrically within con
 
 Choose one of the following:
 
-### Generate the synthetic example
+### Load the synthetic example
 
-Click **Generate Synthetic Terrain**. The app creates a simple bowl-shaped example (200 × 200 m, 30 m depth). It is illustrative geometry, not a survey or a realistic mine model.
+Click **Terreno sintético**. The app loads a bundled synthetic open pit of about 1.4 × 1.1 km (benches, berms, ramp, phases and a waste dump; 301 m of relief). It was generated from scratch with fixed parameters and seed, contains no real survey data, and is meant for trying the app. The grid is exactly what importing its source STL at 2 m gives (680 × 536 nodes), stored in `frontend/public/samples/` with 1 cm height precision. It loads at the import resolution or 2 m, whichever is coarser; coarser grids are rebuilt from the 2 m base with the importer's own method.
 
 ### Upload DXF or STL
 
@@ -28,7 +28,7 @@ DXF point, line, 3D-face, polyline, and lightweight-polyline coordinates are rea
 
 ### Grid resolution
 
-The **Grid Resolution** slider ranges from 0.5 m to 5 m (initial value 1 m) and sets the terrain-grid spacing used for synthetic and uploaded terrain. Smaller spacing creates more grid samples; the app's grid and LOS-work limits still apply.
+The **Grid Resolution** slider ranges from 0.5 m to 5 m (initial value 1 m) and sets the terrain-grid spacing used for uploaded terrain and for the synthetic example (never finer than 2 m for the example). Smaller spacing creates more grid samples; the app's grid and LOS-work limits still apply.
 
 Grid nodes are spaced from each X/Y minimum by the selected resolution. A span divisible by the resolution (within floating-point tolerance) includes its endpoint; a non-divisible span is truncated at the last node not beyond the requested/input maximum. Metadata maxima report that real last node—for example, 200 m at 3 m resolution gives 67 nodes ending at 198 m. Each axis requires at least two nodes, so an extent shorter than one resolution is rejected rather than producing a degenerate surface.
 

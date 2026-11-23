@@ -1,0 +1,51 @@
+{
+  "format": "geotradar-sample-dem",
+  "version": 1,
+  "name": "Rajo sintético de ejemplo",
+  "encoding": "uint16le",
+  "nx": 680,
+  "ny": 536,
+  "resolution": 2,
+  "origin": {
+    "x": 1021.3394775390625,
+    "y": 1000
+  },
+  "bounds": {
+    "min_x": 1021.3394775390625,
+    "min_y": 1000,
+    "min_z": 760,
+    "max_x": 2379.3394775390625,
+    "max_y": 2070,
+    "max_z": 1061.022216796875
+  },
+  "source_extent": {
+    "minX": 1021.3394775390625,
+    "maxX": 2380.60009765625,
+    "minY": 1000,
+    "maxY": 2070.550048828125,
+    "minZ": 760,
+    "maxZ": 1061.022216796875
+  },
+  "z0": 760.1656143131302,
+  "scale": 0.01,
+  "nodata": 65535,
+  "nodata_semantics": "0xFFFF = nodo sin puntos del STL cerca (el importador lo deja en NaN); se decodifica como NaN.",
+  "valid_cells": 320705,
+  "data": {
+    "file": "rajo-sintetico-2m.bin",
+    "bytes": 728960,
+    "sha256": "a4cb642b399a17e694bebd144dea5fa7b8ed7fbf0f5d7f24bdc918ee9a07b792"
+  },
+  "source": {
+    "file": "topo-sintetica-rajo.stl",
+    "sha256": "c335f6902922fa515167f73803b9c3c913857c45ac6bd7ef35faf919938eb55b",
+    "bytes": 32388084,
+    "triangles": 647760,
+    "header": "GeotRadarSim synthetic open pit v1"
+  },
+  "quantization": {
+    "max_abs_error_m": 0.004999962402166602
+  },
+  "importer": "generateDTM (src/workers/terrainDtm.ts) vía terrainWorker, 2 m",
+  "generator": "frontend/scripts/build-sample-terrain.mjs"
+}

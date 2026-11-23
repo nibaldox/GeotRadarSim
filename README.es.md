@@ -29,7 +29,7 @@ No permite determinar si un radar real recibirá una señal adecuada a una dista
 | Característica | Descripción |
 |---|---|
 | 🗺️ **Entrada de terreno** | Carga datos DXF de puntos/líneas/polilíneas o una superficie STL y conviértelos a una cuadrícula regular de elevaciones |
-| 🏗️ **Terreno sintético** | Genera una superficie de ejemplo tipo cuenco para probar la interfaz y la geometría |
+| 🏗️ **Terreno sintético** | Carga un rajo sintético de ejemplo (≈1,4 × 1,1 km, con bancos, rampa y botadero; sin datos reales) para probar la app sin topografía propia |
 | 📡 **LOS geométrica** | Clasifica muestras como visibles, en sombra, fuera de límites configurados, sin datos o con rayo desconocido |
 | ✅ **Capas de calidad geométrica (v2)** | Pinta la incidencia superficial con un degradado continuo anclado a los cortes configurables de las bandas provisionales y la proyección del movimiento con un degradado continuo fijo violeta–azul–cian–verde, solo sobre celdas observadas |
 | 🎯 **Límites configurables** | Selecciona un perfil local incluido y modifica límites de rango, elevación y azimut |
@@ -65,7 +65,7 @@ Abre [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/) 
 
 ### Análisis LOS desde una posición
 
-1. **Cargar terreno** — sube un archivo DXF o STL, o genera el ejemplo sintético.
+1. **Cargar terreno** — sube un archivo DXF o STL, o carga el rajo sintético de ejemplo.
 2. **Elegir perfil y límites** — selecciona uno de los perfiles locales incluidos; si hace falta, modifica rango, elevación o azimut.
 3. **Ubicar el observador** — haz clic sobre el terreno o ingresa coordenadas. Un clic lo coloca 2 m sobre la superficie muestreada y ejecuta el análisis LOS automáticamente.
 4. **Inspeccionar el resultado** — consulta los estados por celda y las métricas de celdas candidatas descritos abajo.

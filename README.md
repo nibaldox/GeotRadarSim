@@ -29,7 +29,7 @@ It cannot answer whether a real radar will receive an adequate signal at a given
 | Feature | Description |
 |---|---|
 | 🗺️ **Terrain input** | Load DXF point/line/polyline data or an STL surface and convert it to a regular elevation grid |
-| 🏗️ **Synthetic terrain** | Generate a simple bowl-shaped example surface for testing the interface and geometry |
+| 🏗️ **Synthetic terrain** | Load a bundled synthetic open pit (≈1.4 × 1.1 km, benches, ramp and waste dump; no real data) to try the app without your own topography |
 | 📡 **Geometric LOS** | Classify grid samples as visible, shadowed, outside configured limits, no-data, or unknown-ray |
 | ✅ **Geometric quality layers (v2)** | Paint surface incidence with a continuous gradient anchored to configurable provisional band cut-offs and movement projection with a fixed continuous violet–blue–cyan–green gradient on observed cells only |
 | 🎯 **Configurable limits** | Choose a bundled software profile and override range, elevation, and azimuth constraints |
@@ -65,7 +65,7 @@ Open [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/) 
 
 ### Single-viewpoint LOS analysis
 
-1. **Load terrain** — upload a DXF or STL file, or generate the synthetic example.
+1. **Load terrain** — upload a DXF or STL file, or load the synthetic example pit.
 2. **Choose a profile and limits** — select one of the bundled local profiles; optionally override its range, elevation, or azimuth values.
 3. **Place the viewpoint** — click the terrain or enter coordinates. A click places it 2 m above the sampled surface; the LOS analysis runs automatically.
 4. **Inspect the result** — read the per-cell states and candidate-cell metrics described below.

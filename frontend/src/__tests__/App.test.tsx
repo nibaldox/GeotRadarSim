@@ -3,7 +3,7 @@
  *
  * Tests:
  * 1. DXF upload UI renders (file input + upload button)
- * 2. After generateSynthetic succeeds, loadGrid is called automatically
+ * 2. After the sample pit («Terreno sintético») loads, loadGrid is called automatically
  * 3. After DXF upload succeeds, loadGrid is called automatically
  *
  * R3F Canvas is mocked because jsdom doesn't support WebGL.
@@ -42,6 +42,7 @@ vi.mock("../components/TerrainViewer", () => ({
 // Mock the API client
 vi.mock("../services/api", () => ({
   generateSynthetic: vi.fn(),
+  loadSampleTerrain: vi.fn(),
   getTerrainGrid: vi.fn(),
   uploadDXF: vi.fn(),
   uploadSTL: vi.fn(),
@@ -57,7 +58,7 @@ vi.mock("../services/api", () => ({
 }));
 
 import {
-  generateSynthetic,
+  loadSampleTerrain,
   getTerrainGrid,
   uploadDXF,
   uploadSTL,
@@ -203,9 +204,9 @@ describe("App — Terrain Upload UI", () => {
   });
 });
 
-describe("App — Auto loadGrid after generateSynthetic", () => {
-  it("calls loadGrid after generateSynthetic succeeds", async () => {
-    vi.mocked(generateSynthetic).mockResolvedValueOnce(sampleMetadata);
+describe("App — Auto loadGrid after the sample pit loads", () => {
+  it("calls loadGrid after the sample pit loads", async () => {
+    vi.mocked(loadSampleTerrain).mockResolvedValueOnce(sampleMetadata);
     vi.mocked(getTerrainGrid).mockResolvedValueOnce(sampleGrid);
 
     render(<App />);
@@ -214,12 +215,8 @@ describe("App — Auto loadGrid after generateSynthetic", () => {
     fireEvent.click(generateBtn);
 
     await waitFor(() => {
-      expect(generateSynthetic).toHaveBeenCalledWith({
-        size_x: 200,
-        size_y: 200,
-        depth: 30,
-        resolution: 1.0,
-      });
+      // max(preferred 1 m, 2 m base) = 2 m.
+      expect(loadSampleTerrain).toHaveBeenCalledWith(2);
     });
 
     await waitFor(() => {

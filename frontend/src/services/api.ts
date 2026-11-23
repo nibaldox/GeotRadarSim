@@ -22,6 +22,16 @@ import { LOSCellState } from "../types/api";
 
 import { generateSyntheticTerrain } from "./terrainEngine";
 import {
+  SAMPLE_TERRAIN_DATA_FILE,
+  SAMPLE_TERRAIN_DIR,
+  SAMPLE_TERRAIN_LOAD_ERROR,
+  SAMPLE_TERRAIN_MANIFEST_FILE,
+  decodeSampleTerrain,
+  parseSampleTerrainManifest,
+  resampleSampleTerrain,
+  sampleTerrainResolution,
+} from "./sampleTerrain";
+import {
   saveLocalTerrain,
   getLocalTerrain,
   identifyLocalTerrainImport,
@@ -354,6 +364,36 @@ export async function generateSynthetic(params: SyntheticTerrainRequest): Promis
   return metadata;
 }
 
+/**
+ * Loads the bundled sample open pit (public/samples/, precomputed with the STL importer at 2 m)
+ * provisionally, like an import; service callers must activate or release its terrain ID.
+ *
+ * The files come from this site (`connect-src 'self'`). Their size, SHA-256 and valid-cell count
+ * are checked against the manifest. The resolution is `max(resolution, 2)`: coarser grids are
+ * rebuilt from the 2 m base with the importer's criterion (see `resampleSampleTerrain`). Any
+ * failure rejects with {@link SAMPLE_TERRAIN_LOAD_ERROR}.
+ */
+export async function loadSampleTerrain(resolution: number): Promise<DTMMetadata> {
+  const target = sampleTerrainResolution(resolution);
+  let terrain;
+  try {
+    const base = `${import.meta.env.BASE_URL}${SAMPLE_TERRAIN_DIR}`;
+    const manifestResponse = await fetch(`${base}${SAMPLE_TERRAIN_MANIFEST_FILE}`);
+    if (!manifestResponse.ok) throw new Error(`HTTP ${manifestResponse.status} (manifiesto)`);
+    const manifest = parseSampleTerrainManifest(await manifestResponse.json());
+    const dataResponse = await fetch(`${base}${SAMPLE_TERRAIN_DATA_FILE}`);
+    if (!dataResponse.ok) throw new Error(`HTTP ${dataResponse.status} (datos)`);
+    const decoded = await decodeSampleTerrain(manifest, await dataResponse.arrayBuffer());
+    terrain = resampleSampleTerrain(decoded, manifest.source_extent, target);
+  } catch (error) {
+    console.warn("[sample terrain]", error);
+    throw new Error(SAMPLE_TERRAIN_LOAD_ERROR);
+  }
+  const metadata = identifyLocalTerrainImport(terrain.metadata);
+  saveLocalTerrain({ metadata, grid: terrain.grid });
+  return metadata;
+}
+
 export async function getTerrainGrid(terrainId: string): Promise<TerrainGridResponse> {
   const terrain = getLocalTerrain(terrainId);
   if (!terrain) {
@@ -372,7 +412,7 @@ export function activateTerrain(terrainId: string): void {
 }
 
 /**
- * Release the provisional grid returned by uploadDXF/uploadSTL/generateSynthetic.
+ * Release the provisional grid returned by uploadDXF/uploadSTL/generateSynthetic/loadSampleTerrain.
  * Direct service callers should call this when abandoning an import or after a
  * worker has synchronously acquired its terrain lease; active grids are safe.
  */
