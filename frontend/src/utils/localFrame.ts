@@ -27,3 +27,24 @@ export function terrainToLocal(point: FramePoint, bounds: LocalFrameBounds): Fra
     z: bounds.min_y - point.y,
   };
 }
+
+const ORIGIN: LocalFrameBounds = { min_x: 0, min_y: 0, min_z: 0 };
+/** Scene direction of terrain North (+Y): −Z. The frame is a rotation (determinant +1). */
+export const LOCAL_NORTH: Readonly<FramePoint> = terrainToLocal({ x: 0, y: 1, z: 0 }, ORIGIN);
+
+/** Terrain name of the direction a local (scene) unit axis points to. */
+function terrainAxisLabel(axis: FramePoint): string {
+  const t = localToTerrain(axis, ORIGIN);
+  if (t.x === 1) return "E";
+  if (t.x === -1) return "O";
+  if (t.y === 1) return "N";
+  if (t.y === -1) return "S";
+  return "Z"; // elevation (cota)
+}
+
+/** Gizmo labels for the scene's +X, +Y and +Z axes, derived from this frame: ["E", "Z", "S"]. */
+export const VIEWER_AXIS_LABELS: readonly [string, string, string] = [
+  terrainAxisLabel({ x: 1, y: 0, z: 0 }),
+  terrainAxisLabel({ x: 0, y: 1, z: 0 }),
+  terrainAxisLabel({ x: 0, y: 0, z: 1 }),
+];

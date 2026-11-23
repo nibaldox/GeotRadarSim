@@ -23,6 +23,7 @@ import { AoiOverlay } from "./AoiOverlay";
 import { useAoiStore } from "../store/aoiStore";
 import type { Point3D } from "../types/api";
 import type { TerrainKey } from "../store/analysisStore";
+import { LOCAL_NORTH, VIEWER_AXIS_LABELS } from "../utils/localFrame";
 
 interface TerrainMeshProps {
   grid: number[][];
@@ -145,7 +146,13 @@ export function buildTerrainCameraPose(
       position = { x: target.x + maxDim * 1.2, y: target.y + maxDim, z: target.z + maxDim * 1.2 };
       break;
     case "TOP":
-      position = { x: target.x, y: target.y + maxDim * 1.8, z: target.z - 0.01 };
+      // Straight down, nudged a hair to the south so the screen's up is terrain North
+      // and East lands on the right (a nudge to the north turned the plan 180°).
+      position = {
+        x: target.x - LOCAL_NORTH.x * 0.01,
+        y: target.y + maxDim * 1.8,
+        z: target.z - LOCAL_NORTH.z * 0.01,
+      };
       break;
     case "FRONT":
       position = { x: target.x, y: target.y, z: target.z + maxDim * 1.8 };
@@ -464,7 +471,7 @@ function Scene({
         <GizmoViewport
           axisColors={['#ff3653', '#0adb21', '#2c8fdf']}
           labelColor="white"
-          labels={['E', 'Y', 'N']}
+          labels={[...VIEWER_AXIS_LABELS]}
         />
       </GizmoHelper>
     </>

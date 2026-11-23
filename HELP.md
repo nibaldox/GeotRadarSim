@@ -130,6 +130,7 @@ For geometric-v2 results the export click captures a quality-report context (met
 - Radar markers are simple core-and-post icons (a white sphere for the placed viewpoint, colored spheres with a post for analyses) rendered without halo rings or billboards.
 - Rotate the terrain with left-click and drag, zoom with the scroll wheel, and pan with right-click and drag.
 - Use the compass gizmo to reset the view.
+- The gizmo names each scene axis by its terrain direction: **E** (east), **Z** (elevation) and **S** (south; north is the opposite, unlabelled head). **Vista en planta** shows north up and east right, like the report maps.
 
 ---
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localToTerrain, terrainToLocal } from "./localFrame";
+import { LOCAL_NORTH, VIEWER_AXIS_LABELS, localToTerrain, terrainToLocal } from "./localFrame";
 
 describe("local terrain frame", () => {
   it("matches the App axes without applying the radar's separate 2 m offset", () => {
@@ -18,5 +18,10 @@ describe("local terrain frame", () => {
         expect(terrainToLocal(localToTerrain(local, bounds), bounds)).toEqual(local);
       }
     }
+  });
+
+  it("derives North (−Z) and the gizmo labels from the same frame", () => {
+    expect(LOCAL_NORTH).toEqual({ x: 0, y: 0, z: -1 });
+    expect(VIEWER_AXIS_LABELS).toEqual(["E", "Z", "S"]);
   });
 });
