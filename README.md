@@ -18,6 +18,10 @@ well each visible slope faces the radar.
 
 ## See it working
 
+https://github.com/user-attachments/assets/10edac28-2e79-44cb-8682-89845da2f480
+
+<p align="center"><sub>80-second tour, no voice. Captions in English; the app itself is in Spanish. Sped-up computations are labelled on screen.</sub></p>
+
 <p align="center">
   <img src="./docs/readme/v020-los-incidence.png" width="100%" alt="GeotRadarSim v0.2.0 with the example synthetic pit in 3D. After a line-of-sight analysis the pit is painted by surface incidence: red low, orange medium, green high, uncoloured where the radar does not see. The figures bar shows useful coverage, visibility and useful area; the compact sidebar shows history and results.">
 </p>

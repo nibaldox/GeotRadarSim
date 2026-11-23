@@ -18,6 +18,10 @@ bien orientado está cada talud visible respecto del radar.
 
 ## Cómo se ve
 
+https://github.com/user-attachments/assets/62386926-9e7e-4529-bf8e-1f565ffe0fa1
+
+<p align="center"><sub>Recorrido de 80 segundos, sin voz. Los cálculos acelerados están rotulados en pantalla.</sub></p>
+
 <p align="center">
   <img src="./docs/readme/v020-los-incidence.png" width="100%" alt="GeotRadarSim v0.2.0 con el rajo sintético de ejemplo en 3D. Después de un análisis de línea de visión, el rajo aparece pintado por incidencia superficial: rojo baja, naranjo media, verde alta y sin color donde el radar no ve. La barra de cifras muestra cobertura útil, visibilidad y área útil; la barra lateral compacta muestra el historial y los resultados.">
 </p>

@@ -9,7 +9,7 @@
     <text x="56" y="234" font-size="27" fill="#e8ebee">for placing slope-monitoring</text>
     <text x="56" y="268" font-size="27" fill="#e8ebee">radars on open-pit terrain.</text>
     <text x="56" y="316" font-size="20" fill="#9aa4ae">Geometry only: no signal, SNR or detection model.</text>
-    <text x="56" y="352" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#9aa4ae">v0.2.0 · runs in your browser · Rust/WASM</text>
+    <text x="56" y="352" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#9aa4ae">v0.2.1 · runs in your browser · Rust/WASM</text>
   </g>
   <g id="pit-section" transform="translate(0 34)">
     <polygon points="610,150 640,150 654,180 680,180 694,210 720,210 734,240 760,240 774,270 800,270 814,300 900,300 918,255 942,255 960,300 990,300 1004,270 1030,270 1044,240 1070,240 1084,210 1100,210 1114,180 1152,180 1152,318 610,318" fill="#1d232d"/>
