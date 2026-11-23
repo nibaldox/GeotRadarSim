@@ -22,6 +22,7 @@ vi.mock("@react-three/fiber", async () => {
     useThree: () => ({
       camera: {
         position: { set: () => undefined },
+        up: { set: () => undefined },
         lookAt: () => undefined,
         updateProjectionMatrix: () => undefined,
       },

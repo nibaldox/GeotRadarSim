@@ -11,7 +11,7 @@ vi.mock("@react-three/fiber", async () => {
   const React = await import("react");
   return {
     Canvas: ({ children }: { children: import("react").ReactNode }) => React.createElement("div", null, children),
-    useThree: () => ({ camera: { position: { set: () => undefined }, lookAt: () => undefined, updateProjectionMatrix: () => undefined } }),
+    useThree: () => ({ camera: { position: { set: () => undefined }, up: { set: () => undefined }, lookAt: () => undefined, updateProjectionMatrix: () => undefined } }),
   };
 });
 

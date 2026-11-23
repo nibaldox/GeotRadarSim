@@ -24,6 +24,7 @@ import { useAoiStore } from "../store/aoiStore";
 import type { Point3D } from "../types/api";
 import type { TerrainKey } from "../store/analysisStore";
 import { LOCAL_NORTH, VIEWER_AXIS_LABELS } from "../utils/localFrame";
+import { CameraPresetCoordinator, type PresetControls } from "./cameraPreset";
 
 interface TerrainMeshProps {
   grid: number[][];
@@ -402,26 +403,22 @@ function Scene({
   const { camera } = useThree();
   const hasAoiVertices = useAoiStore(s => s.vertices.length > 0);
   const controlsRef = useRef<any>(null);
- 
+  const coordinator = useMemo(
+    () => new CameraPresetCoordinator(camera, () => controlsRef.current as PresetControls | null),
+    [camera],
+  );
+
   // Auto-fit camera to terrain extent on first load
   useEffect(() => {
     if (!grid || grid.length === 0 || !grid[0]) return;
 
     const pose = buildTerrainCameraPose(grid, resolution);
     if (!pose) return;
-    const { extent, target, position } = pose;
-
-    camera.position.set(position.x, position.y, position.z);
-
-    if (controlsRef.current) {
-      controlsRef.current.target.set(target.x, target.y, target.z);
-      controlsRef.current.update();
-    }
-
-    camera.lookAt(target.x, target.y, target.z);
+    const { extent } = pose;
+    coordinator.applyPreset(pose);
     camera.far = Math.max(10000, Math.max(extent.width, extent.depth) * 10);
     camera.updateProjectionMatrix();
-  }, [grid, resolution]);
+  }, [grid, resolution, coordinator]);
 
   // Listen to cameraView changes from AutoCAD toolbar
   useEffect(() => {
@@ -429,21 +426,13 @@ function Scene({
 
     const pose = buildTerrainCameraPose(grid, resolution, cameraView);
     if (!pose) return;
-    const { target, position } = pose;
-
-    camera.position.set(position.x, position.y, position.z);
-
-    if (controlsRef.current) {
-      controlsRef.current.target.set(target.x, target.y, target.z);
-      controlsRef.current.update();
-    }
-
-    camera.lookAt(target.x, target.y, target.z);
+    // Cancels orbit inertia and wins over a running gizmo tween (cameraPreset.ts).
+    coordinator.applyPreset(pose);
     camera.updateProjectionMatrix();
 
     // Reset parent cameraView selection once applied
     onCameraViewApplied();
-  }, [cameraView, grid, resolution, camera, onCameraViewApplied]);
+  }, [cameraView, grid, resolution, camera, coordinator, onCameraViewApplied]);
 
   return (
     <>
@@ -467,7 +456,12 @@ function Scene({
       <RadarMarkers />
       <OrbitControls ref={controlsRef} makeDefault enabled={activeTool !== "AOI"} />
       
-      <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
+      <GizmoHelper
+        alignment="bottom-right"
+        margin={[60, 60]}
+        onTarget={() => coordinator.gizmoTweenStarted()}
+        onUpdate={() => coordinator.gizmoTweenFrame()}
+      >
         <GizmoViewport
           axisColors={['#ff3653', '#0adb21', '#2c8fdf']}
           labelColor="white"
