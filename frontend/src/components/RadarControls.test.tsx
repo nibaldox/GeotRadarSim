@@ -93,6 +93,15 @@ describe("RadarControls", () => {
     expect(screen.queryByText(/haz/)).not.toBeInTheDocument();
   });
 
+  it("muestra «haz» aparte solo cuando h_beam_width_deg difiere del sector", () => {
+    localStorage.setItem("geotradar-collapse-radar-params", "false");
+    const model = { ...radarConfigs[0]!, h_beam_width_deg: 120, azimuth_range_deg: [-75, 75] as [number, number] };
+    useAnalysisStore.setState({ radars: [model], selectedRadarId: model.model_id, azCenterOverride: null, azWidthOverride: null, terrainTransitioning: false });
+    render(<RadarControls />);
+    expect(screen.getByText(/apertura 150° \(azimut 0°\) · haz 120° · Escáner: RAR/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Radar.*150°/ })).toBeInTheDocument();
+  });
+
   it("toma el centro y la apertura de fábrica de azimuth_range_deg, no de un valor fijo", () => {
     localStorage.setItem("geotradar-collapse-radar-params", "false");
     const model = { ...radarConfigs[0]!, azimuth_range_deg: [10, 100] as [number, number] };
