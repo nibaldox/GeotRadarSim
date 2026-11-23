@@ -9,5 +9,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/setupTests.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    // Las pruebas de propiedad del optimizador y de paridad tardan entre 3 y 5 s en los runners de GitHub.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });
