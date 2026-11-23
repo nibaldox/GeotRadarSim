@@ -26,6 +26,7 @@ import {
   resolveRadarParameters,
 } from "./reportModel";
 import type { ReportInputs } from "./reportModel";
+import { unionQualityCounts } from "./reportRaster";
 
 const KEY = Object.freeze({ terrain_id: "dtm-report-test", epoch: 3 });
 const NO_OVERRIDES: AnalysisRadarOverrides = Object.freeze({
@@ -322,6 +323,44 @@ describe("buildReportModel: cifras iguales al dashboard", () => {
     expect(model.aoi!.areaM2).toBe(fixture.aoi!.areaM2);
     expect(model.aoi!.vertices).toHaveLength(4);
   });
+
+  it.each([["QUALITY", 2], ["QUALITY", 3], ["SENSITIVITY", 2], ["SENSITIVITY", 3]] as const)(
+    "modo %s con %i radares: el mapa de calidad consolidada usa la combinación de mergeResults y cuadra con la unión",
+    (mode, count) => {
+      useVectorStore.setState({ visualizationMode: mode });
+      useQualityPolicyStore.getState().setPolicy({ mediumMin: 0.4, highMin: 0.8 });
+      const history = setHistory(Array.from({ length: count }, (_, i) => i));
+      const model = build();
+      const analysis = useAnalysisStore.getState(), terrain = useTerrainStore.getState();
+      const metric = mode === "SENSITIVITY" ? "PROJECTION" : "INCIDENCE";
+      // The union quality is the app's own merge (max incidence, RMS projection), not a report-side copy.
+      const merged = mergeResults(history.slice(0, count).map((entry) => entry.result));
+      const grid = metric === "PROJECTION" ? merged.flat_projection_grid! : merged.flat_quality_grid!;
+      let expectedMax = 0;
+      for (let idx = 0; idx < SIZE; idx++) {
+        const v = grid[idx]!, ok = Number.isFinite(v) && v >= 0 && v <= 1;
+        expect(Object.is(model.union!.qualityValues![idx], ok ? v : Number.NaN)).toBe(true);
+        if (metric === "INCIDENCE" && merged.cell_states[idx] === LOSCellState.VISIBLE && ok) {
+          const seen = history.slice(0, count).filter((e) => e.result.cell_states[idx] === LOSCellState.VISIBLE)
+            .map((e) => e.result.flat_quality_grid![idx]!).filter((q) => Number.isFinite(q) && q >= 0);
+          expect(v).toBe(Math.max(...seen)); if (seen.length > 1) expectedMax++;
+        }
+      }
+      if (metric === "INCIDENCE") expect(expectedMax).toBeGreaterThan(0);
+      const summary = computeQualitySummary({
+        metric, policy: useQualityPolicyStore.getState().policy, losResult: analysis.losResult!,
+        terrainGrid: terrain.grid!, terrainResolution: RES, terrainKey: terrain.terrainKey, snapshot: analysis.activeSnapshot,
+      })!;
+      const counts = unionQualityCounts(model)!;
+      expect(counts.useful).toBe(summary.usefulCount);
+      expect(counts.useful * RES * RES).toBe(model.union!.metrics.usefulAreaM2);
+      expect(Object.is((counts.useful / summary.target.cellCount) * 100, model.union!.metrics.usefulPct)).toBe(true);
+      expect([counts.low, counts.medium, counts.high, counts.noIndex]).toEqual([
+        summary.distribution!.lowCount, summary.distribution!.mediumCount,
+        summary.distribution!.highCount, summary.distribution!.noIndexCount,
+      ]);
+      expect(counts.medium * counts.high).toBeGreaterThan(0);
+    });
 
   it("área a monitorear nula si su clave de terreno no coincide", () => {
     setHistory([0, 1, 2]);

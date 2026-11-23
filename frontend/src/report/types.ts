@@ -83,7 +83,8 @@ export interface ReportRaster {
   legend: readonly { label: string; color: string }[];
 }
 
-export type ReportMapTarget = { kind: "radar"; index: number } | { kind: "union" };
+/** `unionQuality`: la unión pintada por bandas de su calidad combinada (`union.qualityValues`). */
+export type ReportMapTarget = { kind: "radar"; index: number } | { kind: "union" } | { kind: "unionQuality" };
 
 /** Imagen 3D de portada ya codificada; la produce el navegador (sección 4b). */
 export interface ReportCoverImage {

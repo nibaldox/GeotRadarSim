@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { renderReportRaster } from "./reportRaster";
+import { renderReportRaster, unionQualityCounts } from "./reportRaster";
+import { formatQualityThreshold, metricLabel } from "../utils/qualityMetrics";
 import { REPORT_COVER_SLOT } from "./reportCover3d";
 import { zlibSync } from "fflate";
 import type { ReportCoverImage, ReportMapTarget, ReportModel, ReportRaster } from "./types";
@@ -122,9 +123,32 @@ export function generateManagementReportPdf(model: ReportModel, opts: Options = 
     for (const item of r.legend) { doc.setFillColor(item.color); doc.rect(200, y - 3, 4, 4, "F"); text(item.label, 206, y, 8); y += 5; }
 
   }
+  const unionCounts = unionQualityCounts(model);
+  if (model.union && unionCounts) {
+    // Combined quality of the union, painted by band like the per-radar pages; figures are the union's own.
+    const u = model.union.metrics, cellArea = model.terrain.resolution ** 2;
+    const threshold = (v: number) => formatQualityThreshold(v).replace(".", ",");
+    doc.addPage(); heading("Calidad consolidada"); const r = map({ kind: "unionQuality" }, M, 30, 180, 153); let y = 36;
+    const pair = (label: string, value: string, x: number, top: number) => { text(label, x, top, 8, "#6b7280"); text(value, x, top + 4, 11, "#1f2a44", "bold"); };
+    text("Métrica", 200, y, 8, "#6b7280"); text(metricLabel(model.metric), 200, y + 5, 10, "#1f2a44", "bold");
+    text(`Media desde ${threshold(model.policy.mediumMin)} · alta desde ${threshold(model.policy.highMin)}`, 200, y + 10, 9); y += 17;
+    const items = [["Cobertura útil", pct(u.usefulPct)], ["Área útil", ha(u.usefulAreaM2)], ...(u.aoi ? [["Cobertura útil del área", pct(u.aoi.usefulPct)]] : [])];
+    items.forEach(([label, value], i) => pair(label!, value!, 200 + (i % 2) * 44, y + Math.floor(i / 2) * 11));
+    y += Math.ceil(items.length / 2) * 11 + 4;
+    text("Distribución de lo visible", 200, y, 10, "#1f2a44", "bold"); y += 6;
+    const bands = u.bandsPct;
+    const distribution = [bands?.low, bands?.medium, bands?.high, bands?.noIndex];
+    const cells = [unionCounts.low, unionCounts.medium, unionCounts.high, unionCounts.noIndex];
+    r.legend.forEach((item, i) => {
+      doc.setFillColor(item.color); doc.rect(200, y - 3, 4, 4, "F"); text(item.label, 206, y, 8);
+      text(`${pct(distribution[i])} · ${ha(cells[i]! * cellArea)}`, 206, y + 4.5, 10, "#1f2a44", "bold"); y += 11;
+    });
+  }
   doc.addPage(); heading("Anexo · Cómo leer el informe");
   const sections: [string, string[]][] = [
-    ["Cómo leer", ["Los colores muestran bandas de calidad geométrica en los mapas individuales y cantidad de radares que ven cada zona en el mapa consolidado.", "El azimut se mide en grados: 0° es el norte."]],
+    ["Cómo leer", ["Los colores muestran bandas de calidad geométrica en los mapas individuales y cantidad de radares que ven cada zona en el mapa consolidado.", ...(model.union ? [model.metric === "INCIDENCE"
+      ? "Calidad consolidada: cada zona toma la mejor calidad entre los radares que la ven, con los mismos colores de los mapas individuales."
+      : "Calidad consolidada: cada zona combina los radares que la ven con la media cuadrática de su proyección (raíz del promedio de los cuadrados), no con la mejor de ellas. Usa los mismos colores de los mapas individuales."] : []), "El azimut se mide en grados: 0° es el norte."]],
     ["Definiciones", ["Visibilidad: proporción de posiciones candidatas visibles. Cobertura útil: proporción del terreno objetivo que alcanza el umbral de calidad elegido.", "Área visible exclusiva: zona visible solo por un radar. Visible por 2 o más radares: zona vista por varios radares."]],
     ["Limitaciones", ["Es un cálculo geométrico. El área es planimétrica. Las coordenadas usan el sistema del archivo, sin un sistema geodésico declarado."]],
     ["Procedencia", [`Terreno: malla ${model.terrain.cols} × ${model.terrain.rows} celdas de ${num(model.terrain.resolution, 1)} m`, `Análisis: ${model.radars.length} ${model.radars.length === 1 ? "seleccionado" : "seleccionados"} en el historial`, `Política: nivel medio desde ${num(model.policy.mediumMin, 2)}; nivel alto desde ${num(model.policy.highMin, 2)}.`, `Métrica: ${model.metric === "INCIDENCE" ? "incidencia" : "proyección de movimiento"}. Modelo: ${model.qualityModel ?? "Sin datos"}. Fecha: ${date(model.createdAtIso)}.`]]

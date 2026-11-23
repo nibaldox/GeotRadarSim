@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { reportFixture1, reportFixture3 } from "./fixtures";
 import { generateManagementReportPdf } from "./reportPdf";
-import type { ReportRaster } from "./types";
+import { unionQualityCounts } from "./reportRaster";
+import type { ReportMapTarget, ReportModel, ReportRaster } from "./types";
 
 const raster = (): ReportRaster => ({ width: 4, height: 3, rgba: new Uint8ClampedArray(48).fill(190), worldToPx: (x, y) => ({ px: x / 65, py: 2 - y / 72.5 }), metersPerPx: 65, legend: [{ label: "Calidad baja", color: "#ff0000" }] });
 const pdf = async (blob: Blob) => { const bytes = new Uint8Array(await blob.arrayBuffer()); let result = ""; for (let i = 0; i < bytes.length; i += 32768) result += String.fromCharCode(...bytes.subarray(i, i + 32768)); return result; };
@@ -42,15 +43,15 @@ describe("informe gerencial", () => {
     expect(result).toContain("(E 195) Tj");
     expect(result).not.toContain("Este 195,0 m");
   });
-  it("genera cuatro páginas para un radar y siete para tres", async () => {
-    for (const [model, count] of [[reportFixture1(), 4], [reportFixture3(), 7]] as const) {
+  it("genera cuatro páginas para un radar y ocho para tres", async () => {
+    for (const [model, count] of [[reportFixture1(), 4], [reportFixture3(), 8]] as const) {
       const text = await pdf(generateManagementReportPdf(model, { render: raster }));
       expect(text).toContain(`/Count ${count}`);
       expect(text).toContain(`Página 1 de ${count}`);
       expect(text).toContain("Uso interno: contiene coordenadas de ubicación");
       expect(text).toContain("Sin datos");
       expect(text).not.toMatch(/≥|detección|SNR|precisión|tiempo real/i);
-      if (count === 7) {
+      if (count === 8) {
         expect(text).toContain("Visible por 2 o más radares");
         expect(text).toContain(`${(model.union!.overlapAreaM2 / 10000).toFixed(2).replace(".", ",")} ha`);
         for (const radar of model.radars) {
@@ -62,12 +63,12 @@ describe("informe gerencial", () => {
   it("solicita el mapa consolidado e individual y proyecta radares y contorno", () => {
     const model = reportFixture3();
     const targets: string[] = [], projected: string[] = [];
-    const render = (_model: typeof model, target: { kind: "union" } | { kind: "radar"; index: number }): ReportRaster => {
-      targets.push(target.kind === "union" ? "union" : `radar-${target.index}`);
+    const render = (_model: typeof model, target: ReportMapTarget): ReportRaster => {
+      targets.push(target.kind === "radar" ? `radar-${target.index}` : target.kind);
       return { ...raster(), worldToPx: (x, y) => { projected.push(`${x},${y}`); return { px: x / 65, py: 2 - y / 72.5 }; } };
     };
     generateManagementReportPdf(model, { render });
-    expect(targets).toEqual(["union", "radar-0", "radar-1", "radar-2", "union"]);
+    expect(targets).toEqual(["union", "radar-0", "radar-1", "radar-2", "union", "unionQuality"]);
     for (const r of model.radars) expect(projected).toContain(`${r.position.x},${r.position.y}`);
     for (const v of model.aoi!.vertices) expect(projected).toContain(`${v.x},${v.y}`);
   });
@@ -87,7 +88,7 @@ describe("informe gerencial", () => {
     const model = reportFixture3();
     const radars = Array.from({ length: 8 }, (_, i) => ({ ...model.radars[i % 3]!, index: i, label: `Radar ${i + 1}` }));
     const result = await pdf(generateManagementReportPdf({ ...model, radars }, { render: raster }));
-    expect(result).toContain("/Count 12");
+    expect(result).toContain("/Count 13");
     const page2 = result.split("endstream")[1]!;
     expect(page2).toContain("Ubicación");
     expect(page2).toContain("Cobertura");
@@ -130,4 +131,71 @@ it("coloca la portada predeterminada en el recuadro completo sin bandas apreciab
   expect(Number(transform![1]) / scale).toBeCloseTo(REPORT_COVER_SLOT.width, 1);
   expect(Number(transform![2]) / scale).toBeCloseTo(REPORT_COVER_SLOT.height, 1);
   expect(Number(transform![3]) / scale).toBeCloseTo(REPORT_COVER_SLOT.x, 1);
+});
+
+
+/** Contenido de cada página, en orden: jsPDF sin compresión escribe un stream por página. */
+const pageStreams = (text: string) => text.split("endstream").slice(0, -1);
+const twoRadars = (): ReportModel => { const m = reportFixture3(); return { ...m, radars: m.radars.slice(0, 2) }; };
+const fmtPct = (n: number) => `${n.toFixed(1).replace(".", ",")} %`;
+const fmtHa = (m2: number) => `${(m2 / 10000).toFixed(2).replace(".", ",")} ha`;
+
+describe("página «Calidad consolidada»", () => {
+  it.each([[2, 7], [3, 8]] as const)("con %i radares va justo después de «Cobertura consolidada» y suma una página (%i)", async (n, total) => {
+    const model = n === 2 ? twoRadars() : reportFixture3();
+    const text = await pdf(generateManagementReportPdf(model, { render: raster }));
+    expect(text).toContain(`/Count ${total}`);
+    const pages = pageStreams(text);
+    const coverage = pages.findIndex(p => p.includes("(Cobertura consolidada) Tj"));
+    const quality = pages.findIndex(p => p.includes("(Calidad consolidada) Tj"));
+    const annex = pages.findIndex(p => p.includes("Anexo"));
+    expect(coverage).toBe(2 + n);
+    expect(quality).toBe(coverage + 1);
+    expect(annex).toBe(quality + 1);
+    expect(pages[quality]).toContain(`Página ${quality + 1} de ${total}`);
+    // «Cobertura consolidada» sigue igual: sus cifras y su leyenda de conteo.
+    expect(pages[coverage]).toContain("Visible por 2 o más radares");
+    expect(pages[coverage]).toContain("(Por radar) Tj");
+  });
+  it("con 1 radar no hay página nueva", async () => {
+    const text = await pdf(generateManagementReportPdf(reportFixture1(), { render: raster }));
+    expect(text).toContain("/Count 4");
+    expect(text).not.toContain("Calidad consolidada");
+  });
+  it("muestra métrica, bandas, cobertura útil, área útil y distribución de la unión en % y ha", async () => {
+    const model = reportFixture3();
+    const page = pageStreams(await pdf(generateManagementReportPdf(model))).find(p => p.includes("(Calidad consolidada) Tj"))!;
+    const u = model.union!.metrics, cell = model.terrain.resolution ** 2;
+    expect(page).toContain("(Incidencia superficial) Tj");
+    expect(page).toContain("(Media desde 0,3 · alta desde 0,7) Tj");
+    expect(page).toContain(`(${fmtPct(u.usefulPct!)}) Tj`);
+    expect(page).toContain(`(${fmtHa(u.usefulAreaM2!)}) Tj`);
+    const counts = unionQualityCounts(model)!;
+    for (const [label, pctValue, cells] of [["Calidad baja", u.bandsPct!.low, counts.low], ["Calidad media", u.bandsPct!.medium, counts.medium], ["Calidad alta", u.bandsPct!.high, counts.high], ["Visible sin índice", u.bandsPct!.noIndex, counts.noIndex]] as const) {
+      expect(page).toContain(`(${label}) Tj`);
+      expect(page).toContain(`(${fmtPct(pctValue)} · ${fmtHa(cells * cell)}) Tj`);
+    }
+    expect(page).toContain(`(${fmtPct(u.aoi!.usefulPct!)}) Tj`);
+    expect(page).toContain("(Cobertura útil del área) Tj");
+    // Útil = media + alta, exactamente el área útil de la unión.
+    expect((counts.medium + counts.high) * cell).toBe(u.usefulAreaM2);
+    expect(page).not.toMatch(/≥|RMS|detección/);
+    const withoutAoi = pageStreams(await pdf(generateManagementReportPdf({ ...model, aoi: null, union: { ...model.union!, metrics: { ...u, aoi: null } } }, { render: raster }))).find(p => p.includes("(Calidad consolidada) Tj"))!;
+    expect(withoutAoi).not.toContain("Cobertura útil del área");
+  });
+  it("con proyección usa la etiqueta de esa métrica", async () => {
+    const model = { ...reportFixture3(), metric: "PROJECTION" as const, policy: { mediumMin: 0.25, highMin: 0.625 } };
+    const page = pageStreams(await pdf(generateManagementReportPdf(model, { render: raster }))).find(p => p.includes("(Calidad consolidada) Tj"))!;
+    expect(page).toContain("(Proyección del movimiento) Tj");
+    expect(page).toContain("(Media desde 0,25 · alta desde 0,625) Tj");
+  });
+  it("el anexo explica cómo leer la página en palabras simples", async () => {
+    const incidence = await pdf(generateManagementReportPdf(reportFixture3(), { render: raster }));
+    expect(incidence).toContain("cada zona toma la mejor calidad entre los radares que la ven");
+    const projection = await pdf(generateManagementReportPdf({ ...reportFixture3(), metric: "PROJECTION" }, { render: raster }));
+    expect(projection).toContain("cada zona combina los radares que la ven");
+    expect(projection).not.toContain("cada zona toma la mejor calidad");
+    const single = await pdf(generateManagementReportPdf(reportFixture1(), { render: raster }));
+    expect(single).not.toContain("Calidad consolidada");
+  });
 });

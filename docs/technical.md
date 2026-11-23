@@ -155,7 +155,10 @@ propagation model or validated radar quality.
 The footer of the sidebar holds the exports. All of them use the active compatible analysis.
 
 - **Informe para reunión** (meeting report) — a PDF with a 3D cover, a radar table with coordinates, a map for each
-  radar and a consolidated map that separates areas seen by only one radar from areas seen by two or more. An
+  radar and a consolidated map that separates areas seen by only one radar from areas seen by two or more. With two
+  or more radars it adds a consolidated quality map (red, yellow and green bands for incidence, the same colours as
+  the per-radar maps): each area takes the best incidence among the radars that see it, or the root mean square of
+  their projections, exactly as the app combines them, so its useful area equals the union's. An
   optional **Título del informe** (report title) is printed on the cover. Its figures match the interface.
 - **PDF técnico** (technical PDF) and **CSV** — carry the same classification policy and provenance as the on-screen
   summary: thresholds marked provisional (no certified accuracy), the Float32 classification precision, the metric,

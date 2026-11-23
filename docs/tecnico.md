@@ -154,7 +154,10 @@ modelo de propagación ni una calidad de radar validada.
 Los exportes están al pie de la barra lateral y usan el análisis activo compatible.
 
 - **Informe para reunión**: un PDF con portada 3D, una tabla de radares con coordenadas, un mapa por radar y un mapa
-  consolidado que distingue las zonas vistas por un solo radar de las vistas por dos o más. El **Título del informe**,
+  consolidado que distingue las zonas vistas por un solo radar de las vistas por dos o más. Con dos o más radares
+  agrega un mapa de calidad consolidada (bandas roja, amarilla y verde en incidencia, con los colores de los mapas por
+  radar): cada zona toma la mejor incidencia entre los radares que la ven, o la media cuadrática de sus proyecciones,
+  igual que la combinación de la app, así que su área útil es la de la unión. El **Título del informe**,
   opcional, aparece en la portada. Sus cifras coinciden con las de la interfaz.
 - **PDF técnico** y **CSV**: llevan la misma política de clasificación y procedencia que el resumen en pantalla:
   umbrales marcados como provisionales (sin precisión certificada), la precisión de clasificación Float32, la
