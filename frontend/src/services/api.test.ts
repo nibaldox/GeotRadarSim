@@ -977,6 +977,19 @@ describe("LOS range and elevation overrides", () => {
 });
 
 describe("azimuth sectors", () => {
+  it("sends the SSR-FX factory sector −75..+75 (150°) to the LOS Worker when there are no overrides", async () => {
+    const radarConfig = await captureRadarConfig("groundprobe-ssr-fx");
+    expect(radarConfig.scan_pattern).toBe("RAR");
+    expect(radarConfig.azimuth_range_deg).toEqual([-75, 75]);
+  });
+
+  it("keeps every profile's override fallback width equal to its factory sector width", async () => {
+    const { factoryAzimuthSector } = await import("../utils/radarSector");
+    for (const radar of await listRadars()) {
+      expect(radar.h_beam_width_deg, radar.model_id).toBe(factoryAzimuthSector(radar).widthDeg);
+    }
+  });
+
   it.each([0, 30])(
     "treats an explicit 360° aperture centered at %i° as full-circle coverage",
     async (center) => {

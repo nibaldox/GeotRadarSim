@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { RadarControls } from "../components/RadarControls";
 import { useAnalysisStore } from "../store/analysisStore";
 import type { RadarConfig } from "../types/api";
+import { listRadars } from "../services/api";
 
 beforeEach(() => {
   useAnalysisStore.setState({
@@ -77,6 +78,29 @@ describe("RadarControls", () => {
     render(<RadarControls />);
     expect(screen.getByRole("button", { name: /Parámetros.*1 ajustado/i })).toBeInTheDocument();
     useAnalysisStore.setState({ azCenterOverride: null, azWidthOverride: null });
+  });
+
+  it("muestra la apertura del sector de fábrica (150° del SSR-FX), la misma que usa el LOS", async () => {
+    localStorage.setItem("geotradar-collapse-radar-params", "false");
+    const catalog = await listRadars();
+    useAnalysisStore.setState({ radars: catalog, selectedRadarId: "groundprobe-ssr-fx", rangeMinOverride: null, rangeMaxOverride: null, elMinOverride: null, elMaxOverride: null, azCenterOverride: null, azWidthOverride: null, terrainTransitioning: false });
+    render(<RadarControls />);
+    expect(screen.getByRole("button", { name: /Radar.*GroundProbe SSR-FX.*50–2500 m.*150°/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /120°/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /Apertura/ })).toHaveAttribute("placeholder", "150");
+    expect(screen.getByRole("spinbutton", { name: /Azimut/ })).toHaveAttribute("placeholder", "0");
+    expect(screen.getByText(/Fábrica: rango 50–2500 m, apertura 150° \(azimut 0°\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/haz/)).not.toBeInTheDocument();
+  });
+
+  it("toma el centro y la apertura de fábrica de azimuth_range_deg, no de un valor fijo", () => {
+    localStorage.setItem("geotradar-collapse-radar-params", "false");
+    const model = { ...radarConfigs[0]!, azimuth_range_deg: [10, 100] as [number, number] };
+    useAnalysisStore.setState({ radars: [model], selectedRadarId: model.model_id, azCenterOverride: null, azWidthOverride: null, terrainTransitioning: false });
+    render(<RadarControls />);
+    expect(screen.getByRole("button", { name: /Radar.*90°/ })).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /Apertura/ })).toHaveAttribute("placeholder", "90");
+    expect(screen.getByRole("spinbutton", { name: /Azimut/ })).toHaveAttribute("placeholder", "55");
   });
 
   it("reconoce el círculo completo de fábrica sin marcar su apertura como ajustada", () => {

@@ -35,6 +35,7 @@ import type {
   RadarConfig,
 } from "../types/api";
 import { isValidQualityPolicy } from "../utils/qualityMetrics";
+import { factoryAzimuthSector } from "../utils/radarSector";
 import type { QualityPolicy } from "../utils/qualityMetrics";
 import { buildQualityExportContext, metricForVisualizationMode } from "../utils/qualityReport";
 import { aoiMaskForGrid, computeAoiCoverage, validateAoiPolygon } from "../utils/aoi";
@@ -235,15 +236,10 @@ export function resolveRadarParameters(
       } catch { /* Invalid override: the analysis could not use it, so it stays unknown. */ }
     }
   } else if (model) {
-    const range = model.azimuth_range_deg;
-    if (range === null) {
-      apertureDeg = 360;
-    } else {
-      const [start, end] = range;
-      const width = start <= end ? end - start : end - start + 360;
-      apertureDeg = width;
-      azimuthDeg = normalizeAngle(start + width / 2);
-    }
+    // Same factory sector the radar panel shows and the LOS Worker applies.
+    const sector = factoryAzimuthSector(model);
+    apertureDeg = sector.widthDeg;
+    azimuthDeg = sector.centerDeg;
   }
   return { modelName: model?.display_name ?? null, rangeM, azimuthDeg, apertureDeg };
 }

@@ -9,6 +9,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { Section } from "./ui/Section";
+import { factoryAzimuthSector } from "../utils/radarSector";
 import "../styles/panels.css";
 
 export function RadarControls() {
@@ -77,15 +78,10 @@ export function RadarControls() {
 
   const displayNumber = (value: number | null | undefined) =>
     value != null && Number.isFinite(value) ? String(value) : "—";
-  const defaultAperture = selectedRadar?.scan_pattern == null
-    ? null : selectedRadar.scan_pattern === "SAR360" ? 360 : 120;
-  const factoryRange = selectedRadar?.azimuth_range_deg ?? null;
-  const factoryWidth = factoryRange
-    ? factoryRange[1] >= factoryRange[0] ? factoryRange[1] - factoryRange[0] : factoryRange[1] - factoryRange[0] + 360
-    : 360;
-  const factoryCenter = factoryRange
-    ? ((factoryRange[0] + factoryWidth / 2 + 540) % 360) - 180
-    : 0;
+  // Factory sector from the profile, with the same rule the LOS Worker applies.
+  const factorySector = selectedRadar ? factoryAzimuthSector(selectedRadar) : null;
+  const factoryWidth = factorySector?.widthDeg ?? 360;
+  const factoryCenter = factorySector?.centerDeg ?? 0;
   const adjustedCount = selectedRadar ? [
     [rangeMinOverride, selectedRadar.min_range_m],
     [rangeMaxOverride, selectedRadar.max_range_m],
@@ -95,7 +91,7 @@ export function RadarControls() {
     [azWidthOverride, factoryWidth],
   ].filter(([value, factory]) => value != null && value !== factory).length : 0;
   const summary = selectedRadar
-    ? `${selectedRadar.display_name ?? "—"} · ${displayNumber(rangeMinOverride ?? selectedRadar.min_range_m ?? null)}–${displayNumber(rangeMaxOverride ?? selectedRadar.max_range_m ?? null)} m · ${displayNumber(azWidthOverride ?? defaultAperture)}°`
+    ? `${selectedRadar.display_name ?? "—"} · ${displayNumber(rangeMinOverride ?? selectedRadar.min_range_m ?? null)}–${displayNumber(rangeMaxOverride ?? selectedRadar.max_range_m ?? null)} m · ${displayNumber(azWidthOverride ?? factorySector?.widthDeg)}°`
     : "Sin modelo";
 
   return (
@@ -107,14 +103,14 @@ export function RadarControls() {
           {radars.map((r) => <option key={r.model_id} value={r.model_id}>{r.display_name}</option>)}
         </select>
         {selectedRadar && <Section id="radar-params" title="Parámetros" summary={adjustedCount === 0 ? "de fábrica" : `${adjustedCount} ${adjustedCount === 1 ? "ajustado" : "ajustados"}`} defaultOpen={false} storageKey="geotradar-collapse-radar-params">
-          <div className="panel-muted">Fábrica: rango {selectedRadar.min_range_m}–{selectedRadar.max_range_m} m, haz {selectedRadar.h_beam_width_deg}° · Escáner: {selectedRadar.scan_pattern}</div>
+          <div className="panel-muted">Fábrica: rango {selectedRadar.min_range_m}–{selectedRadar.max_range_m} m, apertura {factoryWidth}°{factorySector?.centerDeg != null ? ` (azimut ${factorySector.centerDeg}°)` : ""} · Escáner: {selectedRadar.scan_pattern}</div>
           <div className="panel-overrides field-row">
             <label htmlFor="radar-range-min">Rango mín (m)<input id="radar-range-min" type="number" className="select-box" placeholder={String(selectedRadar.min_range_m)} value={rangeMinOverride ?? ""} onChange={(e) => setRangeOverrides(e.target.value ? Number(e.target.value) : null, rangeMaxOverride)} disabled={terrainTransitioning} /></label>
             <label htmlFor="radar-range-max">Rango máx (m)<input id="radar-range-max" type="number" className="select-box" placeholder={String(selectedRadar.max_range_m)} value={rangeMaxOverride ?? ""} onChange={(e) => setRangeOverrides(rangeMinOverride, e.target.value ? Number(e.target.value) : null)} disabled={terrainTransitioning} /></label>
             <label htmlFor="radar-el-min">Elev. mín (°)<input id="radar-el-min" type="number" className="select-box" placeholder={String(selectedRadar.elevation_min_deg)} value={elMinOverride ?? ""} onChange={(e) => setElevationOverrides(e.target.value ? Number(e.target.value) : null, elMaxOverride)} disabled={terrainTransitioning} /></label>
             <label htmlFor="radar-el-max">Elev. máx (°)<input id="radar-el-max" type="number" className="select-box" placeholder={String(selectedRadar.elevation_max_deg)} value={elMaxOverride ?? ""} onChange={(e) => setElevationOverrides(elMinOverride, e.target.value ? Number(e.target.value) : null)} disabled={terrainTransitioning} /></label>
-            <label htmlFor="radar-az-center">Azimut (°)<input id="radar-az-center" type="number" className="select-box" placeholder="0" value={azCenterOverride ?? ""} onChange={(e) => setAzimuthOverrides(e.target.value ? Number(e.target.value) : null, azWidthOverride)} disabled={terrainTransitioning} /></label>
-            <label htmlFor="radar-az-width">Apertura (°)<input id="radar-az-width" type="number" className="select-box" placeholder={String(selectedRadar.scan_pattern === "SAR360" ? 360 : 120)} value={azWidthOverride ?? ""} onChange={(e) => setAzimuthOverrides(azCenterOverride, e.target.value ? Number(e.target.value) : null)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="radar-az-center">Azimut (°)<input id="radar-az-center" type="number" className="select-box" placeholder={String(factoryCenter)} value={azCenterOverride ?? ""} onChange={(e) => setAzimuthOverrides(e.target.value ? Number(e.target.value) : null, azWidthOverride)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="radar-az-width">Apertura (°)<input id="radar-az-width" type="number" className="select-box" placeholder={String(factoryWidth)} value={azWidthOverride ?? ""} onChange={(e) => setAzimuthOverrides(azCenterOverride, e.target.value ? Number(e.target.value) : null)} disabled={terrainTransitioning} /></label>
           </div>
         </Section>}
         <span className="cs-label">Posición</span>
