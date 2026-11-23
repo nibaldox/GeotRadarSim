@@ -1,216 +1,127 @@
-# 📡 GeotRadarSim — Visor Geométrico de LOS para Monitoreo de Taludes
+<p align="center">
+  <img src="./docs/readme/hero.es.svg" width="100%" alt="GeotRadarSim: ayuda geométrica de línea de visión para ubicar radares de monitoreo de taludes. Un radar en la cresta del rajo lanza rayos a la pared opuesta; las caras de banco quedan con incidencia alta, las bermas baja o media, y el fondo detrás de una loma queda en sombra.">
+</p>
 
-**Herramienta en navegador para inspeccionar la línea de visión (LOS) geométrica sobre terreno proporcionado por el usuario.** Clasifica muestras de la cuadrícula del terreno según una posición de radar/observador y límites configurables de rango, azimut y elevación.
+<p align="center">
+  <a href="https://nibaldox.github.io/GeotRadarSim/"><b>Abrir la aplicación</b></a> ·
+  <a href="README.md">Read in English</a> ·
+  <a href="docs/tecnico.md">Referencia técnica</a>
+</p>
 
-> [Read in English 🇬🇧](README.md)
+GeotRadarSim ayuda a geotécnicos e ingenieros de monitoreo a decidir dónde ubicar un radar de monitoreo de taludes.
+Cargas la topografía del rajo, ubicas un radar y ves qué taludes ve en línea recta, cuáles quedan en sombra y qué tan
+bien orientado está cada talud visible respecto del radar.
 
-> Es una ayuda para analizar geometría del terreno, no un simulador validado de radar ni de radiofrecuencia (RF). **No** calcula ni mide SNR, potencia recibida, probabilidad de detección ni desempeño en terreno.
+> [!IMPORTANT]
+> Es una ayuda geométrica, no un simulador de radar. **No** calcula señal, SNR ni probabilidad de detección. La
+> decisión de ubicación requiere además datos del fabricante y validación en terreno.
 
-🌐 **Aplicación en vivo:** [https://nibaldox.github.io/GeotRadarSim/](https://nibaldox.github.io/GeotRadarSim/)
+## Cómo se ve
 
----
+<p align="center">
+  <img src="./docs/readme/v020-los-incidence.png" width="100%" alt="GeotRadarSim v0.2.0 con el rajo sintético de ejemplo en 3D. Después de un análisis de línea de visión, el rajo aparece pintado por incidencia superficial: rojo baja, naranjo media, verde alta y sin color donde el radar no ve. La barra de cifras muestra cobertura útil, visibilidad y área útil; la barra lateral compacta muestra el historial y los resultados.">
+</p>
 
-## El problema
+<p align="center">
+  <img src="./docs/readme/v020-area-suggest.png" width="49%" alt="Un área a monitorear dibujada en una pared del rajo de ejemplo y el resultado de «Sugerir ubicación»: una posición de radar sugerida, con la cobertura del área en la barra lateral y en la barra de cifras.">
+  <img src="./docs/readme/v020-report-consolidated.png" width="49%" alt="Página del mapa consolidado del PDF «Informe para reunión» para dos radares sobre el rajo de ejemplo, que distingue las zonas vistas por un radar de las vistas por dos o más.">
+</p>
 
-Al evaluar posiciones para radares de monitoreo de taludes, puede ser útil inspeccionar qué muestras del terreno quedan geométricamente despejadas desde cada posición propuesta y cuáles quedan fuera del rango o límites angulares configurados. GeotRadarSim ayuda a visualizar esas relaciones sobre una cuadrícula del terreno.
+<p align="center"><sub>Todas las imágenes usan el rajo sintético incluido («Terreno sintético»), no una mina real.</sub></p>
 
-Permite explorar preguntas geométricas:
+## Qué hace
 
-- ¿Qué muestras de talud están dentro del rango horizontal y campo de visión configurados?
-- ¿Qué triángulos válidos del terreno obstruyen la línea recta desde el observador?
-- ¿Cómo cambia la unión geométrica al seleccionar análisis desde varias posiciones?
+- **Línea de visión por celda.** Cada celda del terreno se clasifica como visible, en sombra, fuera de rango, fuera
+  del campo de visión o sin datos, según la posición y los límites del radar que configures.
+- **Capas de calidad.** Las celdas visibles se pintan por incidencia superficial o por la proyección de un movimiento
+  supuesto de máxima pendiente, con bandas de calidad ajustables.
+- **Área a monitorear.** Dibujas un polígono sobre el terreno y ves qué parte es visible y qué parte tiene cobertura
+  útil.
+- **Sugerencia de ubicación.** «Sugerir ubicación» propone de 1 a 4 posiciones de radar y comprueba cada una con el
+  cálculo completo de línea de visión.
+- **Varios radares.** Combinas análisis del historial para ver la cobertura conjunta.
+- **Informe y exportes.** «Informe para reunión» genera un PDF con portada 3D, tabla de radares y mapas; también hay
+  PDF técnico, CSV y PNG.
 
-No permite determinar si un radar real recibirá una señal adecuada a una distancia dada. Para decisiones operacionales, usa datos del fabricante, validación en faena y análisis RF apropiados.
+## Pruébalo en 1 minuto
 
----
+1. Abre [la aplicación](https://nibaldox.github.io/GeotRadarSim/) y presiona **Terreno sintético** para cargar el
+   rajo de ejemplo.
+2. En **Radar**, elige un modelo. Activa la herramienta **Agregar radar** del visor y haz clic en una cresta.
+3. Lee la cobertura: los colores del terreno, la barra de cifras sobre el visor y **Resultados**.
+4. Activa la herramienta **Área a monitorear**, haz clic alrededor de una pared y cierra el área con doble clic.
+5. Abre **Sugerir ubicación** y presiona **Calcular sugerencia**.
+6. Presiona **Informe para reunión**, al pie de la barra lateral, para descargar el PDF.
 
-## Características
+Para usar tu propia topografía, carga un archivo DXF o STL con **Cargar STL / DXF**.
 
-| Característica | Descripción |
-|---|---|
-| 🗺️ **Entrada de terreno** | Carga datos DXF de puntos/líneas/polilíneas o una superficie STL y conviértelos a una cuadrícula regular de elevaciones |
-| 🏗️ **Terreno sintético** | Carga un rajo sintético de ejemplo (≈1,4 × 1,1 km, con bancos, rampa y botadero; sin datos reales) para probar la app sin topografía propia |
-| 📡 **LOS geométrica** | Clasifica muestras como visibles, en sombra, fuera de límites configurados, sin datos o con rayo desconocido |
-| ✅ **Capas de calidad geométrica (v2)** | Pinta la incidencia superficial con un degradado continuo anclado a los cortes configurables de las bandas provisionales y la proyección del movimiento con un degradado continuo fijo violeta–azul–cian–verde, solo sobre celdas observadas |
-| 🎯 **Límites configurables** | Selecciona un perfil local incluido y modifica límites de rango, elevación y azimut |
-| 🔴 **Múltiples análisis** | Selecciona entradas compatibles del historial para combinar su visibilidad geométrica por celda |
-| 🧮 **Sensibilidad geométrica** | Proyecta la dirección de máxima pendiente del terreno sobre una o más direcciones LOS visibles individualmente (un contribuyente: \|dot\|; varios: RMS) |
-| 📊 **Métricas de cuadrícula** | Muestra cobertura de celdas candidatas, completitud, área visible de cuadrícula, componentes de sombra, cobertura útil sobre toda la topografía válida y la distribución de calidad de lo visible |
-| 📄 **Exportación PDF / CSV** | Exporta el análisis compatible activo, incluidos los estados LOS por celda y columnas de índice en el CSV, más un informe de cobertura útil con política y procedencia |
-| 🖼️ **Captura PNG** | Captura la vista 3D actual |
-| 🌐 **Procesamiento local** | El terreno y LOS se calculan en Web Workers del navegador; no hay un backend de análisis |
+## Cómo funciona
 
----
+```text
+Archivo DXF / STL, o el rajo de ejemplo
+  ↓  Worker de terreno: grilla regular de elevación (IDW)
+  ↓  Worker de LOS, Rust → WebAssembly: un rayo recto por celda
+  ↓  capas de calidad: incidencia superficial, proyección del movimiento
+  ↓  cifras, cobertura del área, sugerencia de ubicación
+  →  informe para reunión, PDF técnico, CSV, PNG
+```
 
-## Inicio rápido
+La línea de visión es un rayo recto sobre los triángulos de la grilla del terreno. Los estados de celda, las fórmulas
+de las métricas, las bandas de calidad, las columnas del CSV y los límites de la grilla están en la
+[referencia técnica](docs/tecnico.md).
 
-### En línea
+## Qué no es
 
-Abre la [aplicación alojada](https://nibaldox.github.io/GeotRadarSim/).
+- No es un modelo RF: no considera propagación, atenuación, SNR, probabilidad de detección ni resolución del radar.
+- Los perfiles de radar incluidos son valores por defecto editables, no especificaciones del fabricante.
+- Los resultados dependen de la topografía de entrada y de la resolución de la grilla.
+- Las coordenadas usan el marco propio del terreno; la aplicación no guarda datum ni zona.
+- La sugerencia de ubicación no tiene garantía de optimalidad para el objetivo de proyección del movimiento.
 
-### Ejecución local
+## Privacidad
+
+Todo corre en el navegador; no hay un servidor de análisis. La compilación de producción fija una política de
+seguridad de contenido con `connect-src 'self'`, así que la aplicación no puede enviar el terreno ni los resultados a
+orígenes externos.
+
+## Ejecutar en local
+
+Requisitos: Node.js 24, la versión de Rust fijada en `rust/rust-toolchain.toml` (con el target
+`wasm32-unknown-unknown`) y `wasm-bindgen-cli` en la versión de `rust/Cargo.lock`.
 
 ```bash
 git clone https://github.com/nibaldox/GeotRadarSim.git
 cd GeotRadarSim/frontend
-npm install
-npm run dev
+npm ci
+npm run dev        # compila el núcleo WebAssembly y luego inicia Vite
 ```
 
-Abre [http://localhost:5173/GeotRadarSim/](http://localhost:5173/GeotRadarSim/) en tu navegador.
+Abre <http://localhost:5173/GeotRadarSim/>.
 
----
+Pruebas:
 
-## Cómo usar
-
-### Análisis LOS desde una posición
-
-1. **Cargar terreno** — sube un archivo DXF o STL, o carga el rajo sintético de ejemplo.
-2. **Elegir perfil y límites** — selecciona uno de los perfiles locales incluidos; si hace falta, modifica rango, elevación o azimut.
-3. **Ubicar el observador** — haz clic sobre el terreno o ingresa coordenadas. Un clic lo coloca 2 m sobre la superficie muestreada y ejecuta el análisis LOS automáticamente.
-4. **Inspeccionar el resultado** — consulta los estados por celda y las métricas de celdas candidatas descritos abajo.
-
-### Combinar varios análisis
-
-1. Crea análisis separados cambiando la posición del observador y/o los límites configurados.
-2. En **History/Historial**, selecciona las entradas que deseas incluir. Sus estados LOS por celda se combinan sobre la misma cuadrícula; para muestras con terreno finito, la celda combinada queda como `VISIBLE` si al menos un análisis individual seleccionado la clasifica así.
-3. Las métricas combinadas se recalculan a partir de los estados fusionados. Es una unión geométrica, no una combinación de señales de radar.
-
-### Sensibilidad geométrica
-
-1. Selecciona uno o más análisis individuales compatibles en **History/Historial**.
-2. En **Sensibilidad Geométrica 3D / Geometric Sensitivity 3D**, elige el modo de capa del terreno — **Incidencia superficial** o **Proyección del movimiento** — y haz clic en **🗺️ Calcular Mapa de Sensibilidad 3D**. Al seleccionar varios análisis, la capa de incidencia combinada toma por celda el mayor valor finito de incidencia individual y la proyección de movimiento combinada usa la RMS entre los análisis contribuyentes.
-3. En cada celda finita donde ambos ejes del gradiente se calculan con vecinos centrales o unilaterales disponibles, solo contribuyen los análisis seleccionados cuyo estado LOS **individual** sea `VISIBLE`. `observer_count` es el número de análisis contribuyentes por celda; un contribuyente aporta `|dot|` y varios usan `sqrt(sum(dot_i²) / observer_count)` (RMS). El resultado es una proyección geométrica adimensional, no SNR, sensibilidad RF ni un modelo físico 3D del radar.
-4. Un estado LOS `VISIBLE` por sí solo no basta: si falta cualquiera de los dos ejes del gradiente del terreno, ese análisis no contribuye. Las celdas con `observer_count = 0` quedan sin datos/transparentes (`NaN`); un valor finito igual a cero con `observer_count > 0` es un resultado medido.
-
-Las etiquetas de los modos de capa describen dos índices geométricos y su agregación/visualización para varias posiciones sobre el terreno 3D. No representan modos físicos distintos del radar.
-
----
-
-## Modelo geométrico y significado de los resultados
-
-La LOS se evalúa sobre una cuadrícula regular del terreno. El recorrido del rayo visita cruces con las líneas de la cuadrícula y sus diagonales, y evalúa los triángulos de la superficie muestreada. No intersecta directamente las caras STL originales. El rango horizontal se mide en el plano del mapa; los límites de elevación y azimut son restricciones geométricas.
-
-| Estado de celda | Significado |
-|---|---|
-| `NODATA` | La muestra objetivo de la cuadrícula no tiene una elevación finita |
-| `OUT_OF_RANGE` | El objetivo está fuera del rango horizontal mínimo/máximo configurado |
-| `OUTSIDE_FOV` | El objetivo está fuera de los límites configurados de elevación o azimut |
-| `UNKNOWN_RAY` | El rayo atraviesa una parte de la cuadrícula sin un triángulo de terreno válido |
-| `SHADOW` | Un triángulo válido del terreno obstruye el rayo geométrico recto |
-| `VISIBLE` | El objetivo está dentro de los límites configurados y ningún triángulo recorrido obstruye el rayo |
-
-Son clasificaciones geométricas de la superficie cuadriculada de entrada. No representan una detección de radar ni calidad de señal medida.
-
-Las métricas LOS usan muestras candidatas en estado `VISIBLE`, `SHADOW` o `UNKNOWN_RAY`:
-
-- **Cobertura (%)** = `VISIBLE / (VISIBLE + SHADOW + UNKNOWN_RAY) × 100`.
-- **Completitud (%)** = `(VISIBLE + SHADOW) / (VISIBLE + SHADOW + UNKNOWN_RAY) × 100`.
-- Las muestras `NODATA`, `OUT_OF_RANGE` y `OUTSIDE_FOV` se excluyen de ambos denominadores. Si no hay muestras candidatas, cobertura y completitud valen `null` (se muestran como sin datos), no 0 %.
-- **Área visible** = `cantidad de muestras VISIBLE × resolución de cuadrícula²`; es una estimación planimétrica de cuadrícula, no un área medida de superficie inclinada 3D.
-- Las **zonas de sombra** son componentes conectados de muestras `SHADOW` usando vecindad de cuatro direcciones.
-
-### Capas de calidad geométrica (geometric-v2)
-
-Las capas de calidad son índices geométricos que se pintan solo sobre celdas `VISIBLE`. No son SNR, potencia recibida, un modelo de propagación ni calidad de radar validada.
-
-- **Incidencia superficial** — para celdas `VISIBLE`, la alineación de 0–1 de la normal superficial del terreno con la dirección LOS desde el terreno hacia el radar. La distancia **no** es un multiplicador: el alcance máximo configurado solo delimita qué celdas son elegibles para el LOS y no puede cambiar el puntaje de una celda que sigue siendo `VISIBLE`.
-- **Proyección del movimiento** — la proyección de movimiento de pendiente del LOS sobre la dirección de máxima pendiente del terreno (la tangente normalizada descendente, con alternativa vertical hacia abajo en terreno plano): con un contribuyente vale `|dot|` y con varios se usa `sqrt(sum(dot_i²) / observer_count)` (RMS). Un cero medido tiene al menos un contribuyente; sin contribuyentes no hay datos, no un cero. La capa 3D pinta una proyección escalar sobre la superficie del terreno bajo el movimiento supuesto de máxima pendiente; no es una reconstrucción volumétrica ni una inversión completa de desplazamiento en 3 ejes.
-- **Cobertura útil frente a la distribución de lo visible** — las celdas útiles son celdas `VISIBLE` cuyo índice seleccionado está medido (finito, 0–1) y se clasifica como medio o alto. La **cobertura útil** es esa cantidad sobre el objetivo común **Topografía válida completa** (todos los nodos finitos de la cuadrícula del terreno, con independencia de la huella del radar), y el área del objetivo informada es un área nominal planar (`celdas × resolución²`), no un área de superficie inclinada 3D. La **distribución** baja/media/alta/sin índice y la proporción media+alta se calculan solo sobre celdas `VISIBLE`. El resumen se calcula por métrica y queda ligado a la procedencia del resultado (época del terreno y análisis); si el resultado es antiguo, sin versión o de otro terreno/época, el índice se informa como no disponible y se solicita recalcular — los datos faltantes nunca se informan como cero.
-- **Bandas provisionales configurables** — la política de bandas compartida usa por defecto `media ≥ 0.3`, `alta ≥ 0.7`, copiada de la leyenda anterior y editable en el panel **Bandas de calidad**. Editar los umbrales reclasifica los resultados existentes sin recalcular el LOS; los umbrales no válidos (`0 ≤ media mínima < alta mínima ≤ 1`, distintos a precisión Float32) se rechazan de forma visible en vez de reordenarse en silencio. La clasificación se ejecuta en Float32 — valores y umbrales se comparan tras redondear a Float32, de modo que los conteos del resumen siempre coinciden con los colores pintados por la GPU — con intervalos estrictos semicerrados: baja `[0, media)`, media `[media, alta)`, alta `[alta, 1]`. Son intervalos de un índice geométrico, no umbrales de detección certificados por equipo.
-- **Transparencia y cero medido** — `NODATA`, `OUT_OF_RANGE`, `OUTSIDE_FOV`, `UNKNOWN_RAY` y `SHADOW` son estados sin observación y no se pintan: dejan el terreno base sin cambios. Un índice ausente o no disponible (por ejemplo una celda `VISIBLE` sin gradiente calculable) también es transparente. Un `0.0` medido es dato y se mantiene coloreado en la banda baja. La transparencia por sí sola no identifica su causa; por ejemplo, no identifica la sombra. Los marcadores de radar/observador en la vista 3D son iconos simples de núcleo y mástil, sin anillos de halo ni carteles (billboards).
-- **Análisis combinados** — al seleccionar varios análisis, la capa de incidencia combinada toma por celda el mayor valor finito de incidencia individual entre los análisis que la reportan `VISIBLE`, y la proyección de movimiento combinada es la RMS entre los análisis contribuyentes; los valores ausentes se excluyen en vez de contarse como ceros.
-- **Exportaciones** — el informe PDF y el archivo CSV llevan la misma política de clasificación y procedencia que el resumen en pantalla: umbrales marcados como provisionales (sin precisión certificada), la precisión de clasificación en Float32, la identidad de la métrica, el modelo de calidad `geometric-v2`, el id y la época del terreno y los ids de análisis. Para resultados geometric-v2 las columnas por celda del CSV son `row,col,state,incidence,projection,shadowed` (los resultados antiguos conservan `row,col,state,quality,shadowed`); `incidence`/`projection` se escriben solo para celdas `VISIBLE` con índice medido, como tokens de ida y vuelta en Float32 (el decimal más corto que vuelve a parsear al mismo Float32, con un cero medido impreso como `0` y en blanco para celdas no visibles o sin índice) en vez de un redondeo a 4 decimales que podría mover un valor de banda. El informe de calidad solo se agrega a partir de un contexto capturado al hacer clic en exportar que sigue coincidiendo con el snapshot y el resultado exportados — cada número informado se recalcula desde el resultado exportado, y un contexto que no coincide se rechaza en vez de informarse. Los resultados antiguos o sin versión se exportan sin informe de calidad en vez de inventarlo.
-
----
-
-## Perfiles de radar incluidos
-
-La aplicación contiene **perfiles de software locales** codificados en el cliente. Los nombres de modelo son etiquetas; los valores siguientes son defaults de la aplicación, **no especificaciones del fabricante ni límites operacionales validados de manera independiente**. Modifícalos según un escenario verificado por separado.
-
-| Etiqueta del perfil local | Rango por defecto | Intervalo de elevación | Sector azimutal por defecto |
-|---|---:|---:|---:|
-| GroundProbe SSR-FX | 50–2500 m | −60° a +60° | −75° a +75° (150° total) |
-| IBIS-ArcSAR360 | 50–2500 m | −60° a +60° | 360° |
-| Reutech MSR | 50–2500 m | −60° a +60° | −75° a +75° (150° total) |
-
-La herramienta no consulta ni valida especificaciones de radar del fabricante. Un rango máximo configurado es solo un corte geométrico; no afirma que un instrumento real pueda detectar un objetivo a esa distancia.
-
----
-
-## Formatos de archivo y procesamiento del terreno
-
-| Formato | Extensión | Tratamiento de entrada |
-|---|---|---|
-| DXF | `.dxf` | Lee coordenadas/vértices de puntos, líneas, caras 3D, polilíneas y polilíneas ligeras |
-| STL | `.stl` | Lee caras triangulares en formato ASCII y binario |
-
-Las coordenadas de entrada se convierten a una cuadrícula regular de elevaciones mediante interpolación local de distancia inversa ponderada (IDW) y un índice espacial por contenedores. Luego, el recorrido LOS evalúa triángulos de esa cuadrícula generada; no realiza una triangulación de Delaunay de los puntos importados ni intersecta directamente las caras STL originales. Para STL de más de 500.000 caras, el importador muestrea las caras para limitar los datos usados en la generación de la cuadrícula. Zonas de cuadrícula vacías o inválidas pueden producir `UNKNOWN_RAY` o `NODATA`; no se consideran automáticamente terreno visible.
-
-Los nodos de la cuadrícula se espacian desde cada mínimo X/Y según la resolución elegida. Si la extensión dividida por la resolución es un entero dentro de la tolerancia de coma flotante, se incluye el extremo; si no, la cuadrícula termina en `mínimo + floor(extensión / resolución) × resolución`, sin agregar un intervalo parcial. `max_x`/`max_y` en los metadatos indican el último nodo muestreado, no el resto sin muestrear (por ejemplo, una extensión de 200 m a 3 m de resolución termina en 198 m). Por eso, una extensión sintética de 200 m genera 101 nodos a 2 m, 401 a 0,5 m y 67 a 3 m. Cada eje debe tener al menos dos nodos; se rechazan extensiones menores que una resolución. Los límites de 16.384 nodos por eje y 1.000.000 de celdas se verifican antes de asignar la cuadrícula.
-
-> Elevación DXF: `POINT` usa su `position` parseada; en `LWPOLYLINE`, la Z finita del vértice prevalece y, si falta, se usa la elevación finita de la entidad. Las coordenadas/elevaciones requeridas ausentes o no finitas se rechazan en vez de convertirse en cero.
-
----
-
-## Arquitectura técnica
-
-```text
-Aplicación en navegador
-├── Visor de terreno React + Three.js
-├── Terrain Web Worker: entrada DXF/STL → cuadrícula regular IDW
-├── LOS Web Worker: recorrido geométrico de rayos sobre triángulos de la cuadrícula
-├── Sensitivity Web Worker: proyecciones geométricas desde análisis visibles seleccionados
-└── Estado local y exportaciones PDF/CSV en el cliente
+```bash
+cd frontend && npm test && npm run build
+cd ../rust
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 ```
-
-Los cálculos de terreno, LOS y sensibilidad se realizan en Workers del navegador. No se calcula propagación RF ni relación señal/ruido.
-
----
-
-## Limitaciones
-
-- Las dimensiones de la cuadrícula se limitan a **16.384 nodos por eje** y **1.000.000 de entradas fila × columna en total**. Se aplican ambas restricciones.
-- Cada cálculo LOS se ejecuta bajo un plazo monótono de ejecución de **120 segundos** (más un vigilante de 125 segundos sobre el worker); un análisis puede rechazarse si excede el plazo aunque su cuadrícula no supere el máximo de tamaño.
-- Las entradas STL con más de 500.000 caras se muestrean antes de generar la cuadrícula. La interpolación IDW y la resolución de la cuadrícula afectan la superficie resultante y las clasificaciones LOS.
-- LOS es un trazado geométrico recto sobre la cuadrícula muestreada. No modela propagación RF, atenuación, SNR, probabilidad de detección, resolución de radar ni desempeño en terreno.
-- Los valores de los perfiles locales no son especificaciones del fabricante validadas. Define y verifica los límites operacionales por separado.
-- La memoria del navegador y los límites de WebGL/GPU dependen del dispositivo. No se afirma un tiempo de ejecución ni un benchmark de rendimiento universal.
-- Entidades DXF sin elevación o con Z igual a cero pueden generar una superficie plana o inadecuada.
-
----
 
 ## Hoja de ruta
 
-- [ ] Etiquetas de curvas de nivel y vista en planta 2D
+- [ ] Etiquetas de curvas de nivel en el visor
 - [ ] Visualización del cono del haz del radar
-- [ ] Tabla comparativa de varios análisis
-- [ ] Importar/exportar configuración de red de radares (JSON)
-- [ ] Editor de perfiles locales personalizados
-- [ ] Diseño adaptable a dispositivos móviles
-
----
+- [ ] Importar y exportar la configuración de una red de radares (JSON)
+- [ ] Perfiles de radar personalizados guardados
+- [ ] Diseño para móviles
 
 ## Contribuir
 
-Las contribuciones son bienvenidas. La prioridad es mantener explícito el contrato geométrico, el manejo de datos faltantes y un comportamiento reproducible, no hacer afirmaciones físicas o de rendimiento sin sustento.
-
-```bash
-cd frontend
-npm test
-npm run build
-```
-
----
+Las issues y los pull requests son bienvenidos en [GitHub Issues](https://github.com/nibaldox/GeotRadarSim/issues).
+Importan más la exactitud del contrato geométrico, el manejo explícito de datos faltantes y un comportamiento
+reproducible que las afirmaciones físicas o de rendimiento sin evidencia.
 
 ## Licencia
 
-MIT — Libre para usar, modificar y distribuir.
-
----
-
-## Sobre el proyecto
-
-GeotRadarSim es una herramienta en navegador para explorar geometría del terreno y escenarios LOS configurados. Puede apoyar una revisión geométrica inicial, pero no reemplaza la validación de los datos topográficos, la información del fabricante, el análisis RF ni la validación en terreno.
-
-Sugerencias o problemas → [GitHub Issues](https://github.com/nibaldox/GeotRadarSim/issues)
+MIT — ver [LICENSE](LICENSE).

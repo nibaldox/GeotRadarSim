@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc" lang="es">
+  <title id="title">GeotRadarSim — ayuda geométrica de línea de visión para radares de monitoreo de taludes</title>
+  <desc id="desc">Sección conceptual de un rajo: un radar en la cresta lanza rayos de línea de visión a la pared opuesta. Las caras de banco quedan con incidencia alta, las bermas baja o media, y el fondo detrás de una loma interna queda en sombra. Solo geometría, sin modelo de señal.</desc>
+  <rect width="1200" height="400" rx="20" fill="#11151c"/>
+  <g id="title-block" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="56" y="84" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" letter-spacing="2" fill="#7d9bb8">UBICACIÓN DE RADARES DE TALUDES</text>
+    <text x="54" y="152" font-size="66" font-weight="700" fill="#e8ebee">GeotRadarSim</text>
+    <text x="56" y="200" font-size="27" fill="#e8ebee">Ayuda geométrica de línea</text>
+    <text x="56" y="234" font-size="27" fill="#e8ebee">de visión para ubicar radares</text>
+    <text x="56" y="268" font-size="27" fill="#e8ebee">de monitoreo de taludes.</text>
+    <text x="56" y="316" font-size="20" fill="#9aa4ae">Solo geometría: no simula señal, SNR ni detección.</text>
+    <text x="56" y="352" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#9aa4ae">v0.2.0 · corre en el navegador · Rust/WASM</text>
+  </g>
+  <g id="pit-section" transform="translate(0 34)">
+    <polygon points="610,150 640,150 654,180 680,180 694,210 720,210 734,240 760,240 774,270 800,270 814,300 900,300 918,255 942,255 960,300 990,300 1004,270 1030,270 1044,240 1070,240 1084,210 1100,210 1114,180 1152,180 1152,318 610,318" fill="#1d232d"/>
+    <polyline points="610,150 640,150 654,180 680,180 694,210 720,210 734,240 760,240 774,270 800,270 814,300 900,300 918,255 942,255 960,300 990,300 1004,270 1030,270 1044,240 1070,240 1084,210 1100,210 1114,180 1152,180" fill="none" stroke="#5b6572" stroke-width="3" stroke-linejoin="round"/>
+    <g id="los-rays" stroke="#7d9bb8" stroke-width="1.6" opacity="0.75">
+      <line x1="1130" y1="160" x2="647" y2="165"/>
+      <line x1="1130" y1="160" x2="687" y2="195"/>
+      <line x1="1130" y1="160" x2="727" y2="225"/>
+      <line x1="1130" y1="160" x2="767" y2="255"/>
+      <line x1="1130" y1="160" x2="807" y2="285"/>
+      <line x1="1130" y1="160" x2="951" y2="277"/>
+    </g>
+    <line x1="1130" y1="160" x2="931" y2="255.5" stroke="#9aa4ae" stroke-width="1.6" stroke-dasharray="6 5"/>
+    <line x1="931" y1="255.5" x2="862" y2="300" stroke="#9aa4ae" stroke-width="1.4" stroke-dasharray="2 5" opacity="0.6"/>
+    <path d="M925,249.5 L937,261.5 M937,249.5 L925,261.5" stroke="#e8ebee" stroke-width="2.4" stroke-linecap="round"/>
+    <g id="cells" stroke-width="8" stroke-dasharray="7 3" fill="none" stroke-linecap="butt">
+      <line x1="640" y1="150" x2="654" y2="180" stroke="#2ecc71"/>
+      <line x1="654" y1="180" x2="680" y2="180" stroke="#e74c3c"/>
+      <line x1="680" y1="180" x2="694" y2="210" stroke="#2ecc71"/>
+      <line x1="694" y1="210" x2="720" y2="210" stroke="#e74c3c"/>
+      <line x1="720" y1="210" x2="734" y2="240" stroke="#2ecc71"/>
+      <line x1="734" y1="240" x2="760" y2="240" stroke="#e74c3c"/>
+      <line x1="760" y1="240" x2="774" y2="270" stroke="#2ecc71"/>
+      <line x1="774" y1="270" x2="800" y2="270" stroke="#f39c12"/>
+      <line x1="800" y1="270" x2="814" y2="300" stroke="#2ecc71"/>
+      <line x1="942" y1="255" x2="960" y2="300" stroke="#2ecc71"/>
+      <line x1="918" y1="255" x2="942" y2="255" stroke="#f39c12"/>
+      <polyline points="818,300 900,300 918,255" stroke="#3a414c" stroke-linejoin="round"/>
+    </g>
+    <text x="858" y="290" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" fill="#9aa4ae" text-anchor="middle">sombra</text>
+    <g id="radar">
+      <line x1="1130" y1="180" x2="1130" y2="166" stroke="#e8ebee" stroke-width="3"/>
+      <rect x="1117" y="151" width="26" height="16" rx="4" fill="#e8ebee"/>
+      <circle cx="1125" cy="159" r="4" fill="#e74c3c"/>
+      <path d="M1100,136 A40,40 0 0 0 1096,182" fill="none" stroke="#7d9bb8" stroke-width="2"/>
+      <path d="M1086,126 A56,56 0 0 0 1080,190" fill="none" stroke="#7d9bb8" stroke-width="2" opacity="0.6"/>
+    </g>
+    <text x="1152" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" fill="#e8ebee" text-anchor="end">RADAR</text>
+  </g>
+  <g id="legend" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" fill="#9aa4ae">
+    <text x="662" y="84" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" fill="#7d9bb8">incidencia</text>
+    <rect x="790" y="70" width="20" height="16" rx="3" fill="#e74c3c"/>
+    <text x="818" y="84">baja</text>
+    <rect x="878" y="70" width="20" height="16" rx="3" fill="#f39c12"/>
+    <text x="906" y="84">media</text>
+    <rect x="976" y="70" width="20" height="16" rx="3" fill="#2ecc71"/>
+    <text x="1004" y="84">alta</text>
+    <rect x="1064" y="70" width="20" height="16" rx="3" fill="#3a414c"/>
+    <text x="1092" y="84">sombra</text>
+  </g>
+</svg>
