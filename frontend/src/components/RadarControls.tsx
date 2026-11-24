@@ -10,7 +10,34 @@ import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { Section } from "./ui/Section";
 import { factoryAzimuthSector } from "../utils/radarSector";
+import { isCustomRadarId } from "../services/customRadars";
+import type { CustomRadarPattern } from "../services/customRadars";
 import "../styles/panels.css";
+
+interface CustomRadarDraft {
+  name: string;
+  manufacturer: string;
+  minRangeM: string;
+  maxRangeM: string;
+  elMinDeg: string;
+  elMaxDeg: string;
+  pattern: CustomRadarPattern;
+  apertureDeg: string;
+}
+
+const EMPTY_DRAFT: CustomRadarDraft = {
+  name: "",
+  manufacturer: "",
+  minRangeM: "50",
+  maxRangeM: "2500",
+  elMinDeg: "-30",
+  elMaxDeg: "30",
+  pattern: "SAR360",
+  apertureDeg: "120",
+};
+
+/** Empty or non-numeric text becomes NaN so validation rejects it instead of reading 0. */
+const draftNumber = (text: string): number => (text.trim() === "" ? Number.NaN : Number(text));
 
 export function RadarControls() {
   const radars = useAnalysisStore((s) => s.radars);
@@ -28,6 +55,13 @@ export function RadarControls() {
   const azCenterOverride = useAnalysisStore((s) => s.azCenterOverride);
   const azWidthOverride = useAnalysisStore((s) => s.azWidthOverride);
   const setAzimuthOverrides = useAnalysisStore((s) => s.setAzimuthOverrides);
+  const addCustomRadar = useAnalysisStore((s) => s.addCustomRadar);
+  const removeCustomRadar = useAnalysisStore((s) => s.removeCustomRadar);
+
+  const [customOpen, setCustomOpen] = useState(false);
+  const [draft, setDraft] = useState<CustomRadarDraft>(EMPTY_DRAFT);
+  const [customError, setCustomError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   // Manual coordinate entry local states
   const [inputX, setInputX] = useState<string>("");
@@ -75,6 +109,48 @@ export function RadarControls() {
   }, [radars.length, loadRadars]);
 
   const selectedRadar = radars.find((r) => r.model_id === selectedRadarId);
+  const builtinRadars = radars.filter((r) => !isCustomRadarId(r.model_id));
+  const customRadars = radars.filter((r) => isCustomRadarId(r.model_id));
+  const selectedIsCustom = !!selectedRadar && isCustomRadarId(selectedRadar.model_id);
+
+  useEffect(() => { setRemoveError(null); }, [selectedRadarId]);
+
+  const updateDraft = (field: keyof CustomRadarDraft, value: string) => {
+    setDraft((current) => ({ ...current, [field]: value }));
+    setCustomError(null);
+  };
+
+  const handleSaveCustom = () => {
+    const result = addCustomRadar({
+      name: draft.name,
+      manufacturer: draft.manufacturer,
+      minRangeM: draftNumber(draft.minRangeM),
+      maxRangeM: draftNumber(draft.maxRangeM),
+      elMinDeg: draftNumber(draft.elMinDeg),
+      elMaxDeg: draftNumber(draft.elMaxDeg),
+      pattern: draft.pattern,
+      apertureDeg: draftNumber(draft.apertureDeg),
+    });
+    if (!result.ok) {
+      setCustomError(result.error);
+      return;
+    }
+    setDraft(EMPTY_DRAFT);
+    setCustomError(null);
+    setCustomOpen(false);
+  };
+
+  const handleCancelCustom = () => {
+    setDraft(EMPTY_DRAFT);
+    setCustomError(null);
+    setCustomOpen(false);
+  };
+
+  const handleRemoveCustom = () => {
+    if (!selectedRadar) return;
+    const result = removeCustomRadar(selectedRadar.model_id);
+    setRemoveError(result.ok ? null : result.error);
+  };
 
   const displayNumber = (value: number | null | undefined) =>
     value != null && Number.isFinite(value) ? String(value) : "—";
@@ -100,8 +176,36 @@ export function RadarControls() {
         <label className="cs-label" htmlFor="radar-select">Modelo de radar</label>
         <select id="radar-select" aria-label="Modelo de radar" className="select-box" value={selectedRadarId ?? ""} onChange={(e) => selectRadar(e.target.value || null)} disabled={terrainTransitioning}>
           <option value="">Elige un modelo</option>
-          {radars.map((r) => <option key={r.model_id} value={r.model_id}>{r.display_name}</option>)}
+          {builtinRadars.map((r) => <option key={r.model_id} value={r.model_id}>{r.display_name}</option>)}
+          {customRadars.length > 0 && <optgroup label="Personalizados">
+            {customRadars.map((r) => <option key={r.model_id} value={r.model_id}>{r.display_name}</option>)}
+          </optgroup>}
         </select>
+        <div className="panel-custom-actions">
+          <button type="button" className="btn-compact" aria-expanded={customOpen} aria-controls="custom-radar-form" onClick={() => (customOpen ? handleCancelCustom() : setCustomOpen(true))} disabled={terrainTransitioning}>Radar personalizado</button>
+          {selectedIsCustom && <button type="button" className="btn-compact" onClick={handleRemoveCustom} disabled={terrainTransitioning}>Eliminar perfil</button>}
+        </div>
+        {removeError && <span className="panel-custom-error" role="alert" title={removeError}>{removeError}</span>}
+        {customOpen && <div id="custom-radar-form" className="panel-custom-form" role="group" aria-label="Nuevo radar personalizado">
+          <div className="panel-custom-grid field-row">
+            <label htmlFor="custom-radar-name">Nombre<input id="custom-radar-name" type="text" className="select-box" maxLength={40} value={draft.name} onChange={(e) => updateDraft("name", e.target.value)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="custom-radar-manufacturer">Fabricante<input id="custom-radar-manufacturer" type="text" className="select-box" maxLength={40} placeholder="Perfil local" value={draft.manufacturer} onChange={(e) => updateDraft("manufacturer", e.target.value)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="custom-radar-range-min">Rango mín (m)<input id="custom-radar-range-min" type="number" className="select-box" value={draft.minRangeM} onChange={(e) => updateDraft("minRangeM", e.target.value)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="custom-radar-range-max">Rango máx (m)<input id="custom-radar-range-max" type="number" className="select-box" value={draft.maxRangeM} onChange={(e) => updateDraft("maxRangeM", e.target.value)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="custom-radar-el-min">Elev. mín (°)<input id="custom-radar-el-min" type="number" className="select-box" value={draft.elMinDeg} onChange={(e) => updateDraft("elMinDeg", e.target.value)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="custom-radar-el-max">Elev. máx (°)<input id="custom-radar-el-max" type="number" className="select-box" value={draft.elMaxDeg} onChange={(e) => updateDraft("elMaxDeg", e.target.value)} disabled={terrainTransitioning} /></label>
+            <label htmlFor="custom-radar-pattern">Cobertura<select id="custom-radar-pattern" className="select-box" value={draft.pattern} onChange={(e) => updateDraft("pattern", e.target.value)} disabled={terrainTransitioning}>
+              <option value="SAR360">360°</option>
+              <option value="RAR">Sector</option>
+            </select></label>
+            <label htmlFor="custom-radar-aperture">Apertura (°)<input id="custom-radar-aperture" type="number" className="select-box" value={draft.apertureDeg} onChange={(e) => updateDraft("apertureDeg", e.target.value)} disabled={draft.pattern !== "RAR" || terrainTransitioning} /></label>
+          </div>
+          <div className="panel-custom-actions">
+            <button type="button" className="btn-compact" onClick={handleSaveCustom} disabled={terrainTransitioning}>Guardar</button>
+            <button type="button" className="btn-compact" onClick={handleCancelCustom}>Cancelar</button>
+          </div>
+          {customError && <span className="panel-custom-error" role="alert" title={customError}>{customError}</span>}
+        </div>}
         {selectedRadar && <Section id="radar-params" title="Parámetros" summary={adjustedCount === 0 ? "de fábrica" : `${adjustedCount} ${adjustedCount === 1 ? "ajustado" : "ajustados"}`} defaultOpen={false} storageKey="geotradar-collapse-radar-params">
           <div className="panel-muted">Fábrica: rango {selectedRadar.min_range_m}–{selectedRadar.max_range_m} m, apertura {factoryWidth}°{factorySector?.centerDeg != null ? ` (azimut ${factorySector.centerDeg}°)` : ""}{selectedRadar.h_beam_width_deg !== factoryWidth ? ` · haz ${selectedRadar.h_beam_width_deg}°` : ""} · Escáner: {selectedRadar.scan_pattern}</div>
           <div className="panel-overrides field-row">

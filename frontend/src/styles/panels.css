@@ -46,3 +46,11 @@
   .panel-policy-row.field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel-policy-row.field-row > button { grid-column: 1 / -1; width: 100%; }
 }
+
+/* Radar personalizado: formulario inline en filas de a dos, etiquetas y error a 11 px en una línea. */
+.panel-custom-actions { display: flex; gap: 6px; min-width: 0; }
+.panel-custom-actions > .btn-compact { flex: 1 1 0; min-width: 0; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.panel-custom-form { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.panel-custom-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.panel-custom-grid label { display: flex; flex-direction: column; min-width: 0; gap: 2px; color: var(--text-secondary); font-size: 11px; }
+.panel-custom-error { font-size: 11px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

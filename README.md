@@ -114,7 +114,7 @@ cargo test --locked
 - [ ] Contour labels in the viewer
 - [ ] Radar beam-cone visualization
 - [ ] Import/export of a radar network configuration (JSON)
-- [ ] Saved custom radar profiles
+- [x] Saved custom radar profiles
 - [ ] Mobile layout
 
 ## Contributing

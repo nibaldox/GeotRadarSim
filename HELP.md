@@ -44,6 +44,12 @@ The selected model names use hard-coded local software profiles; they are **not 
 
 If either azimuth center or aperture is entered, an omitted center defaults to 0° and an omitted aperture uses that profile's configured horizontal width. The configured horizontal range is a geometric cutoff, not a statement about the actual instrument's detection range.
 
+### Custom radar profiles
+
+Click **Radar personalizado** below the model selector to define your own profile: a name (unique, up to 40 characters), an optional manufacturer, minimum/maximum range in metres (up to 100 000 m), minimum/maximum elevation in degrees (−90° to +90°), and the coverage, either **360°** or **Sector** centred on 0° with an aperture of 1°–359°. **Guardar** validates the values, adds the profile at the end of the selector under **Personalizados** and selects it; **Cancelar** discards the form. Custom profiles work like the bundled ones in LOS, the radar network and the exports, and their values are yours, not manufacturer data.
+
+Profiles are stored only in this browser's local storage (up to 20); nothing is uploaded, and they do not follow you to another browser or device. Clearing the site data removes them. To delete one, select it and click **Eliminar perfil**; a profile used by a placed radar cannot be deleted until that radar is removed. Earlier history entries are kept, but re-running one whose profile was deleted reports that the radar model was not found. To edit a profile, delete it and create it again.
+
 ---
 
 ## Step 3 — Place the viewpoint and run LOS

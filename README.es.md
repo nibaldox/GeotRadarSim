@@ -117,7 +117,7 @@ cargo test --locked
 - [ ] Etiquetas de curvas de nivel en el visor
 - [ ] Visualización del cono del haz del radar
 - [ ] Importar y exportar la configuración de una red de radares (JSON)
-- [ ] Perfiles de radar personalizados guardados
+- [x] Perfiles de radar personalizados guardados
 - [ ] Diseño para móviles
 
 ## Contribuir

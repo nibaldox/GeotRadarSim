@@ -10,8 +10,12 @@ import * as apiModule from "../services/api";
 import {
   runLOSAnalysis as apiRunLOS,
   listRadars as apiListRadars,
+  getRadarCatalog as apiGetRadarCatalog,
+  getBuiltinRadars as apiGetBuiltinRadars,
   getLOSJob,
 } from "../services/api";
+import { deleteCustomRadar, saveCustomRadar } from "../services/customRadars";
+import type { CustomRadarInput } from "../services/customRadars";
 import type {
   AnalysisRadarOverrides,
   AnalysisRadarSnapshot,
@@ -66,6 +70,9 @@ export interface DeployedRadar {
 }
 
 type RadarOverrides = AnalysisRadarOverrides;
+export type CustomRadarActionResult = { ok: true; modelId: string } | { ok: false; error: string };
+export const CUSTOM_RADAR_DEPLOYED_ERROR =
+  "No se puede eliminar: hay radares ubicados con este perfil. Quítalos primero.";
 /** `reason` is set only for `cancelled`: "user" = the app's Cancel button, "agent" = the waiter's own signal. */
 export type AnalysisOutcome = { status: "published" | "superseded" | "failed" | "cancelled"; analysisId: string | null; error: string | null; terrainId: string; epoch: number | null; reason?: "user" | "agent" };
 type InternalOutcome = Omit<AnalysisOutcome, "terrainId" | "epoch">;
@@ -106,6 +113,10 @@ export interface AnalysisState {
 
   loadRadars: () => Promise<void>;
   selectRadar: (modelId: string | null) => void;
+  /** Validate, persist and select a new custom profile (same reset path as `selectRadar`). */
+  addCustomRadar: (input: CustomRadarInput) => CustomRadarActionResult;
+  /** Delete a custom profile; refused while a deployed radar uses it. History is kept. */
+  removeCustomRadar: (modelId: string) => CustomRadarActionResult;
   setRadarPosition: (position: Point3D) => void;
   setRangeOverrides: (min: number | null, max: number | null) => void;
   setElevationOverrides: (min: number | null, max: number | null) => void;
@@ -319,6 +330,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
   const waiters = new Map<number, (outcome: InternalOutcome) => void>();
   const finish = (id: number, outcome: InternalOutcome) => { const resolve = waiters.get(id); waiters.delete(id); resolve?.(outcome); };
   let radarListGeneration = 0;
+  // Bumped whenever a custom profile is added or removed: a catalog load that started
+  // before the change must not overwrite the newer list (and resurrect a deleted model).
+  let catalogRevision = 0;
   let preTransitionTerrainKey: TerrainKey | null = null;
   let preTransitionRadarPosition: Point3D | null = null;
   const trackedLOSJobs = new Map<number, Set<string>>();
@@ -660,10 +674,12 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
 
     loadRadars: async () => {
       const requestId = ++radarListGeneration;
+      const revision = catalogRevision;
       set({ loading: true, error: null });
       try {
         const radars = await apiListRadars();
         if (requestId !== radarListGeneration) return;
+        if (revision !== catalogRevision) { set({ loading: false }); return; }
         set({ radars, loading: false });
       } catch (err) {
         if (requestId !== radarListGeneration) return;
@@ -687,6 +703,29 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
         azCenterOverride: null,
         azWidthOverride: null,
       });
+    },
+
+    addCustomRadar: (input) => {
+      const saved = saveCustomRadar(input, apiGetBuiltinRadars());
+      if (!saved.ok) return { ok: false, error: saved.error };
+      catalogRevision += 1;
+      set({ radars: apiGetRadarCatalog() });
+      get().selectRadar(saved.radar.model_id);
+      return { ok: true, modelId: saved.radar.model_id };
+    },
+
+    removeCustomRadar: (modelId) => {
+      if (get().deployedRadars.some((radar) => radar.modelId === modelId)) {
+        return { ok: false, error: CUSTOM_RADAR_DEPLOYED_ERROR };
+      }
+      const deleted = deleteCustomRadar(modelId, apiGetBuiltinRadars());
+      if (!deleted.ok) return { ok: false, error: deleted.error };
+      catalogRevision += 1;
+      set({ radars: apiGetRadarCatalog() });
+      // Deleting the active model goes through the deselection reset, which also fences any
+      // in-flight LOS job launched with it. History entries keep their own snapshots.
+      if (get().selectedRadarId === modelId) get().selectRadar(null);
+      return { ok: true, modelId };
     },
 
     setRadarPosition: (position) => {

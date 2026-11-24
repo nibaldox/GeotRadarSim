@@ -44,6 +44,7 @@ import type { LOSWorkerInput, LOSWorkerOutput } from "../workers/losWorker";
 import type { SensitivityWorkerInput, SensitivityWorkerOutput } from "../workers/vectorWorker";
 import { getComputeEngineSelection } from "./computeEngine";
 import { createModuleWorker } from "./moduleWorker";
+import { loadCustomRadars } from "./customRadars";
 import terrainWorkerUrl from "../workers/terrainWorker.ts?worker&url";
 import losWorkerUrl from "../workers/losWorker.ts?worker&url";
 import vectorWorkerUrl from "../workers/vectorWorker.ts?worker&url";
@@ -453,7 +454,7 @@ export async function runLOSAnalysis(req: LOSRequest): Promise<JobResponse> {
     throw new RangeError("Las dimensiones de la malla del terreno no coinciden con los metadatos.");
   }
 
-  const radar = LOCAL_RADARS.find(r => r.model_id === req.radar_model_id);
+  const radar = resolveRadar(req.radar_model_id);
   if (!radar) throw new Error("No se encontró el modelo de radar.");
 
   const effectiveRadar: RadarConfig = { ...radar };
@@ -630,12 +631,31 @@ export function cancelLOSAnalysis(jobId: string): void {
 // Radar endpoints
 // ────────────────────────────────────────────
 
+/**
+ * Resolve a radar model by id: bundled profiles first, then the user's custom profiles
+ * (re-read and re-derived from `localStorage` on every call, so a deleted profile is gone).
+ */
+export function resolveRadar(modelId: string): RadarConfig | undefined {
+  return LOCAL_RADARS.find(r => r.model_id === modelId) ??
+    loadCustomRadars(LOCAL_RADARS).find(r => r.model_id === modelId);
+}
+
+/** Synchronous catalog: bundled profiles in their fixed order, then the custom ones. */
+export function getRadarCatalog(): RadarConfig[] {
+  return [...LOCAL_RADARS, ...loadCustomRadars(LOCAL_RADARS)];
+}
+
+/** Bundled profiles only (used to check custom-profile name and id uniqueness). */
+export function getBuiltinRadars(): RadarConfig[] {
+  return [...LOCAL_RADARS];
+}
+
 export async function listRadars(): Promise<RadarConfig[]> {
-  return LOCAL_RADARS;
+  return getRadarCatalog();
 }
 
 export async function getRadar(modelId: string): Promise<RadarConfig> {
-  const radar = LOCAL_RADARS.find(r => r.model_id === modelId);
+  const radar = resolveRadar(modelId);
   if (!radar) throw new Error("No se encontró el radar.");
   return radar;
 }
