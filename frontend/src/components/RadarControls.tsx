@@ -10,7 +10,7 @@ import { useAnalysisStore } from "../store/analysisStore";
 import { useTerrainStore } from "../store/terrainStore";
 import { Section } from "./ui/Section";
 import { factoryAzimuthSector } from "../utils/radarSector";
-import { isCustomRadarId } from "../services/customRadars";
+import { CUSTOM_RADARS_STORAGE_KEY, isCustomRadarId } from "../services/customRadars";
 import type { CustomRadarPattern } from "../services/customRadars";
 import "../styles/panels.css";
 
@@ -57,6 +57,9 @@ export function RadarControls() {
   const setAzimuthOverrides = useAnalysisStore((s) => s.setAzimuthOverrides);
   const addCustomRadar = useAnalysisStore((s) => s.addCustomRadar);
   const removeCustomRadar = useAnalysisStore((s) => s.removeCustomRadar);
+  const refreshCustomRadars = useAnalysisStore((s) => s.refreshCustomRadars);
+  const deployedRadars = useAnalysisStore((s) => s.deployedRadars);
+  const analysisTerrainKey = useAnalysisStore((s) => s.terrainKey);
 
   const [customOpen, setCustomOpen] = useState(false);
   const [draft, setDraft] = useState<CustomRadarDraft>(EMPTY_DRAFT);
@@ -113,7 +116,20 @@ export function RadarControls() {
   const customRadars = radars.filter((r) => isCustomRadarId(r.model_id));
   const selectedIsCustom = !!selectedRadar && isCustomRadarId(selectedRadar.model_id);
 
-  useEffect(() => { setRemoveError(null); }, [selectedRadarId]);
+  // Errors must not outlive the state they describe: a form error is about the catalog it was
+  // checked against, a delete refusal is about the current network and terrain.
+  useEffect(() => { setRemoveError(null); }, [selectedRadarId, deployedRadars, analysisTerrainKey]);
+  useEffect(() => { setCustomError(null); }, [radars]);
+
+  // Another tab added or deleted profiles (`key === null` is a full `localStorage.clear()`).
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === CUSTOM_RADARS_STORAGE_KEY || event.key === null) refreshCustomRadars();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [refreshCustomRadars]);
 
   const updateDraft = (field: keyof CustomRadarDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -150,6 +166,7 @@ export function RadarControls() {
     if (!selectedRadar) return;
     const result = removeCustomRadar(selectedRadar.model_id);
     setRemoveError(result.ok ? null : result.error);
+    if (result.ok) setCustomError(null);
   };
 
   const displayNumber = (value: number | null | undefined) =>

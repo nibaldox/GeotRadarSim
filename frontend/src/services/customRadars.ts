@@ -5,7 +5,8 @@
  * generado; nunca un `RadarConfig`. En cada lectura la entrada se revalida y el config se
  * deriva de nuevo, así un registro manipulado no puede inyectar un azimut o un patrón de
  * escaneo incoherentes. `localStorage` es entrada no confiable: JSON corrupto, modo privado
- * o cuota llena nunca lanzan; las entradas inválidas se descartan una por una.
+ * o cuota llena nunca lanzan; las entradas inválidas se descartan una por una al leer, pero
+ * guardar y borrar mutan el array crudo (añadir uno, quitar un id) sin perder lo que hoy no valida.
  *
  * Este módulo no conoce el catálogo incluido: quien lo llama pasa los perfiles incluidos
  * para comprobar la unicidad de nombre e id.
@@ -18,11 +19,16 @@ export const MAX_CUSTOM_RADARS = 20;
 export const CUSTOM_RADAR_DEFAULT_MANUFACTURER = "Perfil local";
 export const CUSTOM_RADAR_V_BEAM_DEG = 30;
 export const MAX_CUSTOM_RANGE_M = 100_000;
+/** Hard cap on the raw stored array: reads stop here and writes trim to it. */
+export const MAX_RAW_CUSTOM_RADAR_RECORDS = 200;
+export const CUSTOM_RADAR_NOT_FOUND_ERROR = "No se encontró el perfil personalizado.";
 const MAX_TEXT_LENGTH = 40;
 const MAX_SLUG_LENGTH = 20;
 const CUSTOM_ID_PATTERN = /^custom-[a-z0-9-]{1,40}$/;
-// Caracteres de control (incluye saltos de línea): no tienen cabida en una etiqueta de una línea.
-const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+// Controles (Cc), formato invisible (Cf: U+200B, U+202E, BOM…) y separadores de línea/párrafo:
+// no tienen cabida en una etiqueta de una línea y pueden falsear lo que se ve (U+202E invierte cifras).
+const FORBIDDEN_CHARS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 
 export type CustomRadarPattern = "SAR360" | "RAR";
 
@@ -60,7 +66,10 @@ export function isCustomRadarId(modelId: string): boolean {
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-const nameKey = (name: string): string => name.trim().toLocaleLowerCase("es");
+/** NFC + trim: «Café» compuesto y descompuesto quedan iguales antes de validar o comparar. */
+const normalizeText = (text: string): string => text.normalize("NFC").trim();
+
+const nameKey = (name: string): string => normalizeText(name).toLocaleLowerCase("es");
 
 /**
  * Valida la entrada según el contrato y devuelve una copia normalizada.
@@ -71,10 +80,11 @@ export function validateCustomRadarInput(raw: unknown, takenNames: readonly stri
   const input = raw as Record<string, unknown>;
 
   if (typeof input.name !== "string") return { ok: false, error: "Escribe un nombre para el perfil." };
-  const name = input.name.trim();
+  const name = normalizeText(input.name);
   if (name.length === 0) return { ok: false, error: "Escribe un nombre para el perfil." };
   if (name.length > MAX_TEXT_LENGTH) return { ok: false, error: `El nombre admite hasta ${MAX_TEXT_LENGTH} caracteres.` };
-  if (CONTROL_CHARS.test(name)) return { ok: false, error: "El nombre contiene caracteres no válidos." };
+  if (FORBIDDEN_CHARS.test(name)) return { ok: false, error: "El nombre contiene caracteres no válidos." };
+  if (!LETTER_OR_DIGIT.test(name)) return { ok: false, error: "El nombre debe incluir al menos una letra o un número." };
   const key = nameKey(name);
   if (takenNames.some((taken) => nameKey(taken) === key)) {
     return { ok: false, error: "Ya existe un perfil con ese nombre." };
@@ -82,11 +92,14 @@ export function validateCustomRadarInput(raw: unknown, takenNames: readonly stri
 
   const rawManufacturer = input.manufacturer ?? "";
   if (typeof rawManufacturer !== "string") return { ok: false, error: "El fabricante no es válido." };
-  const manufacturer = rawManufacturer.trim();
+  const manufacturer = normalizeText(rawManufacturer);
   if (manufacturer.length > MAX_TEXT_LENGTH) {
     return { ok: false, error: `El fabricante admite hasta ${MAX_TEXT_LENGTH} caracteres.` };
   }
-  if (CONTROL_CHARS.test(manufacturer)) return { ok: false, error: "El fabricante contiene caracteres no válidos." };
+  if (FORBIDDEN_CHARS.test(manufacturer)) return { ok: false, error: "El fabricante contiene caracteres no válidos." };
+  if (manufacturer.length > 0 && !LETTER_OR_DIGIT.test(manufacturer)) {
+    return { ok: false, error: "El fabricante debe incluir al menos una letra o un número." };
+  }
 
   const { minRangeM, maxRangeM, elMinDeg, elMaxDeg, pattern, apertureDeg } = input;
   if (!isFiniteNumber(minRangeM) || minRangeM < 0) {
@@ -186,65 +199,111 @@ const storage = (): Storage | null => {
   return null;
 };
 
-/** Lee y revalida los registros guardados; nunca lanza. */
-function readStoredRecords(builtins: readonly RadarConfig[]): StoredCustomRadar[] {
+type RawRead = { ok: true; items: unknown[] } | { ok: false };
+
+/** Array crudo guardado tal cual (sin validar); `ok: false` si no se pudo leer. Nunca lanza. */
+function readRawItems(): RawRead {
   const store = storage();
-  if (!store) return [];
-  let parsed: unknown;
+  if (!store) return { ok: false };
   try {
     const text = store.getItem(CUSTOM_RADARS_STORAGE_KEY);
-    if (text == null) return [];
-    parsed = JSON.parse(text);
+    if (text == null) return { ok: true, items: [] };
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      console.warn("Perfiles de radar personalizados con formato desconocido; se ignoran.");
+      return { ok: true, items: [] };
+    }
+    return { ok: true, items: parsed };
   } catch {
     console.warn("Perfiles de radar personalizados ilegibles; se ignoran.");
-    return [];
+    return { ok: true, items: [] };
   }
-  if (!Array.isArray(parsed)) {
-    console.warn("Perfiles de radar personalizados con formato desconocido; se ignoran.");
-    return [];
-  }
+}
 
+const rawModelId = (item: unknown): unknown =>
+  item && typeof item === "object" ? (item as Record<string, unknown>).model_id : undefined;
+
+/**
+ * Revalida como mucho los primeros `MAX_RAW_CUSTOM_RADAR_RECORDS` elementos y entrega hasta
+ * `MAX_CUSTOM_RADARS` válidos. Lo descartado se informa en un único aviso por lectura.
+ */
+function validRecords(items: readonly unknown[], builtins: readonly RadarConfig[]): StoredCustomRadar[] {
   const takenIds = new Set(builtins.map((radar) => radar.model_id));
   const takenNames = builtins.map((radar) => radar.display_name);
   const records: StoredCustomRadar[] = [];
-  for (const item of parsed) {
-    if (records.length >= MAX_CUSTOM_RADARS) {
-      console.warn(`Se ignoran perfiles personalizados por encima del tope de ${MAX_CUSTOM_RADARS}.`);
-      break;
-    }
-    const modelId = item && typeof item === "object" ? (item as Record<string, unknown>).model_id : undefined;
+  const limit = Math.min(items.length, MAX_RAW_CUSTOM_RADAR_RECORDS);
+  let discarded = 0;
+  let overCap = 0;
+  for (let index = 0; index < limit; index++) {
+    const item = items[index];
+    const modelId = rawModelId(item);
     if (typeof modelId !== "string" || !CUSTOM_ID_PATTERN.test(modelId) || takenIds.has(modelId)) {
-      console.warn("Se descarta un perfil personalizado con id no válido o repetido.");
+      discarded++;
       continue;
     }
     const validation = validateCustomRadarInput(item, takenNames);
     if (!validation.ok) {
-      console.warn(`Se descarta un perfil personalizado no válido: ${validation.error}`);
+      discarded++;
+      continue;
+    }
+    if (records.length >= MAX_CUSTOM_RADARS) {
+      overCap++;
       continue;
     }
     takenIds.add(modelId);
     takenNames.push(validation.value.name);
     records.push({ model_id: modelId, ...validation.value });
   }
+  const unread = items.length - limit;
+  if (discarded > 0 || overCap > 0 || unread > 0) {
+    const parts: string[] = [];
+    if (discarded > 0) parts.push(`${discarded} no válidos o repetidos`);
+    if (overCap > 0) parts.push(`${overCap} por encima del tope de ${MAX_CUSTOM_RADARS}`);
+    if (unread > 0) parts.push(`${unread} más allá de los primeros ${MAX_RAW_CUSTOM_RADAR_RECORDS} elementos`);
+    console.warn(`Perfiles de radar personalizados ignorados: ${parts.join(", ")}.`);
+  }
   return records;
 }
 
-function writeStoredRecords(records: readonly StoredCustomRadar[]): string | null {
+/** Lee y revalida los registros guardados; nunca lanza. */
+function readStoredRecords(builtins: readonly RadarConfig[]): StoredCustomRadar[] {
+  const raw = readRawItems();
+  return raw.ok ? validRecords(raw.items, builtins) : [];
+}
+
+const serializeRecord = (record: StoredCustomRadar) => ({
+  model_id: record.model_id,
+  name: record.name,
+  manufacturer: record.manufacturer,
+  minRangeM: record.minRangeM,
+  maxRangeM: record.maxRangeM,
+  elMinDeg: record.elMinDeg,
+  elMaxDeg: record.elMaxDeg,
+  pattern: record.pattern,
+  apertureDeg: record.apertureDeg,
+});
+
+/**
+ * Recorta el array crudo al tope duro quitando desde el final elementos que no sean perfiles
+ * vigentes (`keepIds`); un solo aviso si recorta.
+ */
+function trimRawItems(items: unknown[], limit: number, keepIds: ReadonlySet<string>): unknown[] {
+  if (items.length <= limit) return items;
+  const trimmed = [...items];
+  for (let index = trimmed.length - 1; index >= 0 && trimmed.length > limit; index--) {
+    const modelId = rawModelId(trimmed[index]);
+    if (typeof modelId === "string" && keepIds.has(modelId)) continue;
+    trimmed.splice(index, 1);
+  }
+  console.warn(`Se recortó la lista de perfiles personalizados a ${limit} elementos.`);
+  return trimmed;
+}
+
+function writeRawItems(items: readonly unknown[]): string | null {
   const store = storage();
   if (!store) return "Este navegador no permite guardar perfiles.";
   try {
-    const payload = records.map((record) => ({
-      model_id: record.model_id,
-      name: record.name,
-      manufacturer: record.manufacturer,
-      minRangeM: record.minRangeM,
-      maxRangeM: record.maxRangeM,
-      elMinDeg: record.elMinDeg,
-      elMaxDeg: record.elMaxDeg,
-      pattern: record.pattern,
-      apertureDeg: record.apertureDeg,
-    }));
-    store.setItem(CUSTOM_RADARS_STORAGE_KEY, JSON.stringify(payload));
+    store.setItem(CUSTOM_RADARS_STORAGE_KEY, JSON.stringify(items));
     return null;
   } catch {
     return "No se pudo guardar en este navegador (almacenamiento lleno o bloqueado).";
@@ -256,33 +315,46 @@ export function loadCustomRadars(builtins: readonly RadarConfig[]): RadarConfig[
   return readStoredRecords(builtins).map((record) => deriveCustomRadarConfig(record.model_id, record));
 }
 
-/** Valida y guarda un perfil nuevo. Los errores se devuelven como valor. */
+/**
+ * Valida y guarda un perfil nuevo. Los errores se devuelven como valor. Solo AÑADE al array
+ * crudo: los registros que hoy no validan (otra versión, otra pestaña, por encima del tope o en
+ * conflicto con un perfil incluido nuevo) se conservan tal cual.
+ */
 export function saveCustomRadar(input: unknown, builtins: readonly RadarConfig[]): CustomRadarSaveResult {
-  const records = readStoredRecords(builtins);
+  const raw = readRawItems();
+  if (!raw.ok) return { ok: false, error: "Este navegador no permite guardar perfiles." };
+  const records = validRecords(raw.items, builtins);
   if (records.length >= MAX_CUSTOM_RADARS) {
     return { ok: false, error: `Se alcanzó el tope de ${MAX_CUSTOM_RADARS} perfiles personalizados.` };
   }
   const takenNames = [...builtins.map((radar) => radar.display_name), ...records.map((record) => record.name)];
   const validation = validateCustomRadarInput(input, takenNames);
   if (!validation.ok) return validation;
+  const rawIds = raw.items.map(rawModelId).filter((id): id is string => typeof id === "string");
   const modelId = generateCustomRadarId(validation.value.name, [
     ...builtins.map((radar) => radar.model_id),
-    ...records.map((record) => record.model_id),
+    ...rawIds,
   ]);
   const record: StoredCustomRadar = { model_id: modelId, ...validation.value };
-  const error = writeStoredRecords([...records, record]);
+  const keepIds = new Set(records.map((item) => item.model_id));
+  const base = trimRawItems(raw.items, MAX_RAW_CUSTOM_RADAR_RECORDS - 1, keepIds);
+  const error = writeRawItems([...base, serializeRecord(record)]);
   if (error) return { ok: false, error };
   return { ok: true, radar: deriveCustomRadarConfig(modelId, validation.value) };
 }
 
-/** Elimina un perfil personalizado por id. */
+/** Elimina un perfil personalizado por id: quita del array crudo solo los elementos con ese id. */
 export function deleteCustomRadar(modelId: string, builtins: readonly RadarConfig[]): CustomRadarDeleteResult {
   if (!isCustomRadarId(modelId)) return { ok: false, error: "Solo se pueden eliminar perfiles personalizados." };
-  const records = readStoredRecords(builtins);
-  if (!records.some((record) => record.model_id === modelId)) {
-    return { ok: false, error: "No se encontró el perfil personalizado." };
+  const raw = readRawItems();
+  if (!raw.ok || !raw.items.some((item) => rawModelId(item) === modelId)) {
+    return { ok: false, error: CUSTOM_RADAR_NOT_FOUND_ERROR };
   }
-  const error = writeStoredRecords(records.filter((record) => record.model_id !== modelId));
+  const remaining = raw.items.filter((item) => rawModelId(item) !== modelId);
+  const keepIds = remaining.length > MAX_RAW_CUSTOM_RADAR_RECORDS
+    ? new Set(validRecords(remaining, builtins).map((item) => item.model_id))
+    : new Set<string>();
+  const error = writeRawItems(trimRawItems(remaining, MAX_RAW_CUSTOM_RADAR_RECORDS, keepIds));
   if (error) return { ok: false, error };
   return { ok: true };
 }

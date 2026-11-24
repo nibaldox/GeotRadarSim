@@ -14,7 +14,7 @@ import {
   getBuiltinRadars as apiGetBuiltinRadars,
   getLOSJob,
 } from "../services/api";
-import { deleteCustomRadar, saveCustomRadar } from "../services/customRadars";
+import { CUSTOM_RADAR_NOT_FOUND_ERROR, deleteCustomRadar, isCustomRadarId, saveCustomRadar } from "../services/customRadars";
 import type { CustomRadarInput } from "../services/customRadars";
 import type {
   AnalysisRadarOverrides,
@@ -71,6 +71,8 @@ export interface DeployedRadar {
 
 type RadarOverrides = AnalysisRadarOverrides;
 export type CustomRadarActionResult = { ok: true; modelId: string } | { ok: false; error: string };
+export const CUSTOM_RADAR_MISSING_PROFILE_ERROR =
+  "El perfil seleccionado ya no existe; elige otro modelo antes de ubicar el radar.";
 export const CUSTOM_RADAR_DEPLOYED_ERROR =
   "No se puede eliminar: hay radares ubicados con este perfil. Quítalos primero.";
 /** `reason` is set only for `cancelled`: "user" = the app's Cancel button, "agent" = the waiter's own signal. */
@@ -117,6 +119,8 @@ export interface AnalysisState {
   addCustomRadar: (input: CustomRadarInput) => CustomRadarActionResult;
   /** Delete a custom profile; refused while a deployed radar uses it. History is kept. */
   removeCustomRadar: (modelId: string) => CustomRadarActionResult;
+  /** Re-read the custom profiles from localStorage (another tab changed them). */
+  refreshCustomRadars: () => void;
   setRadarPosition: (position: Point3D) => void;
   setRangeOverrides: (min: number | null, max: number | null) => void;
   setElevationOverrides: (min: number | null, max: number | null) => void;
@@ -719,13 +723,22 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
         return { ok: false, error: CUSTOM_RADAR_DEPLOYED_ERROR };
       }
       const deleted = deleteCustomRadar(modelId, apiGetBuiltinRadars());
-      if (!deleted.ok) return { ok: false, error: deleted.error };
+      if (!deleted.ok) {
+        // Already gone (another tab deleted it): refresh so the selector stops offering it.
+        if (deleted.error === CUSTOM_RADAR_NOT_FOUND_ERROR) get().refreshCustomRadars();
+        return { ok: false, error: deleted.error };
+      }
       catalogRevision += 1;
       set({ radars: apiGetRadarCatalog() });
       // Deleting the active model goes through the deselection reset, which also fences any
       // in-flight LOS job launched with it. History entries keep their own snapshots.
       if (get().selectedRadarId === modelId) get().selectRadar(null);
       return { ok: true, modelId };
+    },
+
+    refreshCustomRadars: () => {
+      catalogRevision += 1;
+      set({ radars: apiGetRadarCatalog() });
     },
 
     setRadarPosition: (position) => {
@@ -934,6 +947,14 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => {
 
       if (!selectedRadarId || !radarPosition) {
         set({ error: "Elige un modelo de radar y ubícalo en el terreno antes de calcular." });
+        return;
+      }
+      // A profile that is no longer in the catalog (deleted here or in another tab) must not
+      // enter the network. An empty catalog only proves it has not loaded yet, except for a
+      // custom id, which can only come from the catalog.
+      const inCatalog = state.radars.some((radar) => radar.model_id === selectedRadarId);
+      if (!inCatalog && (state.radars.length > 0 || isCustomRadarId(selectedRadarId))) {
+        set({ error: CUSTOM_RADAR_MISSING_PROFILE_ERROR });
         return;
       }
 
