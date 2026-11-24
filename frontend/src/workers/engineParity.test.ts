@@ -293,8 +293,8 @@ function sensitivityInput(grid: number[][], minX: number, minY: number, resoluti
 }
 
 describe("LOS worker: ts ↔ wasm complete-response parity", () => {
-  it("matches on rectangular terrainEngine pits with the 3 catalog radars at several positions", async () => {
-    expect(catalog.map((radar) => radar.model_id)).toEqual(["groundprobe-ssr-fx", "ibis-arcsar360", "reutech-msr"]);
+  it("matches on rectangular terrainEngine pits with the 4 catalog radars at several positions", async () => {
+    expect(catalog.map((radar) => radar.model_id)).toEqual(["groundprobe-ssr-fx", "ibis-arcsar360", "reutech-msr", "chcnav-ps-2000"]);
     let visibleCases = 0;
     let fullPolygons = 0;
     for (const [sizeX, sizeY, depth, resolution] of [[300, 180, 60, 2], [1200, 640, 140, 8]] as const) {

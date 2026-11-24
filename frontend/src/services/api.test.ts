@@ -1072,12 +1072,13 @@ describe("azimuth sectors", () => {
 // ────────────────────────────────────────────
 
 describe("listRadars", () => {
-  it("returns hardcoded list of 3 radars", async () => {
+  it("returns hardcoded list of 4 radars", async () => {
     const list = await listRadars();
-    expect(list).toHaveLength(3);
+    expect(list).toHaveLength(4);
     expect(list[0]!.model_id).toBe("groundprobe-ssr-fx");
     expect(list[1]!.model_id).toBe("ibis-arcsar360");
     expect(list[2]!.model_id).toBe("reutech-msr");
+    expect(list[3]!.model_id).toBe("chcnav-ps-2000");
   });
 });
 

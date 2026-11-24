@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Data-driven radar parameter management for the three supported slope monitoring radar models.
+Data-driven radar parameter management for the supported slope monitoring radar models.
 
 ## Requirements
 
@@ -14,7 +14,7 @@ The system MUST define each radar model as a data configuration with parameters:
 
 - GIVEN the application is initialized
 - WHEN the radar model selector renders
-- THEN the user sees GroundProbe SSR-FX, IBIS-ArcSAR360, and Reutech MSR as selectable options
+- THEN the user sees GroundProbe SSR-FX, IBIS-ArcSAR360, Reutech MSR, and CHCNAV PS-2000 as selectable options
 
 #### Scenario: Select a radar model
 
@@ -51,6 +51,16 @@ The system SHALL include Reutech MSR with its operational parameters.
 - GIVEN Reutech MSR is the selected model
 - WHEN coverage analysis runs
 - THEN the system applies the MSR range and sector parameters to ray-casting
+
+### Requirement: CHCNAV PS-2000 Parameters
+
+The system SHALL include CHCNAV PS-2000 with its 5000 m maximum range, ±30° vertical adjustment and 360° scanning parameters.
+
+#### Scenario: CHCNAV PS-2000 360° coverage computation
+
+- GIVEN CHCNAV PS-2000 is the selected model
+- WHEN coverage analysis runs
+- THEN the system applies its 5000 m range and full 360° horizontal coverage to ray-casting
 
 ### Requirement: Model Parameter Extensibility
 

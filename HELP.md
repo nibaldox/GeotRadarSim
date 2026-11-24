@@ -40,7 +40,7 @@ Grid nodes are spaced from each X/Y minimum by the selected resolution. A span d
 
 Choose one of the bundled profile labels in **Radar Model**, then optionally set minimum/maximum range, minimum/maximum elevation, azimuth center, and scan aperture. Distances are in metres and angular limits are in degrees. The azimuth convention is 0° north, 90° east, 180° south, and 270° west.
 
-The selected model names use hard-coded local software defaults; they are **not validated manufacturer specifications**. The current defaults for all profiles have a 50–2500 m range and −60° to +60° elevation. GroundProbe SSR-FX and Reutech MSR use a −75° to +75° azimuth sector; IBIS-ArcSAR360 uses 360°. These are application values only. Override them only with values appropriate to the scenario you are evaluating.
+The selected model names use hard-coded local software profiles; they are **not validated operating limits**. GroundProbe SSR-FX, IBIS-ArcSAR360 and Reutech MSR default to 50–2500 m and −60° to +60° elevation. CHCNAV PS-2000 defaults to 50–5000 m and −30° to +30° elevation; its maximum range and vertical adjustment are taken from the manufacturer's December 2025 datasheet, while its 50 m near limit is an application default because that datasheet publishes none. GroundProbe SSR-FX and Reutech MSR use a −75° to +75° azimuth sector; IBIS-ArcSAR360 and CHCNAV PS-2000 use 360°. Override them only with values appropriate to the scenario you are evaluating.
 
 If either azimuth center or aperture is entered, an omitted center defaults to 0° and an omitted aperture uses that profile's configured horizontal width. The configured horizontal range is a geometric cutoff, not a statement about the actual instrument's detection range.
 

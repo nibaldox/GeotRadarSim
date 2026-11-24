@@ -139,6 +139,19 @@ const LOCAL_RADARS: RadarConfig[] = [
     elevation_max_deg: 60.0,
     scan_pattern: "RAR",
     azimuth_range_deg: [-75.0, 75.0]
+  },
+  {
+    model_id: "chcnav-ps-2000",
+    display_name: "CHCNAV PS-2000",
+    manufacturer: "CHC Navigation",
+    min_range_m: 50.0,
+    max_range_m: 5000.0,
+    h_beam_width_deg: 360.0,
+    v_beam_width_deg: 60.0,
+    elevation_min_deg: -30.0,
+    elevation_max_deg: 30.0,
+    scan_pattern: "SAR360",
+    azimuth_range_deg: null
   }
 ];
 

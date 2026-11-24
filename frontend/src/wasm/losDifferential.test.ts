@@ -201,7 +201,7 @@ function expectSomeVisible(outcome: Outcome, label: string): void {
 
 describe("LOS TS ↔ WASM differential equivalence", () => {
   it("matches on rectangular synthetic terrainEngine pits with every catalog radar", () => {
-    expect(catalog.map((radar) => radar.model_id)).toEqual(["groundprobe-ssr-fx", "ibis-arcsar360", "reutech-msr"]);
+    expect(catalog.map((radar) => radar.model_id)).toEqual(["groundprobe-ssr-fx", "ibis-arcsar360", "reutech-msr", "chcnav-ps-2000"]);
     const terrains = [generateSyntheticTerrain(300, 180, 60, 2), generateSyntheticTerrain(1200, 640, 140, 8)];
     let visible = 0;
     for (const terrain of terrains) {
